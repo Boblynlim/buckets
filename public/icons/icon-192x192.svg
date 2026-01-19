@@ -1,0 +1,30 @@
+<svg width="192" height="192" viewBox="0 0 192 192" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="192" height="192" fill="#4747FF" rx="38.400000000000006"/>
+
+  <!-- Bucket shape in white -->
+  <g transform="translate(38.400000000000006, 48)">
+    <!-- Top rim -->
+    <rect x="0" y="0" width="115.19999999999999" height="15.36" fill="#F5F3F0" rx="3.84"/>
+
+    <!-- Bucket body (trapezoid shape) -->
+    <path d="M 9.600000000000001 15.36
+             L 105.60000000000001 15.36
+             L 96 105.60000000000001
+             L 19.200000000000003 105.60000000000001 Z"
+          fill="#F5F3F0"/>
+
+    <!-- Handle -->
+    <path d="M 28.799999999999997 3.84
+             Q 57.599999999999994 -15.36, 86.4 3.84"
+          stroke="#F5F3F0" stroke-width="7.68" fill="none" stroke-linecap="round"/>
+
+    <!-- $ Symbol in bucket -->
+    <text x="57.599999999999994" y="72.96000000000001"
+          font-family="Space Mono, monospace"
+          font-size="38.400000000000006"
+          font-weight="bold"
+          fill="#4747FF"
+          text-anchor="middle">$</text>
+  </g>
+</svg>

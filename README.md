@@ -1,97 +1,258 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Buckets - Budget Tracking App
 
-# Getting Started
+A beautiful, intuitive budget tracking app built with React Native that helps you organize your spending with customizable buckets and AI-powered insights.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+## Features
 
-## Step 1: Start Metro
+### ✅ Implemented
+- **Budget Buckets**: Create and manage spending buckets with fixed amounts or percentages
+- **Expense Tracking**: Log expenses with notes and happiness ratings
+- **Real-time Sync**: Powered by Convex for instant updates across devices
+- **Monthly Allocation**: View spending by month with calendar picker
+- **Low Balance Alerts**: Get notified when buckets are running low
+- **Bucket Details**: Detailed transaction history for each bucket
+- **Web & Mobile**: Works on iOS, Android, and Web
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### 🚧 Coming Soon
+- **Income Management**: Track multiple income sources
+- **AI Chat Assistant**: Get spending advice from Claude AI
+- **Recurring Expenses**: Set up auto-tracking for bills
+- **Analytics Dashboard**: Visualize spending patterns
+- **Happiness Insights**: Correlate purchases with happiness ratings
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+## Tech Stack
 
-```sh
-# Using npm
+- **Frontend**: React Native + TypeScript
+- **Web**: React Native Web with Webpack
+- **Backend**: Convex (real-time database)
+- **AI**: Claude API (Anthropic)
+- **Icons**: Lucide React
+- **Fonts**: Merchant Copy (monospace)
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 18+ and npm/yarn
+- For mobile: React Native development environment ([setup guide](https://reactnative.dev/docs/environment-setup))
+- For iOS: Xcode and CocoaPods
+- For Android: Android Studio
+
+### Installation
+
+1. **Clone and install dependencies**:
+   ```bash
+   cd Buckets
+   npm install
+   ```
+
+2. **Set up Convex** (Required for backend):
+
+   Follow the detailed guide in [CONVEX_SETUP.md](./CONVEX_SETUP.md)
+
+   Quick start:
+   ```bash
+   npx convex dev
+   ```
+
+   This will:
+   - Create a Convex account (free)
+   - Initialize your deployment
+   - Generate API types
+   - Give you a deployment URL
+
+3. **Configure environment**:
+   ```bash
+   cp .env.example .env.local
+   ```
+
+   Add your Convex URL to `.env.local`:
+   ```
+   CONVEX_URL=https://your-deployment.convex.cloud
+   ```
+
+4. **Install iOS dependencies** (iOS only):
+   ```bash
+   bundle install
+   bundle exec pod install
+   ```
+
+### Running the App
+
+#### Web
+```bash
 npm start
-
-# OR using Yarn
-yarn start
 ```
+Open http://localhost:3000 in your browser
 
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
-```
-
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
-```
-
-Then, and every time you update your native dependencies, run:
-
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
+#### iOS
+```bash
 npm run ios
-
-# OR using Yarn
-yarn ios
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+#### Android
+```bash
+npm run android
+```
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+## Project Structure
 
-## Step 3: Modify your app
+```
+Buckets/
+├── src/
+│   ├── screens/           # Main app screens
+│   │   ├── BucketsOverview.web.tsx    # Bucket list with month picker
+│   │   ├── BucketDetail.web.tsx       # Transaction history
+│   │   ├── AddBucket.tsx              # Create new bucket
+│   │   ├── AddExpense.tsx             # Log expense
+│   │   ├── ChatScreen.tsx             # AI chat (coming soon)
+│   │   └── Settings.tsx               # App settings
+│   ├── components/        # Reusable components
+│   │   └── BucketCard.tsx            # Bucket list item
+│   ├── lib/
+│   │   └── convex.ts                 # Convex client setup
+│   └── types/            # TypeScript types
+├── convex/               # Backend (Convex)
+│   ├── schema.ts         # Database schema
+│   ├── buckets.ts        # Bucket CRUD operations
+│   ├── expenses.ts       # Expense tracking
+│   ├── users.ts          # User management
+│   ├── income.ts         # Income tracking (coming soon)
+│   └── _generated/       # Auto-generated (don't edit)
+├── App.web.tsx          # Web app entry point
+└── public/              # Web assets
+```
 
-Now that you have successfully run the app, let's make changes!
+## Backend (Convex)
 
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
+The app uses Convex for real-time backend functionality. All screens are already wired up to Convex:
 
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
+### Database Schema
+- **users**: User accounts
+- **buckets**: Budget buckets with allocation tracking
+- **expenses**: Expense records with happiness ratings
+- **income**: Income sources (coming soon)
+- **recurringExpenses**: Recurring expense templates (coming soon)
 
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
+### API Functions
 
-## Congratulations! :tada:
+All functions are in the `convex/` directory:
 
-You've successfully run and modified your React Native App. :partying_face:
+**Buckets** (`convex/buckets.ts`):
+- `create`: Create a new bucket
+- `getByUser`: Get all buckets for a user
+- `updateBalance`: Update bucket balance
+- `update`: Update bucket details
+- `remove`: Soft delete a bucket
 
-### Now what?
+**Expenses** (`convex/expenses.ts`):
+- `create`: Log an expense (auto-updates bucket balance)
+- `getByUser`: Get user's expense history
+- `getByBucket`: Get expenses for a specific bucket
+- `update`: Update an expense
+- `remove`: Delete an expense (refunds bucket)
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
+**Users** (`convex/users.ts`):
+- `create`: Create a new user
+- `get`: Get user by ID
+- `update`: Update user details
+- `getCurrentUser`: Get current demo user
+- `initDemoUser`: Initialize demo account
 
-# Troubleshooting
+## Development
 
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+### Available Scripts
 
-# Learn More
+- `npm start` - Start web dev server
+- `npm run ios` - Run on iOS simulator
+- `npm run android` - Run on Android emulator
+- `npm run lint` - Run ESLint
+- `npm run typescript` - Type check
 
-To learn more about React Native, take a look at the following resources:
+### Environment Variables
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Create `.env.local` with:
+
+```bash
+# Convex Backend
+CONVEX_URL=https://your-deployment.convex.cloud
+
+# AI Chat (optional - for future feature)
+ANTHROPIC_API_KEY=your_api_key_here
+```
+
+### Adding New Features
+
+1. Define data schema in `convex/schema.ts`
+2. Create API functions in `convex/*.ts`
+3. Run `npx convex dev` to regenerate types
+4. Import from `convex/_generated/api` in React components
+5. Use `useQuery` for reads, `useMutation` for writes
+
+Example:
+```typescript
+import { useQuery, useMutation } from 'convex/react';
+import { api } from '../convex/_generated/api';
+
+// In your component
+const buckets = useQuery(api.buckets.getByUser, { userId });
+const createBucket = useMutation(api.buckets.create);
+```
+
+## Design
+
+The app uses a clean, modern design with:
+- **Merchant Copy** monospace font for a unique financial aesthetic
+- **Lucide icons** for consistent, crisp iconography
+- **Blue primary color** (#4747FF) with high contrast
+- **Minimal shadows** and rounded corners
+- **Apple-inspired** month picker and navigation
+
+## Troubleshooting
+
+### Convex Errors
+If you see "Module not found: convex/_generated/api":
+1. Make sure `npx convex dev` is running
+2. Check that `.env.local` has your `CONVEX_URL`
+3. Restart your dev server
+
+### iOS Build Issues
+```bash
+cd ios
+bundle exec pod install --repo-update
+cd ..
+npm run ios
+```
+
+### Android Build Issues
+```bash
+cd android
+./gradlew clean
+cd ..
+npm run android
+```
+
+### Web Hot Reload Not Working
+```bash
+# Clear cache and restart
+rm -rf node_modules/.cache
+npm start
+```
+
+## Contributing
+
+This is a personal project, but suggestions are welcome! Feel free to:
+- Report bugs via GitHub issues
+- Suggest features
+- Submit pull requests
+
+## License
+
+MIT
+
+## Acknowledgments
+
+- Built with [React Native](https://reactnative.dev)
+- Backend by [Convex](https://convex.dev)
+- AI by [Anthropic Claude](https://anthropic.com)
+- Icons by [Lucide](https://lucide.dev)
