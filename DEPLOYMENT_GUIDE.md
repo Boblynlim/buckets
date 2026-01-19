@@ -57,6 +57,8 @@
 
 ## Next Steps: Deploy & Install
 
+**Important:** For apps using Convex backend, use Vercel or Netlify. GitHub Pages doesn't support build-time environment variables or server-side code generation needed for Convex.
+
 ### Option A: Deploy to Vercel (Recommended - Free)
 
 1. **Install Vercel CLI**:
@@ -98,22 +100,17 @@
    - Go to Site settings → Environment variables
    - Add the same variables as Vercel
 
-### Option C: GitHub Pages
+### Option C: GitHub Pages (Not Recommended for This App)
 
-1. **Push to GitHub**:
-   ```bash
-   git add .
-   git commit -m "Add PWA support and deployment configuration"
-   git push origin main
-   ```
+**⚠️ Limitation**: GitHub Pages doesn't support build-time environment variables or Convex code generation, making it unsuitable for this app. Use Vercel or Netlify instead.
 
-2. **Enable GitHub Pages**:
-   - Go to repository Settings → Pages
-   - Source: Deploy from branch
-   - Branch: main, folder: /dist
-   - Save
+If you still want to try GitHub Pages:
+1. Must generate Convex types locally: `npx convex dev`
+2. Must build with environment variables baked in
+3. Cannot update environment variables without rebuilding and redeploying
+4. Much more complex workflow compared to Vercel/Netlify
 
-3. **Note**: GitHub Pages doesn't support environment variables. You'll need to build locally with your environment variables, then push the dist folder.
+**Recommendation**: Use Vercel (Option A) for the best experience.
 
 ---
 
