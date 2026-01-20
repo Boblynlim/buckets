@@ -80,7 +80,9 @@ yarn-error.log
 
 # Convex
 .convex/
-convex/_generated/
+# Temporarily allowing _generated for Vercel builds
+# TODO: Set up CONVEX_DEPLOY_KEY in Vercel for proper builds
+# convex/_generated/
 
 # Web build
 dist/
