@@ -44,6 +44,8 @@ export const create = mutation({
       plannedAmount: args.plannedAmount,
       plannedPercent: args.plannedPercent,
       fundedAmount: 0,
+      carryoverBalance: 0,
+      lastRolloverDate: Date.now(),
       targetAmount: args.targetAmount,
       currentBalance: 0,
       contributionType: args.contributionType,

@@ -1,5 +1,5 @@
 // Service Worker for Buckets PWA
-const CACHE_VERSION = 'buckets-v2';
+const CACHE_VERSION = 'buckets-v3';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 
@@ -8,7 +8,9 @@ const STATIC_ASSETS = [
   '/',
   '/index.html',
   '/manifest.json',
-  '/icons/shrimp-logo.jpg',
+  '/icons/icon-180x180.png',
+  '/icons/icon-192x192.png',
+  '/icons/icon-512x512.png',
   '/fonts/BBBDMSans-Regular.woff2',
   '/fonts/BBBDMSans-Medium.woff2',
   '/fonts/BBBDMSans-Bold.woff2',

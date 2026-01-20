@@ -82,25 +82,32 @@ export const BucketsOverview: React.FC = () => {
           // Calculate percent used - handle rollovers correctly
           const spent = Math.max(
             0,
-            bucket.allocationValue - bucket.currentBalance,
+            (bucket.allocationValue || 0) - (bucket.currentBalance || 0),
           );
           const percentUsed =
-            bucket.allocationValue > 0
-              ? (spent / bucket.allocationValue) * 100
+            (bucket.allocationValue || 0) > 0
+              ? (spent / (bucket.allocationValue || 0)) * 100
               : 0;
-          return percentUsed >= bucket.alertThreshold;
+          // Only show as low balance if there's actual spending AND it exceeds threshold
+          return percentUsed > 0 && percentUsed >= (bucket.alertThreshold || 75);
         });
 
   const lowBalanceCount = allBuckets.filter(bucket => {
     // Calculate percent used - handle rollovers correctly
-    const spent = Math.max(0, bucket.allocationValue - bucket.currentBalance);
+    const spent = Math.max(
+      0,
+      (bucket.allocationValue || 0) - (bucket.currentBalance || 0),
+    );
     const percentUsed =
-      bucket.allocationValue > 0 ? (spent / bucket.allocationValue) * 100 : 0;
-    return percentUsed >= bucket.alertThreshold;
+      (bucket.allocationValue || 0) > 0
+        ? (spent / (bucket.allocationValue || 0)) * 100
+        : 0;
+    // Only count as low balance if there's actual spending AND it exceeds threshold
+    return percentUsed > 0 && percentUsed >= (bucket.alertThreshold || 75);
   }).length;
 
   const totalBalance = allBuckets.reduce(
-    (sum, bucket) => sum + bucket.currentBalance,
+    (sum, bucket) => sum + (bucket.currentBalance || 0),
     0,
   );
 
@@ -110,11 +117,9 @@ export const BucketsOverview: React.FC = () => {
     } else {
       // Web version - show alert for now
       alert(
-        `Bucket Detail for ${
-          bucket.name
-        }\nBalance: $${bucket.currentBalance.toFixed(
-          2,
-        )}\n\n(Full navigation coming soon for web!)`,
+        `Bucket Detail for ${bucket.name}\nBalance: $${(
+          bucket.currentBalance || 0
+        ).toFixed(2)}\n\n(Full navigation coming soon for web!)`,
       );
     }
   };
@@ -230,7 +235,7 @@ const styles = StyleSheet.create({
   header: {
     paddingHorizontal: 20,
     paddingTop: 8,
-    paddingBottom: 0,
+    paddingBottom: 8,
     backgroundColor: theme.colors.background,
   },
   titleRow: {
@@ -253,9 +258,10 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     gap: 24,
+    paddingBottom: 16,
   },
   tabText: {
-    fontSize: 17,
+    fontSize: 14,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
@@ -264,7 +270,7 @@ const styles = StyleSheet.create({
     fontFamily: getFontFamily('bold'),
   },
   tabCount: {
-    fontSize: 17,
+    fontSize: 12,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
@@ -273,7 +279,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 20,
-    paddingBottom: 120,
+    paddingBottom: 150,
   },
   emptyState: {
     padding: 60,
@@ -320,6 +326,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant, monospace',
   },
 });

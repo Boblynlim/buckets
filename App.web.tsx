@@ -19,13 +19,14 @@ import { AddBucket } from './src/screens/AddBucket';
 import { AddExpense } from './src/screens/AddExpense';
 import { ChatScreen } from './src/screens/ChatScreen';
 import { Settings } from './src/screens/Settings';
+import { Reports } from './src/screens/Reports';
 import { IncomeManagement } from './src/screens/IncomeManagement';
 import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
-type Screen = 'buckets' | 'chat' | 'settings';
+type Screen = 'buckets' | 'chat' | 'settings' | 'reports';
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('buckets');
@@ -36,6 +37,7 @@ function App() {
   const [selectedBucket, setSelectedBucket] = useState<Bucket | null>(null);
   const [showEditExpense, setShowEditExpense] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<{expense: Expense; bucket: Bucket} | null>(null);
+  const [isReportSelected, setIsReportSelected] = useState(false);
 
   // Register service worker for PWA functionality
   useEffect(() => {
@@ -77,8 +79,11 @@ function App() {
             onAddBucket={() => setShowAddBucket(true)}
             onEditBucket={handleEditBucket}
             onSetIncome={() => setShowIncomeManagement(true)}
+            onNavigateToReports={() => setCurrentScreen('reports')}
           />
         );
+      case 'reports':
+        return <Reports onReportSelected={setIsReportSelected} />;
       default:
         return (
           <BucketsOverview
@@ -95,7 +100,8 @@ function App() {
         <View style={styles.content}>{renderScreen()}</View>
 
         {/* Bottom Navigation - Left pill with icons only */}
-        <View style={styles.navContainer}>
+        {!isReportSelected && (
+          <View style={styles.navContainer}>
           <View style={styles.tabBar}>
             <TouchableOpacity
               style={styles.tab}
@@ -181,25 +187,32 @@ function App() {
             </TouchableOpacity>
           </View>
         </View>
+        )}
 
         {/* Add Bucket Modal */}
-        <AddBucket
-          visible={showAddBucket}
-          onClose={() => setShowAddBucket(false)}
-          onSave={handleSaveBucket}
-        />
+        {showAddBucket && (
+          <AddBucket
+            visible={showAddBucket}
+            onClose={() => setShowAddBucket(false)}
+            onSave={handleSaveBucket}
+          />
+        )}
 
         {/* Add Expense Modal */}
-        <AddExpense
-          visible={showAddExpense}
-          onClose={() => setShowAddExpense(false)}
-        />
+        {showAddExpense && (
+          <AddExpense
+            visible={showAddExpense}
+            onClose={() => setShowAddExpense(false)}
+          />
+        )}
 
         {/* Income Management Modal */}
-        <IncomeManagement
-          visible={showIncomeManagement}
-          onClose={() => setShowIncomeManagement(false)}
-        />
+        {showIncomeManagement && (
+          <IncomeManagement
+            visible={showIncomeManagement}
+            onClose={() => setShowIncomeManagement(false)}
+          />
+        )}
 
         {/* Edit Bucket Modal */}
         {selectedBucket && (
@@ -238,7 +251,6 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     position: 'relative' as any,
-    minHeight: '100vh' as any,
   },
   navContainer: {
     position: 'fixed' as any,

@@ -16,7 +16,9 @@ export default defineSchema({
     allocationType: v.optional(v.union(v.literal("amount"), v.literal("percentage"))),
     plannedAmount: v.optional(v.number()), // Fixed dollar amount planned
     plannedPercent: v.optional(v.number()), // Percentage of income planned
-    fundedAmount: v.optional(v.number()), // Actually funded from income
+    fundedAmount: v.optional(v.number()), // Actually funded from income (this month's allocation)
+    carryoverBalance: v.optional(v.number()), // Balance carried forward from previous months
+    lastRolloverDate: v.optional(v.number()), // Last time rollover was performed
 
     // For save buckets
     targetAmount: v.optional(v.number()), // Savings goal

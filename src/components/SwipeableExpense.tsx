@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     width: 100,
   },
   deleteButton: {
-    backgroundColor: theme.colors.error,
+    backgroundColor: theme.colors.danger,
     height: '100%',
     width: 80,
     justifyContent: 'center',

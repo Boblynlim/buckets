@@ -18,11 +18,14 @@ import { getFontFamily } from '../theme/fonts';
 import { DatePicker } from '../components/DatePicker';
 
 interface AddExpenseProps {
-  visible: boolean;
-  onClose: () => void;
+  visible?: boolean;
+  onClose?: () => void;
 }
 
-export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
+export const AddExpense: React.FC<AddExpenseProps> = ({
+  visible = true,
+  onClose,
+}) => {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [happinessRating, setHappinessRating] = useState(3);
@@ -60,8 +63,11 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
     }
     // Update selected bucket if it exists in the new buckets list
     if (selectedBucket && allBuckets.length > 0) {
-      const updatedBucket = allBuckets.find(b => b._id === selectedBucket._id);
-      if (updatedBucket && updatedBucket.currentBalance !== selectedBucket.currentBalance) {
+      const updatedBucket = allBuckets.find((b: any) => b._id === selectedBucket._id);
+      if (
+        updatedBucket &&
+        updatedBucket.currentBalance !== selectedBucket.currentBalance
+      ) {
         console.log('Bucket balance updated:', {
           bucketName: updatedBucket.name,
           oldBalance: selectedBucket.currentBalance,
@@ -125,16 +131,37 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
       setDate(new Date());
 
       // Close modal
-      onClose();
+      if (onClose) {
+        onClose();
+      }
     } catch (error: any) {
       console.error('Failed to create expense:', error);
       alert(error.message || 'Failed to add expense. Please try again.');
     }
   };
 
+  // Helper function to calculate available balance based on bucket mode
+  const getAvailableBalance = (bucket: any) => {
+    if (!bucket) return 0;
+
+    if (bucket.bucketMode === 'spend') {
+      // For spend buckets: (funded + carryover) - spent
+      const funded = bucket.fundedAmount || 0;
+      const carryover = bucket.carryoverBalance || 0;
+      const spent = bucket.spentAmount || 0;
+      return (funded + carryover) - spent; // Can be negative if overspent
+    } else {
+      // For save buckets: current balance
+      return bucket.currentBalance || 0;
+    }
+  };
+
   const amountValue = parseFloat(amount) || 0;
-  const hasInsufficientBalance = selectedBucket && amountValue > selectedBucket.currentBalance;
-  const isValid = amount && amountValue > 0 && selectedBucket && !hasInsufficientBalance;
+  const availableBalance = selectedBucket ? getAvailableBalance(selectedBucket) : 0;
+  const hasInsufficientBalance =
+    selectedBucket && amountValue > availableBalance;
+  const isValid =
+    amount && amountValue > 0 && selectedBucket && !hasInsufficientBalance;
 
   const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
   const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
@@ -198,6 +225,16 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
             </TouchableOpacity>
           </View>
 
+          {/* Info message if no buckets are funded */}
+          {allBuckets.every((b: any) => getAvailableBalance(b) === 0) && (
+            <View style={styles.infoBox}>
+              <Text style={styles.infoText}>
+                💡 Your buckets aren't funded yet!
+                {'\n\n'}Go to Settings → Set Income and add your recurring monthly income to automatically fund your buckets.
+              </Text>
+            </View>
+          )}
+
           {/* Amount Input */}
           <View style={styles.section}>
             <Text style={styles.label}>Amount</Text>
@@ -209,7 +246,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
                 onChangeText={setAmount}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
-                placeholderTextColor="#C7C7CC"
+                placeholderTextColor="#B5AFA5"
               />
             </View>
           </View>
@@ -225,16 +262,20 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
                 <View
                   style={[
                     styles.bucketColorDot,
-                    { backgroundColor: selectedBucket?.color || theme.colors.primary },
+                    {
+                      backgroundColor:
+                        selectedBucket?.color || theme.colors.primary,
+                    },
                   ]}
                 />
-                <View style={{flex: 1}}>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.bucketSelectorText}>
                     {selectedBucket?.name || 'Select a bucket'}
                   </Text>
                   {selectedBucket && (
                     <Text style={styles.bucketBalanceHint}>
-                      ${selectedBucket.currentBalance.toFixed(2)} available
+                      ${availableBalance.toFixed(2)}{' '}
+                      available
                     </Text>
                   )}
                 </View>
@@ -245,7 +286,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
             {/* Bucket Picker */}
             {showBucketPicker && (
               <View style={styles.bucketPicker}>
-                {allBuckets.map(bucket => (
+                {allBuckets.map((bucket: any) => (
                   <TouchableOpacity
                     key={bucket._id}
                     style={[
@@ -264,10 +305,10 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
                         { backgroundColor: bucket.color },
                       ]}
                     />
-                    <View style={{flex: 1}}>
+                    <View style={{ flex: 1 }}>
                       <Text style={styles.bucketOptionText}>{bucket.name}</Text>
                       <Text style={styles.bucketBalance}>
-                        ${bucket.currentBalance.toFixed(2)} available
+                        ${getAvailableBalance(bucket).toFixed(2)} available
                       </Text>
                     </View>
                     {selectedBucket?._id === bucket._id && (
@@ -282,8 +323,18 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
             {hasInsufficientBalance && (
               <View style={styles.warningBox}>
                 <Text style={styles.warningText}>
-                  ⚠️ Insufficient balance! This bucket only has ${selectedBucket.currentBalance.toFixed(2)} available.
-                  {'\n'}Add income to your buckets in Settings.
+                  {availableBalance === 0 && selectedBucket.bucketMode === 'spend' ? (
+                    <>
+                      💡 This bucket isn't funded yet!
+                      {'\n'}Add recurring income in Settings to automatically fund your buckets.
+                    </>
+                  ) : (
+                    <>
+                      ⚠️ Insufficient balance! This bucket only has $
+                      {availableBalance.toFixed(2)} available.
+                      {'\n'}Add more income or reduce the expense amount.
+                    </>
+                  )}
                 </Text>
               </View>
             )}
@@ -297,7 +348,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
               value={note}
               onChangeText={setNote}
               placeholder="What did you buy?"
-              placeholderTextColor="#C7C7CC"
+              placeholderTextColor="#B5AFA5"
               multiline
             />
           </View>
@@ -363,7 +414,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({ visible, onClose }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F3F0',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -372,76 +423,79 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E4DF',
   },
   title: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.text,
+    fontSize: 18,
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '500',
+    color: '#1A1A1A',
+    letterSpacing: -0.3,
   },
   cancelButton: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.primary,
     fontFamily: getFontFamily('regular'),
   },
   saveButton: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.primary,
     fontFamily: getFontFamily('bold'),
   },
   saveButtonDisabled: {
-    color: theme.colors.textTertiary,
+    color: '#B5AFA5',
   },
   section: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    backgroundColor: '#FDFCFB',
-    borderRadius: 20,
-    padding: 18,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 8,
   },
   label: {
-    fontSize: 14,
+    fontSize: 11,
     fontFamily: getFontFamily('bold'),
-    color: '#8A8478',
-    marginBottom: 12,
+    color: '#877E6F',
+    marginBottom: 16,
     textTransform: 'uppercase',
-    letterSpacing: 0.5,
+    letterSpacing: 1.2,
   },
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAF8',
     borderRadius: 12,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   currencySymbol: {
-    fontSize: 20,
+    fontSize: 28,
     fontWeight: '400',
-    color: '#8A8478',
+    color: '#877E6F',
     fontFamily: 'Merchant Copy, monospace',
-    marginRight: 8,
+    marginRight: 12,
   },
   amountInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 28,
     fontWeight: '400',
-    color: '#2D2D2D',
+    color: '#1A1A1A',
     fontFamily: 'Merchant Copy, monospace',
-    paddingVertical: 12,
-    minHeight: 20,
-    lineHeight: 20,
+    paddingVertical: 16,
   },
   bucketSelector: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#FAFAF8',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   bucketSelectorContent: {
     flexDirection: 'row',
@@ -454,108 +508,124 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   bucketSelectorText: {
-    fontSize: 14,
-    color: '#2D2D2D',
+    fontSize: 17,
+    color: '#1A1A1A',
     fontFamily: getFontFamily('regular'),
   },
   bucketBalanceHint: {
-    fontSize: 20,
-    color: '#8A8478',
+    fontSize: 14,
+    color: '#877E6F',
     fontFamily: 'Merchant Copy, monospace',
-    marginTop: 2,
+    marginTop: 4,
   },
   chevron: {
-    fontSize: 20,
-    color: '#C4BCAE',
+    fontSize: 24,
+    color: '#D5CFBF',
+    fontWeight: '300',
   },
   bucketPicker: {
-    marginTop: 8,
+    marginTop: 16,
     borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#FAFAF8',
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   bucketOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#F3F4F6',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E4DF',
   },
   bucketOptionSelected: {
-    backgroundColor: '#EDEDFF',
+    backgroundColor: theme.colors.primary + '10',
   },
   bucketOptionText: {
-    fontSize: 14,
-    color: '#2D2D2D',
+    fontSize: 17,
+    color: '#1A1A1A',
     fontFamily: getFontFamily('regular'),
   },
   bucketBalance: {
-    fontSize: 20,
-    color: '#8A8478',
+    fontSize: 14,
+    color: '#877E6F',
     fontFamily: 'Merchant Copy, monospace',
-    marginTop: 2,
+    marginTop: 4,
   },
   checkmark: {
-    fontSize: 18,
+    fontSize: 20,
     color: '#4747FF',
-    fontWeight: '500',
+    fontWeight: '600',
   },
   noteInput: {
-    fontSize: 14,
-    color: '#2D2D2D',
+    fontSize: 17,
+    color: '#1A1A1A',
     fontFamily: getFontFamily('regular'),
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#FAFAF8',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: 12,
-    minHeight: 80,
+    minHeight: 100,
     textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   ratingContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: 6,
+    gap: 8,
   },
   ratingButton: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     borderRadius: 12,
-    backgroundColor: '#FFFFFF',
-    minHeight: 80,
+    backgroundColor: '#FAFAF8',
+    minHeight: 90,
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   ratingButtonSelected: {
     backgroundColor: '#4747FF',
+    borderColor: '#4747FF',
+    shadowColor: '#4747FF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   ratingEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
-    lineHeight: 32,
+    fontSize: 32,
+    marginBottom: 6,
+    lineHeight: 36,
     textAlign: 'center',
   },
   ratingLabel: {
-    fontSize: 12,
-    color: '#8A8478',
+    fontSize: 13,
+    color: '#877E6F',
     fontWeight: '500',
     fontFamily: getFontFamily('regular'),
+    letterSpacing: -0.2,
   },
   ratingLabelSelected: {
     color: '#FFFFFF',
+    fontWeight: '600',
   },
   dateDisplay: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    backgroundColor: '#FAFAF8',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
     borderRadius: 12,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
   },
   dateText: {
-    fontSize: 20,
-    color: '#2D2D2D',
+    fontSize: 17,
+    color: '#1A1A1A',
     fontFamily: 'Merchant Copy, monospace',
   },
   modalOverlay: {
@@ -572,7 +642,7 @@ const styles = StyleSheet.create({
     maxWidth: 340,
   },
   datePickerTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
     marginBottom: 20,
@@ -597,7 +667,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   dateOptionSubtext: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.textSecondary,
   },
@@ -615,7 +685,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 12,
     borderRadius: 12,
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.text,
   },
@@ -655,7 +725,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: '#8A8478',
+    color: theme.colors.textSecondary,
     fontFamily: 'Merchant, monospace',
   },
   emptyContainer: {
@@ -677,17 +747,35 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant, monospace',
     textAlign: 'center',
   },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 20,
+    marginHorizontal: 24,
+    marginTop: 20,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#90CAF9',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1565C0',
+    fontFamily: getFontFamily('regular'),
+    lineHeight: 22,
+  },
   warningBox: {
     backgroundColor: '#FFF3CD',
     borderRadius: 12,
-    padding: 12,
-    marginTop: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#FFE5A3',
   },
   warningText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#856404',
     fontFamily: getFontFamily('regular'),
-    lineHeight: 18,
+    lineHeight: 21,
   },
   iosPickerContainer: {
     position: 'absolute',

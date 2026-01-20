@@ -17,7 +17,9 @@ export interface Bucket {
   allocationType?: AllocationType;
   plannedAmount?: number;
   plannedPercent?: number;
-  fundedAmount?: number;
+  fundedAmount?: number; // This month's allocation
+  carryoverBalance?: number; // Balance carried forward from previous months
+  lastRolloverDate?: number; // Timestamp of last rollover
   spentAmount?: number; // Computed field from backend
 
   // For save buckets

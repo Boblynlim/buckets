@@ -95,7 +95,11 @@ export const Insights: React.FC = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Spending Recommendations */}
         {activeTab === 'recommendations' && (
           <View style={styles.content}>
@@ -249,8 +253,6 @@ export const Insights: React.FC = () => {
             )}
           </View>
         )}
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -260,6 +262,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
+    maxHeight: '100vh' as any,
   },
   header: {
     paddingHorizontal: 20,
@@ -279,14 +282,15 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 48,
-    fontFamily: getFontFamily('bold'),
+    fontWeight: '500',
     color: theme.colors.text,
+    fontFamily: 'Merchant, monospace',
     letterSpacing: -1.2,
   },
   tabsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    gap: 8,
+    gap: 12,
     marginBottom: 20,
   },
   tab: {
@@ -294,24 +298,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    backgroundColor: theme.colors.backgroundLight,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    backgroundColor: 'transparent',
   },
   tabActive: {
     backgroundColor: theme.colors.purple100,
   },
   tabText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 15,
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '400',
     color: theme.colors.textSecondary,
   },
   tabTextActive: {
-    fontFamily: getFontFamily('bold'),
+    fontWeight: '500',
     color: theme.colors.primary,
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 200,
   },
   content: {
     paddingHorizontal: 20,
@@ -323,7 +331,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sectionDescription: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     marginBottom: 20,
@@ -348,12 +356,12 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statLabel: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
   statValue: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.text,
   },
@@ -387,7 +395,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   emergencyDescription: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
@@ -398,7 +406,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   infoText: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.text,
     marginBottom: 4,
@@ -424,7 +432,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   needsWantsLabel: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.textSecondary,
     textTransform: 'uppercase',
@@ -480,7 +488,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 15,
+    fontSize: 18,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     textAlign: 'center',
@@ -494,6 +502,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant, monospace',
   },
 });

@@ -10,6 +10,8 @@ import {
   Modal,
   Pressable,
 } from 'react-native';
+// Navigation imports handled conditionally below
+import type { RouteProp } from '@react-navigation/native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
@@ -17,19 +19,37 @@ import { getFontFamily } from '../theme/fonts';
 import type { Expense, Bucket } from '../types';
 import { DatePicker } from '../components/DatePicker';
 
+type EditExpenseRouteProp = RouteProp<{ EditExpense: { expense: Expense; bucket: Bucket } }, 'EditExpense'>;
+
 interface EditExpenseProps {
   visible?: boolean;
-  expense: Expense;
-  bucket: Bucket;
+  expense?: Expense;
+  bucket?: Bucket;
   onClose?: () => void;
 }
 
-export const EditExpense: React.FC<EditExpenseProps> = ({
-  visible = true,
-  expense,
-  bucket,
-  onClose,
-}) => {
+export const EditExpense: React.FC<EditExpenseProps> = (props) => {
+  // Safely get navigation (will be null on web)
+  let route: any = null;
+  let navigation: any = null;
+
+  try {
+    const { useRoute, useNavigation } = require('@react-navigation/native');
+    route = useRoute<EditExpenseRouteProp>();
+    navigation = useNavigation();
+  } catch (error) {
+    // Not in navigation context (web) - use props instead
+  }
+
+  // Support both prop-based (web/modal) and route-based (mobile navigation) usage
+  const expense = props.expense || route?.params?.expense;
+  const bucket = props.bucket || route?.params?.bucket;
+  const visible = props.visible !== undefined ? props.visible : true;
+  const onClose = props.onClose || (() => navigation?.goBack());
+
+  if (!expense || !bucket) {
+    return null;
+  }
 
   const [amount, setAmount] = useState(expense.amount.toString());
   const [note, setNote] = useState(expense.note);
@@ -51,6 +71,22 @@ export const EditExpense: React.FC<EditExpenseProps> = ({
   const allBuckets = buckets || [];
   const [selectedBucket, setSelectedBucket] = useState(bucket);
 
+  // Helper function to calculate available balance based on bucket mode
+  const getAvailableBalance = (bucket: any) => {
+    if (!bucket) return 0;
+
+    if (bucket.bucketMode === 'spend') {
+      // For spend buckets: (funded + carryover) - spent
+      const funded = bucket.fundedAmount || 0;
+      const carryover = bucket.carryoverBalance || 0;
+      const spent = bucket.spentAmount || 0;
+      return (funded + carryover) - spent; // Can be negative if overspent
+    } else {
+      // For save buckets: current balance
+      return bucket.currentBalance || 0;
+    }
+  };
+
   const isValid = amount && parseFloat(amount) > 0;
   const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
   const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
@@ -68,10 +104,11 @@ export const EditExpense: React.FC<EditExpenseProps> = ({
     if (selectedBucket._id !== bucket._id || amountDiff > 0) {
       const targetBucket = selectedBucket._id !== bucket._id ? selectedBucket : bucket;
       const requiredBalance = selectedBucket._id !== bucket._id ? newAmount : amountDiff;
+      const availableBalance = getAvailableBalance(targetBucket);
 
-      if (targetBucket.currentBalance < requiredBalance) {
+      if (availableBalance < requiredBalance) {
         alert(
-          `Insufficient balance in ${targetBucket.name}.\nAvailable: $${targetBucket.currentBalance.toFixed(2)}\nRequired: $${requiredBalance.toFixed(2)}`
+          `Insufficient balance in ${targetBucket.name}.\nAvailable: $${availableBalance.toFixed(2)}\nRequired: $${requiredBalance.toFixed(2)}`
         );
         return;
       }
@@ -79,8 +116,8 @@ export const EditExpense: React.FC<EditExpenseProps> = ({
 
     try {
       await updateExpense({
-        expenseId: expense._id,
-        bucketId: selectedBucket._id,
+        expenseId: expense._id as any,
+        bucketId: selectedBucket._id as any,
         amount: newAmount,
         date: date.getTime(),
         note: note.trim(),
@@ -107,7 +144,7 @@ export const EditExpense: React.FC<EditExpenseProps> = ({
     setShowDeleteConfirm(false);
 
     try {
-      await removeExpense({ expenseId: expense._id });
+      await removeExpense({ expenseId: expense._id as any });
 
       alert('Expense deleted successfully!\nBalance refunded to bucket.');
 
@@ -211,7 +248,7 @@ export const EditExpense: React.FC<EditExpenseProps> = ({
                   />
                   <Text style={styles.bucketOptionText}>{b.name}</Text>
                   <Text style={styles.bucketBalance}>
-                    ${b.currentBalance.toFixed(2)}
+                    ${(b.currentBalance || 0).toFixed(2)}
                   </Text>
                   {selectedBucket._id === b._id && (
                     <Text style={styles.checkmark}>✓</Text>
@@ -387,7 +424,7 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.textSecondary,
     marginBottom: 12,
@@ -402,7 +439,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -410,12 +447,12 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',
     paddingVertical: 12,
-    minHeight: 20,
+    minHeight: 24,
   },
   bucketSelector: {
     flexDirection: 'row',
@@ -437,7 +474,7 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   bucketSelectorText: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
   },
@@ -464,12 +501,12 @@ const styles = StyleSheet.create({
   },
   bucketOptionText: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
   },
   bucketBalance: {
-    fontSize: 20,
+    fontSize: 16,
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
     marginRight: 8,
@@ -480,7 +517,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   noteInput: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
     backgroundColor: theme.colors.cardBackground,
@@ -578,19 +615,19 @@ const styles = StyleSheet.create({
     maxWidth: 340,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
     marginBottom: 12,
     textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   modalButtons: {
     flexDirection: 'row',
@@ -628,12 +665,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dateText: {
-    fontSize: 20,
+    fontSize: 16,
     color: '#2D2D2D',
     fontFamily: 'Merchant Copy, monospace',
-  },
-  chevron: {
-    fontSize: 20,
-    color: '#C4BCAE',
   },
 });

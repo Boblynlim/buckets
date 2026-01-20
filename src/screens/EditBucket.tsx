@@ -9,23 +9,43 @@ import {
   ScrollView,
   Modal,
 } from 'react-native';
+// Navigation imports handled conditionally below
+import type { RouteProp } from '@react-navigation/native';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
 
+type EditBucketRouteProp = RouteProp<{ EditBucket: { bucket: Bucket } }, 'EditBucket'>;
+
 interface EditBucketProps {
   visible?: boolean;
-  bucket: Bucket;
+  bucket?: Bucket;
   onClose?: () => void;
 }
 
-export const EditBucket: React.FC<EditBucketProps> = ({
-  visible = true,
-  bucket,
-  onClose,
-}) => {
+export const EditBucket: React.FC<EditBucketProps> = (props) => {
+  // Safely get navigation (will be null on web)
+  let route: any = null;
+  let navigation: any = null;
+
+  try {
+    const { useRoute, useNavigation } = require('@react-navigation/native');
+    route = useRoute<EditBucketRouteProp>();
+    navigation = useNavigation();
+  } catch (error) {
+    // Not in navigation context (web) - use props instead
+  }
+
+  // Support both prop-based (web/modal) and route-based (mobile navigation) usage
+  const bucket = props.bucket || route?.params?.bucket;
+  const visible = props.visible !== undefined ? props.visible : true;
+  const onClose = props.onClose || (() => navigation?.goBack());
+
+  if (!bucket) {
+    return null;
+  }
 
   const bucketMode = bucket.bucketMode || 'spend'; // Default to spend for legacy buckets
   const [name, setName] = useState(bucket.name);
@@ -68,7 +88,7 @@ export const EditBucket: React.FC<EditBucketProps> = ({
 
     try {
       const baseParams = {
-        bucketId: bucket._id,
+        bucketId: bucket._id as any,
         name: name.trim(),
         bucketMode,
         alertThreshold: parseFloat(alertThreshold),
@@ -115,7 +135,7 @@ export const EditBucket: React.FC<EditBucketProps> = ({
     setShowDeleteConfirm(false);
 
     try {
-      await removeBucket({ bucketId: bucket._id });
+      await removeBucket({ bucketId: bucket._id as any });
 
       alert(`Bucket "${bucket.name}" deleted successfully`);
 
@@ -280,7 +300,7 @@ export const EditBucket: React.FC<EditBucketProps> = ({
         {/* Current Balance Info */}
         <View style={styles.infoSection}>
           <Text style={styles.infoLabel}>Current Balance</Text>
-          <Text style={styles.infoValue}>${bucket.currentBalance.toFixed(2)}</Text>
+          <Text style={styles.infoValue}>${(bucket.currentBalance || 0).toFixed(2)}</Text>
         </View>
 
         {/* Delete Button */}
@@ -307,7 +327,7 @@ export const EditBucket: React.FC<EditBucketProps> = ({
             <Text style={styles.modalTitle}>Delete Bucket?</Text>
             <Text style={styles.modalMessage}>
               Are you sure you want to delete "{bucket.name}"?
-              {bucket.currentBalance > 0 && ` This bucket has $${bucket.currentBalance.toFixed(2)} remaining.`}
+              {(bucket.currentBalance || 0) > 0 && ` This bucket has $${(bucket.currentBalance || 0).toFixed(2)} remaining.`}
               {' '}This cannot be undone.
             </Text>
             <View style={styles.modalButtons}>
@@ -388,7 +408,7 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.textSecondary,
     marginBottom: 12,
@@ -396,7 +416,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   input: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
     backgroundColor: theme.colors.cardBackground,
@@ -438,7 +458,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -446,21 +466,21 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',
     paddingVertical: 12,
-    minHeight: 20,
+    minHeight: 24,
   },
   hint: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontFamily: getFontFamily('regular'),
     marginTop: 8,
   },
   helperText: {
-    fontSize: 14,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontFamily: getFontFamily('regular'),
     marginTop: 8,
@@ -492,7 +512,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   infoValue: {
-    fontSize: 20,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.primary,
   },
@@ -532,19 +552,19 @@ const styles = StyleSheet.create({
     maxWidth: 340,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
     marginBottom: 12,
     textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 14,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
-    lineHeight: 20,
+    lineHeight: 22,
   },
   modalButtons: {
     flexDirection: 'row',

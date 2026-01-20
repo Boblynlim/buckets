@@ -15,7 +15,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { BucketCard } from '../components/BucketCard';
 import { AddBucket } from './AddBucket';
-import { BucketDetail } from './BucketDetail.web';
+import { BucketDetail } from './BucketDetail';
 import type { Bucket, Expense } from '../types';
 import { format } from 'date-fns';
 import { theme } from '../theme';
@@ -66,16 +66,30 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   );
 
   // Get monthly total spent (source of truth: transactions)
-  const monthStart = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).getTime();
-  const monthEnd = new Date(selectedMonth.getFullYear(), selectedMonth.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+  const monthStart = new Date(
+    selectedMonth.getFullYear(),
+    selectedMonth.getMonth(),
+    1,
+  ).getTime();
+  const monthEnd = new Date(
+    selectedMonth.getFullYear(),
+    selectedMonth.getMonth() + 1,
+    0,
+    23,
+    59,
+    59,
+    999,
+  ).getTime();
 
   const monthlySpending = useQuery(
     api.analytics.getMonthlyTotalSpent,
-    currentUser ? {
-      userId: currentUser._id,
-      monthStart,
-      monthEnd,
-    } : 'skip',
+    currentUser
+      ? {
+          userId: currentUser._id,
+          monthStart,
+          monthEnd,
+        }
+      : 'skip',
   );
 
   // Initialize demo user if needed (when query completes and returns null)
@@ -102,25 +116,51 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     activeTab === 'all'
       ? allBuckets
       : allBuckets.filter((bucket: Bucket) => {
-          // Calculate percent used - handle rollovers correctly
-          const spent = Math.max(0, bucket.allocationValue - bucket.currentBalance);
-          const percentUsed = bucket.allocationValue > 0
-            ? (spent / bucket.allocationValue) * 100
-            : 0;
-          return percentUsed >= bucket.alertThreshold;
+          const isSpendBucket = bucket.bucketMode === 'spend' || !bucket.bucketMode;
+          let percentUsed = 0;
+
+          if (isSpendBucket) {
+            // For spend buckets: calculate based on new rollover system
+            const spent = bucket.spentAmount || 0;
+            const funded = bucket.fundedAmount || 0;
+            const carryover = bucket.carryoverBalance || 0;
+            const total = funded + carryover;
+            percentUsed = total > 0 ? (spent / total) * 100 : 0;
+          } else {
+            // For save buckets: calculate progress toward goal
+            const current = bucket.currentBalance || 0;
+            const target = bucket.targetAmount || 0;
+            percentUsed = target > 0 ? (current / target) * 100 : 0;
+          }
+
+          // Only show as low balance if it exceeds threshold
+          return percentUsed >= (bucket.alertThreshold || 75);
         });
 
   const lowBalanceCount = allBuckets.filter((bucket: Bucket) => {
-    // Calculate percent used - handle rollovers correctly
-    const spent = Math.max(0, bucket.allocationValue - bucket.currentBalance);
-    const percentUsed = bucket.allocationValue > 0
-      ? (spent / bucket.allocationValue) * 100
-      : 0;
-    return percentUsed >= bucket.alertThreshold;
+    const isSpendBucket = bucket.bucketMode === 'spend' || !bucket.bucketMode;
+    let percentUsed = 0;
+
+    if (isSpendBucket) {
+      // For spend buckets: calculate based on new rollover system
+      const spent = bucket.spentAmount || 0;
+      const funded = bucket.fundedAmount || 0;
+      const carryover = bucket.carryoverBalance || 0;
+      const total = funded + carryover;
+      percentUsed = total > 0 ? (spent / total) * 100 : 0;
+    } else {
+      // For save buckets: calculate progress toward goal
+      const current = bucket.currentBalance || 0;
+      const target = bucket.targetAmount || 0;
+      percentUsed = target > 0 ? (current / target) * 100 : 0;
+    }
+
+    // Only count as low balance if it exceeds threshold
+    return percentUsed >= (bucket.alertThreshold || 75);
   }).length;
 
   const totalBalance = allBuckets.reduce(
-    (sum: number, bucket: Bucket) => sum + bucket.currentBalance,
+    (sum: number, bucket: Bucket) => sum + (bucket.currentBalance || 0),
     0,
   );
 
@@ -252,6 +292,24 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
       >
+        {/* Info message if no buckets are funded */}
+        {allBuckets.length > 0 &&
+         allBuckets.every((b: Bucket) => {
+           if (b.bucketMode === 'spend') {
+             const funded = b.fundedAmount || 0;
+             const spent = b.spentAmount || 0;
+             return (funded - spent) === 0;
+           }
+           return (b.currentBalance || 0) === 0;
+         }) && (
+          <View style={styles.infoBox}>
+            <Text style={styles.infoText}>
+              💡 Get started by adding income!
+              {'\n\n'}Go to Settings → Set Income and add your recurring monthly income to automatically fund your buckets.
+            </Text>
+          </View>
+        )}
+
         {filteredBuckets.map((bucket: Bucket) => (
           <BucketCard
             key={bucket._id}
@@ -340,8 +398,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
-    overflow: 'hidden' as any,
-    height: '100vh' as any,
+    maxHeight: '100vh' as any,
   },
   header: {
     paddingHorizontal: 20,
@@ -405,7 +462,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   totalSpentAmount: {
-    fontSize: 40,
+    fontSize: 28,
     fontWeight: '400',
     color: '#FFFFFF',
     fontFamily: 'Merchant Copy, monospace',
@@ -414,7 +471,7 @@ const styles = StyleSheet.create({
   tabsContainer: {
     flexDirection: 'row',
     gap: 12,
-    paddingBottom: 0,
+    paddingBottom: 16,
   },
   tabPill: {
     paddingVertical: 8,
@@ -466,7 +523,22 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingTop: 20,
-    paddingBottom: 120,
+    paddingBottom: 150,
+  },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 16,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: '#90CAF9',
+  },
+  infoText: {
+    fontSize: 15,
+    color: '#1565C0',
+    fontFamily: 'Merchant Copy, monospace',
+    lineHeight: 22,
   },
   emptyState: {
     padding: 60,

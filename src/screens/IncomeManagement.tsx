@@ -308,7 +308,7 @@ const styles = StyleSheet.create({
     padding: 18,
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.textSecondary,
     marginBottom: 12,
@@ -323,7 +323,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -331,15 +331,15 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',
     paddingVertical: 12,
-    minHeight: 20,
+    minHeight: 24,
   },
   noteInput: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
     backgroundColor: theme.colors.cardBackground,
@@ -354,13 +354,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   switchLabel: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
     marginBottom: 4,
   },
   switchSubtext: {
-    fontSize: 12,
+    fontSize: 13,
     color: theme.colors.textSecondary,
     fontFamily: getFontFamily('regular'),
   },
@@ -387,12 +387,12 @@ const styles = StyleSheet.create({
     marginRight: 10,
   },
   distributionName: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('regular'),
   },
   distributionAmount: {
-    fontSize: 20,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',
   },
@@ -402,12 +402,12 @@ const styles = StyleSheet.create({
     marginVertical: 8,
   },
   totalLabel: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.text,
     fontFamily: getFontFamily('bold'),
   },
   totalAmount: {
-    fontSize: 20,
+    fontSize: 16,
     color: theme.colors.primary,
     fontFamily: 'Merchant Copy, monospace',
   },
@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   remainingText: {
-    fontSize: 20,
+    fontSize: 16,
     color: theme.colors.primary,
     fontFamily: 'Merchant Copy, monospace',
     textAlign: 'center',
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant, monospace',
   },
   emptyContainer: {
     padding: 40,
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.textSecondary,
     fontFamily: getFontFamily('regular'),
     textAlign: 'center',

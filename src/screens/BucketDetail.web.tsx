@@ -10,12 +10,12 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import {Edit2} from 'lucide-react';
-import {useQuery} from 'convex/react';
-import {api} from '../../convex/_generated/api';
-import {formatDistanceToNow} from 'date-fns';
-import type {Bucket, Expense} from '../types';
-import {BUCKET_ICON_IMAGES, type BucketIcon} from '../constants/bucketIcons';
+import { Edit2 } from 'lucide-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { formatDistanceToNow } from 'date-fns';
+import type { Bucket, Expense } from '../types';
+import { BUCKET_ICON_IMAGES, type BucketIcon } from '../constants/bucketIcons';
 
 interface BucketDetailProps {
   bucket: Bucket;
@@ -37,7 +37,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   const remaining = Math.max(0, totalFunded - totalSpent);
 
   // Get expenses for this bucket from Convex
-  const expenses = useQuery(api.expenses.getByBucket, {bucketId: bucket._id});
+  const expenses = useQuery(api.expenses.getByBucket, { bucketId: bucket._id });
 
   // Default to 'octopus' if icon is not set (for backward compatibility)
   const iconName = (bucket.icon || 'octopus') as BucketIcon;
@@ -55,7 +55,8 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
         {onEditBucket ? (
           <TouchableOpacity
             style={styles.editButton}
-            onPress={() => onEditBucket(bucket)}>
+            onPress={() => onEditBucket(bucket)}
+          >
             <Edit2 size={20} color="#4747FF" strokeWidth={2} />
           </TouchableOpacity>
         ) : (
@@ -65,7 +66,8 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
 
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}>
+        contentContainerStyle={styles.scrollContent}
+      >
         {/* Bucket Info */}
         <View style={styles.bucketInfo}>
           <View style={styles.iconContainer}>
@@ -80,8 +82,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
             <Text style={styles.spentLabel}>TOTAL SPENT</Text>
             <Text style={styles.spentAmount}>${totalSpent.toFixed(2)}</Text>
             <Text style={styles.remainingText}>
-              ${remaining.toFixed(2)} remaining of $
-              {totalFunded.toFixed(2)}
+              ${remaining.toFixed(2)} remaining of ${totalFunded.toFixed(2)}
             </Text>
           </View>
         </View>
@@ -107,13 +108,18 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                 <TouchableOpacity
                   key={expense._id}
                   style={styles.transactionItem}
-                  onPress={() => onEditExpense && onEditExpense(expense, bucket)}>
+                  onPress={() =>
+                    onEditExpense && onEditExpense(expense, bucket)
+                  }
+                >
                   <View style={styles.transactionLeft}>
                     <Text style={styles.transactionName}>
                       {expense.note || 'Expense'}
                     </Text>
                     <Text style={styles.transactionDate}>
-                      {formatDistanceToNow(new Date(expense.createdAt), {addSuffix: true})}
+                      {formatDistanceToNow(new Date(expense.createdAt), {
+                        addSuffix: true,
+                      })}
                     </Text>
                   </View>
                   <Text style={styles.transactionAmount}>
@@ -176,7 +182,7 @@ const styles = StyleSheet.create({
   },
   bucketInfo: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 16,
     paddingHorizontal: 24,
   },
   iconContainer: {
@@ -193,7 +199,7 @@ const styles = StyleSheet.create({
     height: 80,
   },
   bucketName: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '500',
     color: '#0A0A0A',
     marginBottom: 24,
@@ -208,7 +214,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   spentLabel: {
-    fontSize: 14,
+    fontSize: 13,
     color: 'rgba(255, 255, 255, 0.7)',
     marginBottom: 8,
     textTransform: 'uppercase',
@@ -216,7 +222,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant, monospace',
   },
   spentAmount: {
-    fontSize: 40,
+    fontSize: 32,
     fontWeight: '400',
     color: '#FFFFFF',
     fontFamily: 'Merchant Copy, monospace',
@@ -224,7 +230,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   remainingText: {
-    fontSize: 20,
+    fontSize: 15,
     color: 'rgba(255, 255, 255, 0.8)',
     fontFamily: 'Merchant Copy, monospace',
   },
@@ -233,7 +239,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
   },
   transactionsTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '500',
     color: '#0A0A0A',
     marginBottom: 16,
@@ -260,14 +266,14 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   transactionName: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '500',
     color: '#0A0A0A',
     marginBottom: 4,
     fontFamily: 'Merchant, monospace',
   },
   transactionDate: {
-    fontSize: 15,
+    fontSize: 13,
     color: '#9CA3AF',
     fontFamily: 'Merchant, monospace',
   },

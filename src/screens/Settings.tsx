@@ -27,13 +27,19 @@ import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
-import { exportExpensesToCSV, generateCSVTemplate, downloadCSV, parseCSVToExpenses } from '../utils/csvExport';
+import {
+  exportExpensesToCSV,
+  generateCSVTemplate,
+  downloadCSV,
+  parseCSVToExpenses,
+} from '../utils/csvExport';
 
 interface SettingsProps {
   navigation?: any;
   onAddBucket?: () => void;
   onEditBucket?: (bucket: Bucket) => void;
   onSetIncome?: () => void;
+  onNavigateToReports?: () => void;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
@@ -41,6 +47,7 @@ export const Settings: React.FC<SettingsProps> = ({
   onAddBucket,
   onEditBucket,
   onSetIncome,
+  onNavigateToReports,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -62,6 +69,7 @@ export const Settings: React.FC<SettingsProps> = ({
     currentUser ? { userId: currentUser._id } : 'skip',
   );
   const bulkImport = useMutation(api.expenses.bulkImport);
+  const manualRollover = useMutation(api.rollover.manualRollover);
 
   // Initialize demo user if needed
   React.useEffect(() => {
@@ -84,10 +92,15 @@ export const Settings: React.FC<SettingsProps> = ({
 
     try {
       const csv = exportExpensesToCSV(allExpenses, allBuckets);
-      const filename = `buckets_expenses_${new Date().toISOString().split('T')[0]}.csv`;
+      const filename = `buckets_expenses_${
+        new Date().toISOString().split('T')[0]
+      }.csv`;
 
       downloadCSV(csv, filename);
-      Alert.alert('Success', `Exported ${allExpenses.length} expenses to ${filename}`);
+      Alert.alert(
+        'Success',
+        `Exported ${allExpenses.length} expenses to ${filename}`,
+      );
       setShowExport(false);
     } catch (error) {
       Alert.alert('Error', 'Failed to export data');
@@ -122,7 +135,9 @@ export const Settings: React.FC<SettingsProps> = ({
       }
 
       // Convert to format expected by bulkImport mutation
-      const bucketNameMap = new Map(allBuckets.map(b => [b.name.toLowerCase(), b._id]));
+      const bucketNameMap = new Map(
+        allBuckets.map(b => [b.name.toLowerCase(), b._id]),
+      );
       const expensesToImport = parsedExpenses.map(exp => ({
         bucketId: bucketNameMap.get(exp.bucket.toLowerCase())!,
         amount: exp.amount,
@@ -141,7 +156,9 @@ export const Settings: React.FC<SettingsProps> = ({
       });
 
       const message = `Imported: ${results.success}\nFailed: ${results.failed}${
-        results.errors.length > 0 ? '\n\nErrors:\n' + results.errors.slice(0, 5).join('\n') : ''
+        results.errors.length > 0
+          ? '\n\nErrors:\n' + results.errors.slice(0, 5).join('\n')
+          : ''
       }`;
 
       Alert.alert('Import Results', message);
@@ -183,7 +200,7 @@ export const Settings: React.FC<SettingsProps> = ({
   // Show loading state
   if (currentUser === undefined || buckets === undefined) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.loadingWrapper}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
           <Text style={styles.loadingText}>Loading settings...</Text>
@@ -201,7 +218,9 @@ export const Settings: React.FC<SettingsProps> = ({
     <SafeAreaView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        bounces={true}
       >
         {/* Header */}
         <View style={styles.header}>
@@ -267,13 +286,55 @@ export const Settings: React.FC<SettingsProps> = ({
           ))}
         </View>
 
+        {/* Monthly Rollover Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>MONTHLY ROLLOVER</Text>
+            <View style={{width: 40}} />
+          </View>
+
+          <View style={styles.rolloverCard}>
+            <Text style={styles.rolloverText}>
+              Automatic rollover happens on the 1st of each month. Unspent money rolls forward, and save buckets accumulate toward their goals.
+            </Text>
+            <TouchableOpacity
+              style={styles.rolloverButton}
+              onPress={async () => {
+                if (!currentUser) return;
+                try {
+                  const result = await manualRollover({
+                    userId: currentUser._id,
+                  });
+                  Alert.alert(
+                    'Rollover Complete',
+                    `Processed ${result.bucketsProcessed} buckets successfully.`
+                  );
+                } catch (error: any) {
+                  Alert.alert('Error', error.message || 'Failed to perform rollover');
+                }
+              }}
+            >
+              <Text style={styles.rolloverButtonText}>Trigger Manual Rollover</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* General Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionHeader}>GENERAL</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionHeader}>GENERAL</Text>
+            <View style={{width: 40}} />
+          </View>
 
           <Pressable
             style={styles.row}
-            onPress={() => navigation?.navigate('Reports')}
+            onPress={() => {
+              if (onNavigateToReports) {
+                onNavigateToReports();
+              } else {
+                navigation?.navigate('Reports');
+              }
+            }}
           >
             <View style={styles.rowLeft}>
               <View style={styles.iconContainer}>
@@ -429,10 +490,11 @@ export const Settings: React.FC<SettingsProps> = ({
               style={styles.exportOption}
               onPress={handleExportCSV}
             >
-              <View>
+              <View style={styles.exportOptionContent}>
                 <Text style={styles.exportOptionTitle}>Export as CSV</Text>
                 <Text style={styles.exportOptionDescription}>
-                  Spreadsheet-friendly format for all transactions ({allExpenses.length} expenses)
+                  Spreadsheet-friendly format for all transactions (
+                  {allExpenses.length} expenses)
                 </Text>
               </View>
               <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
@@ -444,7 +506,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 Alert.alert('Export JSON', 'JSON export coming soon!');
               }}
             >
-              <View>
+              <View style={styles.exportOptionContent}>
                 <Text style={styles.exportOptionTitle}>Export as JSON</Text>
                 <Text style={styles.exportOptionDescription}>
                   Complete data export including all metadata
@@ -459,7 +521,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 Alert.alert('Export PDF', 'PDF report coming soon!');
               }}
             >
-              <View>
+              <View style={styles.exportOptionContent}>
                 <Text style={styles.exportOptionTitle}>
                   Export as PDF Report
                 </Text>
@@ -491,15 +553,18 @@ export const Settings: React.FC<SettingsProps> = ({
 
           <ScrollView style={styles.modalContent}>
             <Text style={styles.exportDescription}>
-              Import your transactions from a CSV file. Make sure your CSV file matches the template format.
+              Import your transactions from a CSV file. Make sure your CSV file
+              matches the template format.
             </Text>
 
             <TouchableOpacity
               style={styles.exportOption}
               onPress={handleDownloadTemplate}
             >
-              <View>
-                <Text style={styles.exportOptionTitle}>Download CSV Template</Text>
+              <View style={styles.exportOptionContent}>
+                <Text style={styles.exportOptionTitle}>
+                  Download CSV Template
+                </Text>
                 <Text style={styles.exportOptionDescription}>
                   Get a sample CSV file with the correct format
                 </Text>
@@ -510,10 +575,13 @@ export const Settings: React.FC<SettingsProps> = ({
             <TouchableOpacity
               style={styles.exportOption}
               onPress={() => {
-                Alert.alert('Import CSV', 'Select a CSV file to import (coming soon!)');
+                Alert.alert(
+                  'Import CSV',
+                  'Select a CSV file to import (coming soon!)',
+                );
               }}
             >
-              <View>
+              <View style={styles.exportOptionContent}>
                 <Text style={styles.exportOptionTitle}>Import from CSV</Text>
                 <Text style={styles.exportOptionDescription}>
                   Upload your transactions CSV file
@@ -523,13 +591,14 @@ export const Settings: React.FC<SettingsProps> = ({
             </TouchableOpacity>
 
             <View style={styles.importInstructions}>
-              <Text style={styles.importInstructionsTitle}>CSV Format Requirements:</Text>
+              <Text style={styles.importInstructionsTitle}>
+                CSV Format Requirements:
+              </Text>
               <Text style={styles.importInstructionsText}>
-                • date: YYYY-MM-DD format{'\n'}
-                • amount: Number (e.g., 42.50){'\n'}
-                • bucket: Name of bucket (must match existing bucket){'\n'}
-                • note: Description of transaction{'\n'}
-                • happinessRating: Number from 1-5
+                • date: YYYY-MM-DD format{'\n'}• amount: Number (e.g., 42.50)
+                {'\n'}• bucket: Name of bucket (must match existing bucket)
+                {'\n'}• note: Description of transaction{'\n'}• happinessRating:
+                Number from 1-5
               </Text>
             </View>
           </ScrollView>
@@ -543,9 +612,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F3F0',
+    maxHeight: '100vh' as any,
+  },
+  loadingWrapper: {
+    flex: 1,
+    backgroundColor: '#F5F3F0',
+    minHeight: '100vh' as any,
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
+    paddingBottom: 200,
   },
   header: {
     paddingHorizontal: 20,
@@ -574,24 +652,23 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   sectionHeader: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
     color: '#8A8478',
     fontFamily: 'Merchant, monospace',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    paddingHorizontal: 20,
-    marginBottom: 8,
+    marginBottom: 12,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 8,
+    marginBottom: 12,
+    marginHorizontal: 20,
   },
   addButton: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#4747FF',
     fontWeight: '500',
     fontFamily: 'Merchant, monospace',
@@ -626,13 +703,13 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   rowTitle: {
-    fontSize: 20,
+    fontSize: 16,
     color: '#2D2D2D',
     fontWeight: '400',
     fontFamily: 'Merchant, monospace',
   },
   rowSubtitle: {
-    fontSize: 20,
+    fontSize: 13,
     color: '#8A8478',
     fontFamily: 'Merchant Copy, monospace',
     marginTop: 2,
@@ -647,13 +724,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   version: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#8A8478',
     fontFamily: 'Merchant, monospace',
     marginBottom: 4,
   },
   footerText: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#8A8478',
     fontFamily: 'Merchant, monospace',
   },
@@ -666,7 +743,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant, monospace',
   },
   modalContainer: {
     flex: 1,
@@ -682,7 +759,7 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.border,
   },
   modalTitle: {
-    fontSize: 17,
+    fontSize: 14,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
   },
@@ -703,18 +780,18 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   settingTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.text,
     marginBottom: 4,
   },
   settingDescription: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
   exportDescription: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     marginTop: 20,
@@ -731,16 +808,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
+  exportOptionContent: {
+    flex: 1,
+    marginRight: 12,
+  },
   exportOptionTitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.text,
     marginBottom: 4,
   },
   exportOptionDescription: {
-    fontSize: 14,
+    fontSize: 13,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
+    flexWrap: 'wrap',
   },
   importInstructions: {
     marginTop: 24,
@@ -749,15 +831,41 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   importInstructionsTitle: {
-    fontSize: 15,
+    fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
     marginBottom: 8,
   },
   importInstructionsText: {
+    fontSize: 13,
+    fontFamily: getFontFamily('regular'),
+    color: theme.colors.textSecondary,
+    lineHeight: 18,
+  },
+  rolloverCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    marginHorizontal: 20,
+    marginBottom: 12,
+  },
+  rolloverText: {
     fontSize: 14,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     lineHeight: 20,
+    marginBottom: 16,
+  },
+  rolloverButton: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+  },
+  rolloverButtonText: {
+    fontSize: 14,
+    fontFamily: getFontFamily('bold'),
+    color: '#FFFFFF',
   },
 });

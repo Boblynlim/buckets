@@ -10,7 +10,6 @@ import {
   Alert,
   RefreshControl,
 } from 'react-native';
-import {useRoute, useNavigation} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useQuery, useMutation} from 'convex/react';
@@ -34,21 +33,42 @@ type BucketDetailRouteProp = RouteProp<
   'BucketDetail'
 >;
 
-export const BucketDetail: React.FC = () => {
-  const route = useRoute<BucketDetailRouteProp>();
-  const navigation = useNavigation<NavigationProp>();
-  const {bucket} = route.params;
+// Props for web usage (optional, falls back to navigation)
+interface BucketDetailProps {
+  bucket?: Bucket;
+  onBack?: () => void;
+  onEditBucket?: (bucket: Bucket) => void;
+  onEditExpense?: (expense: Expense, bucket: Bucket) => void;
+}
+
+export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
+  // Safely get navigation (will be null on web)
+  let route: any = null;
+  let navigation: any = null;
+
+  try {
+    const { useRoute, useNavigation } = require('@react-navigation/native');
+    route = useRoute<BucketDetailRouteProp>();
+    navigation = useNavigation<NavigationProp>();
+  } catch (error) {
+    // Not in navigation context (web) - use props instead
+  }
+
+  // Support both prop-based (web) and route-based (mobile) usage
+  const bucket = props.bucket || route?.params?.bucket;
   const [refreshing, setRefreshing] = useState(false);
 
   // Get expenses for this bucket from Convex
-  const expenses = useQuery(api.expenses.getByBucket, { bucketId: bucket._id });
+  const expenses = useQuery(api.expenses.getByBucket, bucket ? { bucketId: bucket._id as any } : 'skip');
   const deleteExpense = useMutation(api.expenses.remove);
 
   // IMPORTANT: Use spentAmount from backend (derived from transactions)
   // This ensures deletes/edits automatically update the value
   const spent = bucket.spentAmount || 0;
-  const totalFunded = bucket.fundedAmount || bucket.allocationValue || 0;
-  const remaining = Math.max(0, totalFunded - spent);
+  const funded = bucket.fundedAmount || bucket.allocationValue || 0;
+  const carryover = bucket.carryoverBalance || 0;
+  const totalFunded = funded + carryover;
+  const remaining = totalFunded - spent; // Can be negative if overspent
   const percentUsed = totalFunded > 0
     ? Math.min(100, (spent / totalFunded) * 100)
     : 0;
@@ -64,11 +84,19 @@ export const BucketDetail: React.FC = () => {
   };
 
   const handleEditExpense = (expense: Expense) => {
-    navigation.navigate('EditExpense', {expense, bucket});
+    if (props.onEditExpense && bucket) {
+      props.onEditExpense(expense, bucket);
+    } else if (navigation) {
+      navigation.navigate('EditExpense', {expense, bucket});
+    }
   };
 
   const handleEditBucket = () => {
-    navigation.navigate('EditBucket', {bucket});
+    if (props.onEditBucket && bucket) {
+      props.onEditBucket(bucket);
+    } else if (navigation) {
+      navigation.navigate('EditBucket', {bucket});
+    }
   };
 
   const handleDeleteExpense = (expenseId: string, expenseNote: string) => {
@@ -85,7 +113,7 @@ export const BucketDetail: React.FC = () => {
           style: 'destructive',
           onPress: async () => {
             try {
-              await deleteExpense({ expenseId });
+              await deleteExpense({ expenseId: expenseId as any });
             } catch (error) {
               Alert.alert('Error', 'Failed to delete expense');
               console.error('Delete expense error:', error);
@@ -106,11 +134,22 @@ export const BucketDetail: React.FC = () => {
   const isLoading = expenses === undefined;
   const expensesList = expenses || [];
 
+  // Guard against missing bucket
+  if (!bucket) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Bucket not found</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+        <TouchableOpacity onPress={() => props.onBack ? props.onBack() : navigation?.goBack()} style={styles.backButton}>
           <Text style={styles.backIcon}>‹</Text>
         </TouchableOpacity>
         <View style={styles.headerContent}>
@@ -139,6 +178,47 @@ export const BucketDetail: React.FC = () => {
           {Math.round(100 - percentUsed)}% remaining
         </Text>
       </View>
+
+      {/* Funding Breakdown - show if there's a carryover */}
+      {bucket.bucketMode === 'spend' && (carryover !== 0 || funded > 0) && (
+        <View style={styles.fundingBreakdown}>
+          <Text style={styles.fundingTitle}>Funding Breakdown</Text>
+          <View style={styles.fundingRow}>
+            <Text style={styles.fundingLabel}>This month</Text>
+            <Text style={styles.fundingValue}>${funded.toFixed(2)}</Text>
+          </View>
+          {carryover !== 0 && (
+            <View style={styles.fundingRow}>
+              <Text style={styles.fundingLabel}>
+                {carryover > 0 ? 'Carried forward' : 'Debt from last month'}
+              </Text>
+              <Text style={[
+                styles.fundingValue,
+                carryover < 0 && styles.fundingValueNegative
+              ]}>
+                {carryover > 0 ? '+' : ''}${carryover.toFixed(2)}
+              </Text>
+            </View>
+          )}
+          <View style={[styles.fundingRow, styles.fundingRowTotal]}>
+            <Text style={styles.fundingLabelBold}>Total available</Text>
+            <Text style={styles.fundingValueBold}>${totalFunded.toFixed(2)}</Text>
+          </View>
+          <View style={styles.fundingRow}>
+            <Text style={styles.fundingLabel}>Spent</Text>
+            <Text style={styles.fundingValue}>-${spent.toFixed(2)}</Text>
+          </View>
+          <View style={[styles.fundingRow, styles.fundingRowTotal]}>
+            <Text style={styles.fundingLabelBold}>Remaining</Text>
+            <Text style={[
+              styles.fundingValueBold,
+              remaining < 0 && styles.fundingValueNegative
+            ]}>
+              ${remaining.toFixed(2)}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Expenses List */}
       <ScrollView
@@ -229,7 +309,7 @@ const styles = StyleSheet.create({
     color: '#000',
   },
   subtitle: {
-    fontSize: 20,
+    fontSize: 16,
     color: '#8E8E93',
     fontFamily: 'Merchant Copy, monospace',
     marginTop: 2,
@@ -312,7 +392,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   expenseAmount: {
-    fontSize: 20,
+    fontSize: 16,
     fontWeight: '700',
     fontFamily: 'Merchant Copy, monospace',
     color: '#FF3B30',
@@ -338,6 +418,59 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
   },
+  fundingBreakdown: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginVertical: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  fundingTitle: {
+    fontSize: 15,
+    fontFamily: getFontFamily('bold'),
+    color: theme.colors.text,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  fundingRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 6,
+  },
+  fundingRowTotal: {
+    paddingTop: 12,
+    marginTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E5EA',
+  },
+  fundingLabel: {
+    fontSize: 14,
+    fontFamily: getFontFamily('regular'),
+    color: theme.colors.textSecondary,
+  },
+  fundingLabelBold: {
+    fontSize: 14,
+    fontFamily: getFontFamily('bold'),
+    color: theme.colors.text,
+  },
+  fundingValue: {
+    fontSize: 15,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.text,
+  },
+  fundingValueBold: {
+    fontSize: 16,
+    fontFamily: 'Merchant Copy, monospace',
+    fontWeight: '600',
+    color: theme.colors.primary,
+  },
+  fundingValueNegative: {
+    color: theme.colors.danger,
+  },
   loadingContainer: {
     paddingVertical: 60,
     alignItems: 'center',
@@ -346,6 +479,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant, monospace',
   },
 });

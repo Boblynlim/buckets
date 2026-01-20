@@ -12,6 +12,7 @@ import {
 import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Bucket } from '../types';
+import { theme } from '../theme';
 
 interface Message {
   id: string;
@@ -68,13 +69,13 @@ export const ChatScreen: React.FC = () => {
     // Find bucket with lowest balance percentage
     const bucketsWithUsage = allBuckets.map((bucket: Bucket) => ({
       ...bucket,
-      percentUsed: bucket.allocationValue > 0
-        ? ((bucket.allocationValue - bucket.currentBalance) / bucket.allocationValue) * 100
+      percentUsed: (bucket.allocationValue || 0) > 0
+        ? (((bucket.allocationValue || 0) - (bucket.currentBalance || 0)) / (bucket.allocationValue || 0)) * 100
         : 0,
     }));
 
     const lowestBucket = bucketsWithUsage.reduce((lowest, bucket) =>
-      bucket.currentBalance < lowest.currentBalance ? bucket : lowest
+      (bucket.currentBalance || 0) < (lowest.currentBalance || 0) ? bucket : lowest
     );
 
     const highestUsageBucket = bucketsWithUsage.reduce((highest, bucket) =>
@@ -82,7 +83,7 @@ export const ChatScreen: React.FC = () => {
     );
 
     // Add dynamic prompts
-    if (lowestBucket.currentBalance < lowestBucket.allocationValue * 0.3) {
+    if ((lowestBucket.currentBalance || 0) < (lowestBucket.allocationValue || 0) * 0.3) {
       prompts.push(`My ${lowestBucket.name} bucket is running low, what should I do?`);
     }
 
@@ -389,7 +390,7 @@ const styles = StyleSheet.create({
     borderColor: '#E8E5E0',
   },
   suggestedPromptText: {
-    fontSize: 15,
+    fontSize: 14,
     color: '#2D2D2D',
     fontFamily: 'Merchant Copy, monospace',
   },
@@ -435,7 +436,7 @@ const styles = StyleSheet.create({
     borderColor: '#E8E5E0',
   },
   messageText: {
-    fontSize: 15,
+    fontSize: 14,
     lineHeight: 22,
     color: '#2D2D2D',
     fontFamily: 'Merchant Copy, monospace',
@@ -444,10 +445,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   loadingText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: '#8A8478',
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 16,
+    color: theme.colors.textSecondary,
+    fontFamily: 'Merchant, monospace',
   },
   inputContainer: {
     flexDirection: 'row',

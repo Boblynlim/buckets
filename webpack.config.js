@@ -7,6 +7,7 @@ const isProduction = process.env.NODE_ENV === 'production';
 
 module.exports = {
   mode: isProduction ? 'production' : 'development',
+  target: 'web',
   entry: './index.web.js',
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -23,7 +24,12 @@ module.exports = {
           loader: 'babel-loader',
           options: {
             presets: [
-              ['@babel/preset-env', { modules: 'auto' }],
+              ['@babel/preset-env', {
+                modules: false,
+                targets: {
+                  browsers: ['last 2 versions', 'safari >= 11', 'ios >= 11']
+                }
+              }],
               '@babel/preset-react',
               '@babel/preset-typescript',
             ],

@@ -1,23 +1,17 @@
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Image,
-} from 'react-native';
-import {ChevronRight} from 'lucide-react-native';
-import type {Bucket} from '../types';
-import {theme} from '../theme';
-import {getFontFamily} from '../theme/fonts';
-import {BUCKET_ICON_IMAGES, type BucketIcon} from '../constants/bucketIcons';
+import { View, Text, StyleSheet, Pressable, Image } from 'react-native';
+import { ChevronRight } from 'lucide-react-native';
+import type { Bucket } from '../types';
+import { theme } from '../theme';
+import { getFontFamily } from '../theme/fonts';
+import { BUCKET_ICON_IMAGES, type BucketIcon } from '../constants/bucketIcons';
 
 interface BucketCardProps {
   bucket: Bucket;
   onPress?: () => void;
 }
 
-export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
+export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
   // Calculate values based on bucket mode
   const isSpendBucket = bucket.bucketMode === 'spend' || !bucket.bucketMode; // Default to spend for legacy
   const isSaveBucket = bucket.bucketMode === 'save';
@@ -29,8 +23,10 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
 
   if (isSpendBucket) {
     spent = bucket.spentAmount || 0;
-    total = bucket.fundedAmount || bucket.allocationValue || 0;
-    available = Math.max(0, total - spent);
+    const funded = bucket.fundedAmount || bucket.allocationValue || 0;
+    const carryover = bucket.carryoverBalance || 0;
+    total = funded + carryover;
+    available = total - spent; // Can be negative if overspent
     percentUsed = total > 0 ? (spent / total) * 100 : 0;
   } else if (isSaveBucket) {
     available = bucket.currentBalance || 0;
@@ -45,11 +41,9 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
 
   return (
     <Pressable
-      style={({pressed}) => [
-        styles.card,
-        pressed && styles.cardPressed,
-      ]}
-      onPress={onPress}>
+      style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+      onPress={onPress}
+    >
       <View style={styles.cardContainer}>
         <View style={styles.cardContent}>
           {/* Icon */}
@@ -69,10 +63,19 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
             {isSpendBucket && (
               <>
                 <Text style={styles.amountText}>
-                  <Text style={styles.currentAmount}>${available.toFixed(2)}</Text>
+                  <Text style={styles.currentAmount}>
+                    ${available.toFixed(2)}
+                  </Text>
                   <Text style={styles.amountLabel}> left of </Text>
                   <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
                 </Text>
+
+                {/* Show carryover breakdown if there is a carryover */}
+                {bucket.carryoverBalance !== undefined && bucket.carryoverBalance !== 0 && (
+                  <Text style={styles.carryoverHint}>
+                    {bucket.carryoverBalance > 0 ? '+' : ''}${bucket.carryoverBalance.toFixed(2)} from last month
+                  </Text>
+                )}
 
                 {/* Progress bar - shows usage */}
                 <View style={styles.progressContainer}>
@@ -82,7 +85,9 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
                         styles.progressBarFill,
                         {
                           width: `${Math.min(percentUsed, 100)}%`,
-                          backgroundColor: isLowBalance ? theme.colors.danger : bucket.color,
+                          backgroundColor: isLowBalance
+                            ? theme.colors.danger
+                            : bucket.color,
                         },
                       ]}
                     />
@@ -94,7 +99,9 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
             {isSaveBucket && (
               <>
                 <Text style={styles.amountText}>
-                  <Text style={styles.currentAmount}>${available.toFixed(2)}</Text>
+                  <Text style={styles.currentAmount}>
+                    ${available.toFixed(2)}
+                  </Text>
                   <Text style={styles.amountLabel}> saved of </Text>
                   <Text style={styles.totalAmount}>${total.toFixed(2)}</Text>
                 </Text>
@@ -119,7 +126,11 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
 
           {/* Chevron */}
           <View style={styles.chevronContainer}>
-            <ChevronRight size={24} color={theme.colors.textSecondary} strokeWidth={2} />
+            <ChevronRight
+              size={24}
+              color={theme.colors.textSecondary}
+              strokeWidth={2}
+            />
           </View>
         </View>
       </View>
@@ -130,11 +141,11 @@ export const BucketCard: React.FC<BucketCardProps> = ({bucket, onPress}) => {
 const styles = StyleSheet.create({
   card: {
     marginHorizontal: 20,
-    marginBottom: 20,
+    marginBottom: 8,
   },
   cardPressed: {
     opacity: 0.85,
-    transform: [{scale: 0.985}],
+    transform: [{ scale: 0.985 }],
   },
   cardContainer: {
     backgroundColor: theme.colors.cardBackground,
@@ -164,35 +175,43 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   bucketName: {
-    fontSize: 17,
+    fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
-    marginBottom: 10,
+    marginBottom: 6,
     letterSpacing: -0.3,
   },
   amountText: {
-    marginBottom: 12,
-    lineHeight: 28,
+    marginBottom: 8,
+    lineHeight: 24,
   },
   currentAmount: {
-    fontSize: 24,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.primary,
     letterSpacing: 0,
   },
   amountLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
   },
   totalAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.textSecondary,
     letterSpacing: 0,
   },
+  carryoverHint: {
+    fontSize: 12,
+    fontFamily: getFontFamily('regular'),
+    color: theme.colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 2,
+    marginBottom: 6,
+  },
   progressContainer: {
-    marginTop: 4,
+    marginTop: 0,
   },
   progressBarBackground: {
     height: 6,

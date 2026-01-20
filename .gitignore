@@ -84,3 +84,5 @@ convex/_generated/
 
 # Web build
 dist/
+.vercel
+.env*.local

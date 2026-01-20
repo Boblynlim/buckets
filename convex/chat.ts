@@ -47,7 +47,10 @@ export const sendMessage = action({
       ? buckets.map(b => {
           const mode = b.bucketMode || 'spend';
           if (mode === 'spend') {
-            const spent = b.spentAmount || 0;
+            // Calculate spent amount from expenses
+            const spent = expenses
+              .filter(e => e.bucketId === b._id)
+              .reduce((sum, e) => sum + e.amount, 0);
             const funded = b.fundedAmount || b.allocationValue || 0;
             const remaining = Math.max(0, funded - spent);
             return `- ${b.name} (Spend): $${remaining.toFixed(2)} left of $${funded.toFixed(2)}`;
