@@ -10,7 +10,9 @@ import {
   ActivityIndicator,
   Switch,
   Modal,
+  Alert,
 } from 'react-native';
+import {Trash2} from 'lucide-react-native';
 import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
 import {theme} from '../theme';
@@ -36,7 +38,12 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
     api.buckets.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
+  const incomeEntries = useQuery(
+    api.income.getByUser,
+    currentUser ? { userId: currentUser._id } : 'skip',
+  );
   const addIncome = useMutation(api.income.add);
+  const removeIncome = useMutation(api.income.remove);
 
   // Initialize demo user if needed
   React.useEffect(() => {
@@ -95,7 +102,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
 
   const handleSave = async () => {
     if (!isValid || !currentUser) {
-      alert('Please enter a valid amount');
+      Alert.alert('Invalid Input', 'Please enter a valid amount');
       return;
     }
 
@@ -108,20 +115,33 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
         isRecurring,
       });
 
-      alert(`Successfully added ${isRecurring ? 'recurring ' : ''}income of $${incomeAmount.toFixed(2)}!\n\nDistributed to ${distribution.length} buckets.`);
+      Alert.alert(
+        'Income Added',
+        `Successfully added ${isRecurring ? 'recurring ' : ''}income of $${incomeAmount.toFixed(2)}!\n\nDistributed to ${distribution.length} buckets.`
+      );
 
-      // Close modal or navigate back
-      if (onClose) {
-        onClose();
-      }
+      // Clear the form
+      setAmount('');
+      setNote('');
+      setIsRecurring(true);
     } catch (error: any) {
       console.error('Failed to add income:', error);
-      alert(error.message || 'Failed to add income. Please try again.');
+      Alert.alert('Error', error.message || 'Failed to add income. Please try again.');
+    }
+  };
+
+  const handleDelete = async (incomeId: string) => {
+    try {
+      await removeIncome({ incomeId: incomeId as any });
+      Alert.alert('Success', 'Income entry deleted successfully');
+    } catch (error: any) {
+      console.error('Failed to delete income:', error);
+      Alert.alert('Error', error.message || 'Failed to delete income. Please try again.');
     }
   };
 
   // Show loading state
-  if (currentUser === undefined || buckets === undefined) {
+  if (currentUser === undefined || buckets === undefined || incomeEntries === undefined) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -190,7 +210,8 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
               value={isRecurring}
               onValueChange={setIsRecurring}
               trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-              thumbColor={isRecurring ? '#FFFFFF' : theme.colors.textTertiary}
+              ios_backgroundColor={theme.colors.border}
+              thumbColor="#FFFFFF"
             />
           </View>
         </View>
@@ -237,6 +258,65 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
             <Text style={styles.emptySubtext}>
               Create buckets first to see how income will be distributed.
             </Text>
+          </View>
+        )}
+
+        {/* Income Entries List */}
+        {incomeEntries && incomeEntries.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.label}>Your Income Sources</Text>
+            <View style={styles.incomeListContainer}>
+              {incomeEntries.map((income) => (
+                <View key={income._id} style={styles.incomeRow}>
+                  <View style={styles.incomeInfo}>
+                    <View style={styles.incomeHeader}>
+                      <Text style={styles.incomeAmount}>
+                        ${income.amount.toFixed(2)}
+                      </Text>
+                      {income.isRecurring && (
+                        <View style={styles.recurringBadge}>
+                          <Text style={styles.recurringBadgeText}>Recurring</Text>
+                        </View>
+                      )}
+                    </View>
+                    {income.note && (
+                      <Text style={styles.incomeNote}>{income.note}</Text>
+                    )}
+                    <Text style={styles.incomeDate}>
+                      Added {new Date(income.date).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.deleteButton}
+                    onPress={() => {
+                      Alert.alert(
+                        'Delete Income',
+                        'Are you sure you want to delete this income entry?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Delete',
+                            style: 'destructive',
+                            onPress: () => handleDelete(income._id),
+                          },
+                        ]
+                      );
+                    }}
+                  >
+                    <Trash2 size={20} color={theme.colors.error} strokeWidth={2} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+            <View style={styles.totalIncomeContainer}>
+              <Text style={styles.totalIncomeLabel}>Total Monthly Income</Text>
+              <Text style={styles.totalIncomeAmount}>
+                ${incomeEntries
+                  .filter(i => i.isRecurring)
+                  .reduce((sum, i) => sum + i.amount, 0)
+                  .toFixed(2)}
+              </Text>
+            </View>
           </View>
         )}
 
@@ -449,5 +529,81 @@ const styles = StyleSheet.create({
     color: theme.colors.textSecondary,
     fontFamily: getFontFamily('regular'),
     textAlign: 'center',
+  },
+  incomeListContainer: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 12,
+    padding: 12,
+  },
+  incomeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
+  },
+  incomeInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  incomeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  incomeAmount: {
+    fontSize: 18,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.text,
+    fontWeight: '600',
+    marginRight: 8,
+  },
+  recurringBadge: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  recurringBadgeText: {
+    fontSize: 10,
+    fontFamily: getFontFamily('bold'),
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  incomeNote: {
+    fontSize: 14,
+    fontFamily: getFontFamily('regular'),
+    color: theme.colors.textSecondary,
+    marginBottom: 2,
+  },
+  incomeDate: {
+    fontSize: 12,
+    fontFamily: getFontFamily('regular'),
+    color: theme.colors.textTertiary,
+  },
+  deleteButton: {
+    padding: 8,
+  },
+  totalIncomeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    marginTop: 12,
+    borderTopWidth: 2,
+    borderTopColor: theme.colors.border,
+  },
+  totalIncomeLabel: {
+    fontSize: 16,
+    fontFamily: getFontFamily('bold'),
+    color: theme.colors.text,
+  },
+  totalIncomeAmount: {
+    fontSize: 20,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.primary,
+    fontWeight: '600',
   },
 });

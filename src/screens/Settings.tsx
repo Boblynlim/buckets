@@ -57,6 +57,9 @@ export const Settings: React.FC<SettingsProps> = ({
   const [lowBalanceAlerts, setLowBalanceAlerts] = useState(true);
   const [spendingReminders, setSpendingReminders] = useState(true);
   const [monthlyReports, setMonthlyReports] = useState(false);
+
+  // Rollover settings
+  const [autoRollover, setAutoRollover] = useState(true);
   // Get current user and buckets from Convex
   const currentUser = useQuery(api.users.getCurrentUser);
   const initDemoUser = useMutation(api.users.initDemoUser);
@@ -66,6 +69,10 @@ export const Settings: React.FC<SettingsProps> = ({
   );
   const expenses = useQuery(
     api.expenses.getByUser,
+    currentUser ? { userId: currentUser._id } : 'skip',
+  );
+  const incomeEntries = useQuery(
+    api.income.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
   const bulkImport = useMutation(api.expenses.bulkImport);
@@ -83,6 +90,12 @@ export const Settings: React.FC<SettingsProps> = ({
 
   const allBuckets = buckets || [];
   const allExpenses = expenses || [];
+  const allIncomeEntries = incomeEntries || [];
+
+  // Calculate total monthly income (sum of recurring income)
+  const monthlyIncome = allIncomeEntries
+    .filter(income => income.isRecurring)
+    .reduce((sum, income) => sum + income.amount, 0);
 
   const handleExportCSV = () => {
     if (!currentUser || allBuckets.length === 0 || allExpenses.length === 0) {
@@ -245,7 +258,11 @@ export const Settings: React.FC<SettingsProps> = ({
               </View>
               <View>
                 <Text style={styles.rowTitle}>Monthly Income</Text>
-                <Text style={styles.rowSubtitle}>$5,000/month</Text>
+                <Text style={styles.rowSubtitle}>
+                  {monthlyIncome > 0
+                    ? `$${monthlyIncome.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/month`
+                    : 'No recurring income set'}
+                </Text>
               </View>
             </View>
             <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
@@ -290,32 +307,53 @@ export const Settings: React.FC<SettingsProps> = ({
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>MONTHLY ROLLOVER</Text>
-            <View style={{width: 40}} />
+            {!autoRollover && (
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!currentUser) return;
+                  try {
+                    const result = await manualRollover({
+                      userId: currentUser._id,
+                    });
+                    Alert.alert(
+                      'Rollover Complete',
+                      `Processed ${result.bucketsProcessed} buckets successfully.`
+                    );
+                  } catch (error: any) {
+                    Alert.alert('Error', error.message || 'Failed to perform rollover');
+                  }
+                }}
+              >
+                <Text style={styles.addButton}>Trigger Now</Text>
+              </TouchableOpacity>
+            )}
+            {autoRollover && <View style={{width: 40}} />}
           </View>
 
-          <View style={styles.rolloverCard}>
-            <Text style={styles.rolloverText}>
-              Automatic rollover happens on the 1st of each month. Unspent money rolls forward, and save buckets accumulate toward their goals.
-            </Text>
-            <TouchableOpacity
-              style={styles.rolloverButton}
-              onPress={async () => {
-                if (!currentUser) return;
-                try {
-                  const result = await manualRollover({
-                    userId: currentUser._id,
-                  });
-                  Alert.alert(
-                    'Rollover Complete',
-                    `Processed ${result.bucketsProcessed} buckets successfully.`
-                  );
-                } catch (error: any) {
-                  Alert.alert('Error', error.message || 'Failed to perform rollover');
-                }
+          <View style={styles.row}>
+            <View style={styles.rowLeft}>
+              <View style={styles.iconContainer}>
+                <BarChart3 size={22} color="#FF9500" strokeWidth={2} />
+              </View>
+              <View style={{flex: 1}}>
+                <Text style={styles.rowTitle}>Automatic Rollover</Text>
+                <Text style={styles.rowSubtitle}>
+                  {autoRollover
+                    ? 'Runs automatically on 1st of month'
+                    : 'Manual mode - trigger when ready'}
+                </Text>
+              </View>
+            </View>
+            <Switch
+              value={autoRollover}
+              onValueChange={setAutoRollover}
+              trackColor={{
+                false: theme.colors.border,
+                true: theme.colors.primary,
               }}
-            >
-              <Text style={styles.rolloverButtonText}>Trigger Manual Rollover</Text>
-            </TouchableOpacity>
+              ios_backgroundColor={theme.colors.border}
+              thumbColor="#FFFFFF"
+            />
           </View>
         </View>
 
@@ -421,6 +459,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   false: theme.colors.border,
                   true: theme.colors.primary,
                 }}
+                ios_backgroundColor={theme.colors.border}
                 thumbColor="#FFFFFF"
               />
             </View>
@@ -439,6 +478,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   false: theme.colors.border,
                   true: theme.colors.primary,
                 }}
+                ios_backgroundColor={theme.colors.border}
                 thumbColor="#FFFFFF"
               />
             </View>
@@ -457,6 +497,7 @@ export const Settings: React.FC<SettingsProps> = ({
                   false: theme.colors.border,
                   true: theme.colors.primary,
                 }}
+                ios_backgroundColor={theme.colors.border}
                 thumbColor="#FFFFFF"
               />
             </View>
@@ -683,6 +724,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     marginBottom: 10,
+    cursor: 'pointer' as any,
   },
   rowLeft: {
     flexDirection: 'row',
@@ -841,31 +883,5 @@ const styles = StyleSheet.create({
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     lineHeight: 18,
-  },
-  rolloverCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginHorizontal: 20,
-    marginBottom: 12,
-  },
-  rolloverText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.textSecondary,
-    lineHeight: 20,
-    marginBottom: 16,
-  },
-  rolloverButton: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    alignItems: 'center',
-  },
-  rolloverButtonText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
-    color: '#FFFFFF',
   },
 });
