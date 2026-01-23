@@ -244,7 +244,8 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 20,
+    paddingBottom: 300,
+    overflow: 'visible' as any,
   },
   expenseRow: {
     backgroundColor: '#FDFCFB',
@@ -253,6 +254,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: '#F3F4F6',
+    overflow: 'visible' as any,
   },
   expenseHeader: {
     flexDirection: 'row',
