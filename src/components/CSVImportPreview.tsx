@@ -188,7 +188,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F3F0',
     height: '100vh' as any,
-    maxHeight: '100vh' as any,
+    display: 'flex' as any,
+    flexDirection: 'column',
   },
   header: {
     flexDirection: 'row',
@@ -198,6 +199,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+    flexShrink: 0,
   },
   closeButton: {
     width: 40,
@@ -217,6 +219,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingVertical: 14,
     gap: 10,
+    flexShrink: 0,
   },
   errorBanner: {
     backgroundColor: '#FEF2F2',
@@ -233,12 +236,15 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    overflow: 'scroll' as any,
+    flexGrow: 1,
+    flexShrink: 1,
+    overflow: 'auto' as any,
+    minHeight: 0,
   },
   scrollContent: {
     paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 120,
+    paddingBottom: 20,
   },
   expenseRow: {
     backgroundColor: '#FDFCFB',
@@ -348,6 +354,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
     backgroundColor: '#F5F3F0',
+    flexShrink: 0,
   },
   cancelButton: {
     flex: 1,
