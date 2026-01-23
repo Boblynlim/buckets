@@ -12,7 +12,6 @@ import {
 } from 'react-native';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import type { Bucket } from '../types';
 import { theme } from '../theme';
 
 interface Message {
@@ -48,7 +47,7 @@ export const ChatScreen: React.FC = () => {
   const sendMessageToClaude = useAction(api.chat.sendMessage);
   const extractMemories = useAction(api.chat.extractMemories);
 
-  // Generate dynamic suggested prompts based on user data
+  // Generate generic lifestyle check-in prompts
   const suggestedPrompts = useMemo(() => {
     if (allBuckets.length === 0) {
       return [
@@ -59,38 +58,12 @@ export const ChatScreen: React.FC = () => {
       ];
     }
 
-    const prompts: string[] = [];
-
-    // Find bucket with lowest balance percentage
-    const bucketsWithUsage = allBuckets.map((bucket: Bucket) => ({
-      ...bucket,
-      percentUsed: (bucket.allocationValue || 0) > 0
-        ? (((bucket.allocationValue || 0) - (bucket.currentBalance || 0)) / (bucket.allocationValue || 0)) * 100
-        : 0,
-    }));
-
-    const lowestBucket = bucketsWithUsage.reduce((lowest, bucket) =>
-      (bucket.currentBalance || 0) < (lowest.currentBalance || 0) ? bucket : lowest
-    );
-
-    const highestUsageBucket = bucketsWithUsage.reduce((highest, bucket) =>
-      bucket.percentUsed > highest.percentUsed ? bucket : highest
-    );
-
-    // Add dynamic prompts
-    if ((lowestBucket.currentBalance || 0) < (lowestBucket.allocationValue || 0) * 0.3) {
-      prompts.push(`My ${lowestBucket.name} bucket is running low, what should I do?`);
-    }
-
-    prompts.push(`How am I doing with my ${lowestBucket.name} spending?`);
-
-    if (highestUsageBucket.percentUsed > 50) {
-      prompts.push(`Should I add more to ${highestUsageBucket.name}?`);
-    }
-
-    prompts.push("What's my overall spending pattern this month?");
-
-    return prompts;
+    return [
+      "How am I doing this week?",
+      "Should I make this purchase?",
+      "What's bringing me the most joy?",
+      "Am I on track with my goals?",
+    ];
   }, [allBuckets]);
 
   const handleSend = async () => {
