@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -29,6 +29,12 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
 }) => {
   const [expenses, setExpenses] = useState<CSVExpense[]>(parsedExpenses);
   const [showDropdownForIndex, setShowDropdownForIndex] = useState<number | null>(null);
+
+  // Update local state when parsedExpenses prop changes
+  useEffect(() => {
+    console.log('CSVImportPreview: parsedExpenses changed, count:', parsedExpenses.length);
+    setExpenses(parsedExpenses);
+  }, [parsedExpenses]);
 
   // Check which buckets don't exist (normalize with lowercase and trim)
   const bucketNameMap = new Map(availableBuckets.map(b => [b.name.toLowerCase().trim(), b.name]));
