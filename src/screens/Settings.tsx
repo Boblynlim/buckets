@@ -908,7 +908,7 @@ const styles = StyleSheet.create({
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     marginBottom: 12,
     marginHorizontal: 20,
   },

@@ -183,7 +183,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F5F3F0',
     height: '100vh' as any,
-    overflow: 'hidden' as any,
+    display: 'flex' as any,
+    flexDirection: 'column' as any,
   },
   header: {
     flexDirection: 'row',
@@ -193,6 +194,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
+    flexShrink: 0,
   },
   backButton: {
     width: 40,
@@ -221,6 +223,8 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    minHeight: 0,
+    overflow: 'auto' as any,
   },
   scrollContent: {
     paddingBottom: 120,
