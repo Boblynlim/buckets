@@ -9,6 +9,7 @@ import {
   StatusBar,
   ActivityIndicator,
   Image,
+  Modal,
 } from 'react-native';
 import { Edit2, Plus } from 'lucide-react';
 import { useQuery } from 'convex/react';
@@ -18,6 +19,7 @@ import type { Bucket, Expense } from '../types';
 import { BUCKET_ICON_IMAGES, type BucketIcon } from '../constants/bucketIcons';
 
 interface BucketDetailProps {
+  visible: boolean;
   bucket: Bucket;
   onBack: () => void;
   onEditBucket?: (bucket: Bucket) => void;
@@ -26,6 +28,7 @@ interface BucketDetailProps {
 }
 
 export const BucketDetail: React.FC<BucketDetailProps> = ({
+  visible,
   bucket,
   onBack,
   onEditBucket,
@@ -75,6 +78,12 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   const iconName = (bucket.icon || 'octopus') as BucketIcon;
 
   return (
+    <Modal
+      visible={visible}
+      animationType="slide"
+      transparent={false}
+      onRequestClose={onBack}
+    >
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
@@ -96,85 +105,85 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
         )}
       </View>
 
+      {/* Bucket Info - Fixed */}
+      <View style={styles.bucketInfo}>
+        <View style={styles.iconContainer}>
+          <Image
+            source={BUCKET_ICON_IMAGES[iconName]}
+            style={styles.iconImage}
+            resizeMode="contain"
+          />
+        </View>
+        <Text style={styles.bucketName}>{bucket.name}</Text>
+        <View style={styles.spentCard}>
+          <Text style={styles.spentLabel}>{displayLabel}</Text>
+          <Text style={styles.spentAmount}>${displayAmount.toFixed(2)}</Text>
+          <Text style={styles.remainingText}>{displaySubtext}</Text>
+          {allocationText && (
+            <Text style={styles.allocationText}>{allocationText}</Text>
+          )}
+        </View>
+      </View>
+
+      {/* Transactions Header - Fixed */}
+      <View style={styles.transactionsHeader}>
+        <Text style={styles.transactionsTitle}>Transactions</Text>
+        {onAddExpense && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={() => onAddExpense(bucket)}
+          >
+            <Text style={styles.addButtonText}>+ Add</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Transactions List - Scrollable */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
       >
-        {/* Bucket Info */}
-        <View style={styles.bucketInfo}>
-          <View style={styles.iconContainer}>
-            <Image
-              source={BUCKET_ICON_IMAGES[iconName]}
-              style={styles.iconImage}
-              resizeMode="contain"
-            />
+        {expenses === undefined ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="small" color="#4747FF" />
           </View>
-          <Text style={styles.bucketName}>{bucket.name}</Text>
-          <View style={styles.spentCard}>
-            <Text style={styles.spentLabel}>{displayLabel}</Text>
-            <Text style={styles.spentAmount}>${displayAmount.toFixed(2)}</Text>
-            <Text style={styles.remainingText}>{displaySubtext}</Text>
-            {allocationText && (
-              <Text style={styles.allocationText}>{allocationText}</Text>
-            )}
+        ) : expenses.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No expenses yet</Text>
+            <Text style={styles.emptySubtext}>
+              Start tracking expenses in this bucket
+            </Text>
           </View>
-        </View>
-
-        {/* Transactions List */}
-        <View style={styles.transactionsContainer}>
-          <View style={styles.transactionsHeader}>
-            <Text style={styles.transactionsTitle}>Transactions</Text>
-            {onAddExpense && (
+        ) : (
+          <View style={styles.transactionsList}>
+            {expenses.map(expense => (
               <TouchableOpacity
-                style={styles.addButton}
-                onPress={() => onAddExpense(bucket)}
+                key={expense._id}
+                style={styles.transactionItem}
+                onPress={() =>
+                  onEditExpense && onEditExpense(expense, bucket)
+                }
               >
-                <Text style={styles.addButtonText}>+ Add</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          {expenses === undefined ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="small" color="#4747FF" />
-            </View>
-          ) : expenses.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyText}>No expenses yet</Text>
-              <Text style={styles.emptySubtext}>
-                Start tracking expenses in this bucket
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.transactionsList}>
-              {expenses.map(expense => (
-                <TouchableOpacity
-                  key={expense._id}
-                  style={styles.transactionItem}
-                  onPress={() =>
-                    onEditExpense && onEditExpense(expense, bucket)
-                  }
-                >
-                  <View style={styles.transactionLeft}>
-                    <Text style={styles.transactionName}>
-                      {expense.note || 'Expense'}
-                    </Text>
-                    <Text style={styles.transactionDate}>
-                      {formatDistanceToNow(new Date(expense.createdAt), {
-                        addSuffix: true,
-                      })}
-                    </Text>
-                  </View>
-                  <Text style={styles.transactionAmount}>
-                    ${expense.amount.toFixed(2)}
+                <View style={styles.transactionLeft}>
+                  <Text style={styles.transactionName}>
+                    {expense.note || 'Expense'}
                   </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+                  <Text style={styles.transactionDate}>
+                    {formatDistanceToNow(new Date(expense.createdAt), {
+                      addSuffix: true,
+                    })}
+                  </Text>
+                </View>
+                <Text style={styles.transactionAmount}>
+                  ${expense.amount.toFixed(2)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
       </ScrollView>
     </View>
+    </Modal>
   );
 };
 
@@ -182,9 +191,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F3F0',
-    height: '100vh' as any,
-    display: 'flex' as any,
-    flexDirection: 'column' as any,
+    width: '100%' as any,
+    height: '100%' as any,
   },
   header: {
     flexDirection: 'row',
@@ -224,15 +232,16 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
     minHeight: 0,
-    overflow: 'auto' as any,
   },
   scrollContent: {
-    paddingBottom: 120,
+    paddingBottom: 40,
   },
   bucketInfo: {
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 20,
+    flexShrink: 0,
   },
   iconContainer: {
     width: 100,
@@ -337,14 +346,16 @@ const styles = StyleSheet.create({
     color: '#DC2626',
   },
   transactionsContainer: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 20,
     paddingTop: 20,
   },
   transactionsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
+    flexShrink: 0,
   },
   transactionsTitle: {
     fontSize: 18,
@@ -369,6 +380,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     borderWidth: 1,
     borderColor: '#F3F4F6',
+    marginHorizontal: 20,
   },
   transactionItem: {
     flexDirection: 'row',

@@ -904,6 +904,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant, monospace',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    lineHeight: 15,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -914,7 +915,7 @@ const styles = StyleSheet.create({
   },
   headerButtonsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     gap: 12,
   },
   refreshButton: {
@@ -922,12 +923,14 @@ const styles = StyleSheet.create({
     color: '#4747FF',
     fontWeight: '500',
     fontFamily: 'Merchant, monospace',
+    lineHeight: 15,
   },
   addButton: {
     fontSize: 13,
     color: '#4747FF',
     fontWeight: '500',
     fontFamily: 'Merchant, monospace',
+    lineHeight: 15,
   },
   row: {
     backgroundColor: '#FDFCFB',

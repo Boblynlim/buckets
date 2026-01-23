@@ -196,39 +196,38 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     );
   }
 
-  // Show bucket detail if a bucket is selected
-  if (selectedBucket) {
-    return (
-      <BucketDetail
-        bucket={selectedBucket}
-        onBack={() => setSelectedBucket(null)}
-        onEditBucket={onEditBucket}
-        onEditExpense={onEditExpense}
-        onAddExpense={(bucket) => {
-          // For web, we'll just call onEditExpense with a new empty expense
-          // This will work if the parent handles creating new expenses
-          if (onEditExpense) {
-            // Create a temporary expense object for adding new
-            const newExpense = {
-              _id: 'new' as any,
-              _creationTime: Date.now(),
-              userId: bucket.userId,
-              bucketId: bucket._id,
-              amount: 0,
-              note: '',
-              createdAt: Date.now(),
-              date: Date.now(),
-              happinessRating: 3,
-            } as Expense;
-            onEditExpense(newExpense, bucket);
-          }
-        }}
-      />
-    );
-  }
+  // Show bucket detail modal if a bucket is selected
+  const bucketDetailModal = selectedBucket && (
+    <BucketDetail
+      visible={!!selectedBucket}
+      bucket={selectedBucket}
+      onBack={() => setSelectedBucket(null)}
+      onEditBucket={onEditBucket}
+      onEditExpense={onEditExpense}
+      onAddExpense={(bucket) => {
+        // For web, we'll just call onEditExpense with a new empty expense
+        // This will work if the parent handles creating new expenses
+        if (onEditExpense) {
+          // Create a temporary expense object for adding new
+          const newExpense = {
+            _id: 'new' as any,
+            _creationTime: Date.now(),
+            userId: bucket.userId,
+            bucketId: bucket._id,
+            amount: 0,
+            note: '',
+            createdAt: Date.now(),
+            date: Date.now(),
+            happinessRating: 3,
+          } as Expense;
+          onEditExpense(newExpense, bucket);
+        }
+      }}
+    />
+  );
 
-  // Show monthly transactions view
-  if (showMonthlyTransactions && allExpenses) {
+  // Monthly transactions modal
+  const monthlyTransactionsModal = showMonthlyTransactions && allExpenses && (() => {
     // Filter expenses for selected month
     const monthlyExpenses = allExpenses.filter(expense => {
       const expenseDate = new Date(expense.date);
@@ -245,7 +244,13 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     const bucketMap = new Map(allBuckets.map(b => [b._id, b]));
 
     return (
-      <View style={styles.container}>
+      <Modal
+        visible={showMonthlyTransactions}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowMonthlyTransactions(false)}
+      >
+        <View style={styles.container}>
         <StatusBar barStyle="dark-content" />
 
         {/* Header */}
@@ -319,8 +324,9 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           )}
         </ScrollView>
       </View>
+      </Modal>
     );
-  }
+  })();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -514,6 +520,12 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Monthly Transactions Modal */}
+      {monthlyTransactionsModal}
+
+      {/* Bucket Detail Modal */}
+      {bucketDetailModal}
     </SafeAreaView>
   );
 };
