@@ -19,6 +19,7 @@ import type * as memories from "../memories.js";
 import type * as recommendations from "../recommendations.js";
 import type * as recurringExpenses from "../recurringExpenses.js";
 import type * as reports from "../reports.js";
+import type * as reset from "../reset.js";
 import type * as rollover from "../rollover.js";
 import type * as tagging from "../tagging.js";
 import type * as users from "../users.js";
@@ -41,6 +42,7 @@ declare const fullApi: ApiFromModules<{
   recommendations: typeof recommendations;
   recurringExpenses: typeof recurringExpenses;
   reports: typeof reports;
+  reset: typeof reset;
   rollover: typeof rollover;
   tagging: typeof tagging;
   users: typeof users;

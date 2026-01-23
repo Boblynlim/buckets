@@ -30,20 +30,50 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   onEditBucket,
   onEditExpense,
 }) => {
-  // IMPORTANT: Use spentAmount from backend (derived from transactions)
-  // This ensures deletes/edits automatically update the value
-  const totalSpent = bucket.spentAmount || 0;
-  const totalFunded = bucket.fundedAmount || bucket.allocationValue || 0;
-  const remaining = Math.max(0, totalFunded - totalSpent);
+  // Calculate values based on bucket mode
+  const isSaveBucket = bucket.bucketMode === 'save';
+
+  let displayLabel = '';
+  let displayAmount = 0;
+  let displaySubtext = '';
+  let allocationText = '';
+
+  if (isSaveBucket) {
+    // For save buckets: show current balance vs target
+    const currentBalance = bucket.currentBalance || 0;
+    const targetAmount = bucket.targetAmount || 0;
+    displayLabel = 'CURRENT SAVINGS';
+    displayAmount = currentBalance;
+    displaySubtext = `$${currentBalance.toFixed(2)} saved of $${targetAmount.toFixed(2)}`;
+
+    if (bucket.contributionType !== 'none') {
+      const contribution = bucket.contributionType === 'amount'
+        ? `$${(bucket.contributionAmount || 0).toFixed(2)}`
+        : `${(bucket.contributionPercent || 0)}% of income`;
+      allocationText = `Monthly contribution: ${contribution}`;
+    }
+  } else {
+    // For spend buckets: show spent vs funded
+    const totalSpent = bucket.spentAmount || 0;
+    const allocated = bucket.fundedAmount || 0;
+    const carryover = bucket.carryoverBalance || 0;
+    const totalAvailable = allocated + carryover;
+    const remaining = totalAvailable - totalSpent;
+
+    displayLabel = 'TOTAL SPENT';
+    displayAmount = totalSpent;
+    displaySubtext = `$${remaining.toFixed(2)} remaining of $${totalAvailable.toFixed(2)}`;
+    allocationText = `Allocated this month: $${allocated.toFixed(2)}`;
+  }
 
   // Get expenses for this bucket from Convex
-  const expenses = useQuery(api.expenses.getByBucket, { bucketId: bucket._id });
+  const expenses = useQuery(api.expenses.getByBucket, { bucketId: bucket._id as any });
 
   // Default to 'octopus' if icon is not set (for backward compatibility)
   const iconName = (bucket.icon || 'octopus') as BucketIcon;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
       {/* Header */}
@@ -79,11 +109,12 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
           </View>
           <Text style={styles.bucketName}>{bucket.name}</Text>
           <View style={styles.spentCard}>
-            <Text style={styles.spentLabel}>TOTAL SPENT</Text>
-            <Text style={styles.spentAmount}>${totalSpent.toFixed(2)}</Text>
-            <Text style={styles.remainingText}>
-              ${remaining.toFixed(2)} remaining of ${totalFunded.toFixed(2)}
-            </Text>
+            <Text style={styles.spentLabel}>{displayLabel}</Text>
+            <Text style={styles.spentAmount}>${displayAmount.toFixed(2)}</Text>
+            <Text style={styles.remainingText}>{displaySubtext}</Text>
+            {allocationText && (
+              <Text style={styles.allocationText}>{allocationText}</Text>
+            )}
           </View>
         </View>
 
@@ -131,7 +162,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -139,6 +170,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F3F0',
+    height: '100vh' as any,
+    overflow: 'hidden' as any,
   },
   header: {
     flexDirection: 'row',
@@ -233,6 +266,59 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: 'rgba(255, 255, 255, 0.8)',
     fontFamily: 'Merchant Copy, monospace',
+  },
+  allocationText: {
+    fontSize: 12,
+    color: 'rgba(255, 255, 255, 0.6)',
+    fontFamily: 'Merchant, monospace',
+    marginTop: 8,
+    fontStyle: 'italic',
+  },
+  savingsInfo: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 24,
+    marginTop: 20,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  savingsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  savingsRowTotal: {
+    paddingTop: 16,
+    marginTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  savingsLabel: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    fontFamily: 'Merchant, monospace',
+  },
+  savingsLabelBold: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant, monospace',
+  },
+  savingsValue: {
+    fontSize: 16,
+    color: '#0A0A0A',
+    fontFamily: 'Merchant Copy, monospace',
+  },
+  savingsValueBold: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#4747FF',
+    fontFamily: 'Merchant Copy, monospace',
+  },
+  savingsValueNegative: {
+    color: '#DC2626',
   },
   transactionsContainer: {
     paddingHorizontal: 24,

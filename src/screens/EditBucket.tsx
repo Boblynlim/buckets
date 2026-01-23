@@ -16,6 +16,7 @@ import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
+import { Drawer } from '../components/Drawer';
 
 type EditBucketRouteProp = RouteProp<{ EditBucket: { bucket: Bucket } }, 'EditBucket'>;
 
@@ -32,7 +33,7 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
 
   try {
     const { useRoute, useNavigation } = require('@react-navigation/native');
-    route = useRoute<EditBucketRouteProp>();
+    route = useRoute() as EditBucketRouteProp;
     navigation = useNavigation();
   } catch (error) {
     // Not in navigation context (web) - use props instead
@@ -58,15 +59,22 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
   const [targetAmount, setTargetAmount] = useState(
     (bucket.targetAmount || 0).toString()
   );
+  const [contributionType, setContributionType] = useState<'amount' | 'percentage' | 'none'>(
+    bucket.contributionType || 'none'
+  );
+  const [contributionValue, setContributionValue] = useState(
+    (bucket.contributionAmount || bucket.contributionPercent || 0).toString()
+  );
   const [alertThreshold, setAlertThreshold] = useState(
     bucket.alertThreshold.toString()
   );
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const updateBucket = useMutation(api.buckets.update);
   const removeBucket = useMutation(api.buckets.remove);
 
-  const isValid = bucketMode === 'spend'
+  const isValid = bucketMode === 'spend' || bucketMode === 'recurring'
     ? name.trim() &&
       allocationValue &&
       parseFloat(allocationValue) > 0 &&
@@ -78,15 +86,23 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
       parseFloat(targetAmount) > 0 &&
       alertThreshold &&
       parseFloat(alertThreshold) >= 0 &&
-      parseFloat(alertThreshold) <= 100;
+      parseFloat(alertThreshold) <= 100 &&
+      (contributionType === 'none' || (contributionValue && parseFloat(contributionValue) > 0));
 
   const handleSave = async () => {
+    // Prevent duplicate submissions
+    if (isSaving) {
+      return;
+    }
+
     if (!isValid) {
       alert('Please fill in all fields correctly');
       return;
     }
 
     try {
+      setIsSaving(true);
+
       const baseParams = {
         bucketId: bucket._id as any,
         name: name.trim(),
@@ -96,7 +112,7 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
       };
 
       let updateParams;
-      if (bucketMode === 'spend') {
+      if (bucketMode === 'spend' || bucketMode === 'recurring') {
         updateParams = {
           ...baseParams,
           allocationType,
@@ -109,12 +125,16 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
         updateParams = {
           ...baseParams,
           targetAmount: parseFloat(targetAmount),
+          contributionType,
+          ...(contributionType === 'amount' && { contributionAmount: parseFloat(contributionValue) }),
+          ...(contributionType === 'percentage' && { contributionPercent: parseFloat(contributionValue) }),
         };
       }
 
       await updateBucket(updateParams);
 
       alert(`Bucket "${name}" updated successfully!`);
+      setIsSaving(false);
 
       // Close modal or navigate back
       if (onClose) {
@@ -123,6 +143,7 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
     } catch (error: any) {
       console.error('Failed to update bucket:', error);
       alert(error.message || 'Failed to update bucket. Please try again.');
+      setIsSaving(false);
     }
   };
 
@@ -160,13 +181,16 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
             <Text style={styles.cancelButton}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Edit Bucket</Text>
-          <TouchableOpacity onPress={handleSave} disabled={!isValid}>
+          <TouchableOpacity
+            onPress={handleSave}
+            disabled={!isValid || isSaving}
+          >
             <Text
               style={[
                 styles.saveButton,
-                !isValid && styles.saveButtonDisabled,
+                (!isValid || isSaving) && styles.saveButtonDisabled,
               ]}>
-              Save
+              {isSaving ? 'Saving...' : 'Save'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -188,18 +212,20 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
           <Text style={styles.label}>Bucket Type</Text>
           <View style={styles.readOnlyContainer}>
             <Text style={styles.readOnlyText}>
-              {bucketMode === 'spend' ? 'Spend Bucket' : 'Save Bucket'}
+              {bucketMode === 'spend' ? 'Spend Bucket' : bucketMode === 'save' ? 'Save Bucket' : 'Recurring Payment'}
             </Text>
           </View>
           <Text style={styles.helperText}>
             {bucketMode === 'spend'
               ? 'Track monthly spending against a budget'
-              : 'Save toward a specific goal'}
+              : bucketMode === 'save'
+              ? 'Save toward a specific goal'
+              : 'Auto-pay recurring expenses like investments & insurance'}
           </Text>
         </View>
 
         {/* Allocation Type (Spend mode only) */}
-        {bucketMode === 'spend' && (
+        {(bucketMode === 'spend' || bucketMode === 'recurring') && (
         <View style={styles.section}>
           <Text style={styles.label}>Allocation Type</Text>
           <View style={styles.segmentedControl}>
@@ -236,7 +262,7 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
         )}
 
         {/* Allocation Value (Spend mode only) */}
-        {bucketMode === 'spend' && (
+        {(bucketMode === 'spend' || bucketMode === 'recurring') && (
         <View style={styles.section}>
           <Text style={styles.label}>
             {allocationType === 'amount' ? 'Amount per Month' : 'Percentage of Income'}
@@ -276,6 +302,98 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
             How much do you want to save in this bucket?
           </Text>
         </View>
+        )}
+
+        {/* Monthly Contribution (Save mode only) */}
+        {bucketMode === 'save' && (
+        <>
+          <View style={styles.section}>
+            <Text style={styles.label}>Monthly Contribution</Text>
+            <View style={styles.toggleContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  contributionType === 'none' && styles.toggleButtonActive,
+                ]}
+                onPress={() => setContributionType('none')}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    contributionType === 'none' && styles.toggleTextActive,
+                  ]}
+                >
+                  None
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  contributionType === 'amount' && styles.toggleButtonActive,
+                ]}
+                onPress={() => setContributionType('amount')}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    contributionType === 'amount' && styles.toggleTextActive,
+                  ]}
+                >
+                  Fixed $
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  contributionType === 'percentage' && styles.toggleButtonActive,
+                ]}
+                onPress={() => setContributionType('percentage')}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    contributionType === 'percentage' && styles.toggleTextActive,
+                  ]}
+                >
+                  %
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.hint}>
+              {contributionType === 'none'
+                ? 'Manual contributions only'
+                : contributionType === 'amount'
+                ? 'Fixed dollar amount per month'
+                : 'Percentage of monthly income'}
+            </Text>
+          </View>
+
+          {contributionType !== 'none' && (
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              {contributionType === 'amount' ? 'Monthly Amount' : 'Percentage of Income'}
+            </Text>
+            <View style={styles.amountContainer}>
+              <Text style={styles.currencySymbol}>
+                {contributionType === 'amount' ? '$' : '%'}
+              </Text>
+              <TextInput
+                style={styles.amountInput}
+                value={contributionValue}
+                onChangeText={setContributionValue}
+                keyboardType="decimal-pad"
+                placeholder={contributionType === 'amount' ? '0.00' : '0'}
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+            </View>
+            <Text style={styles.hint}>
+              {contributionType === 'amount'
+                ? 'This amount will be contributed monthly'
+                : 'This percentage of your income will be contributed monthly'}
+            </Text>
+          </View>
+          )}
+        </>
         )}
 
         {/* Alert Threshold */}
@@ -348,16 +466,15 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
     </SafeAreaView>
   );
 
-  // If visible prop is provided (web), wrap in Modal
+  // If visible prop is provided (web), wrap in Drawer
   if (onClose) {
     return (
-      <Modal
+      <Drawer
         visible={visible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={onClose}>
+        onClose={onClose}
+        fullScreen>
         {content}
-      </Modal>
+      </Drawer>
     );
   }
 
@@ -458,7 +575,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -466,7 +583,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',

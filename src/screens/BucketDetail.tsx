@@ -48,8 +48,8 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
 
   try {
     const { useRoute, useNavigation } = require('@react-navigation/native');
-    route = useRoute<BucketDetailRouteProp>();
-    navigation = useNavigation<NavigationProp>();
+    route = useRoute() as BucketDetailRouteProp;
+    navigation = useNavigation() as NavigationProp;
   } catch (error) {
     // Not in navigation context (web) - use props instead
   }
@@ -62,16 +62,34 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
   const expenses = useQuery(api.expenses.getByBucket, bucket ? { bucketId: bucket._id as any } : 'skip');
   const deleteExpense = useMutation(api.expenses.remove);
 
-  // IMPORTANT: Use spentAmount from backend (derived from transactions)
-  // This ensures deletes/edits automatically update the value
-  const spent = bucket.spentAmount || 0;
-  const funded = bucket.fundedAmount || bucket.allocationValue || 0;
-  const carryover = bucket.carryoverBalance || 0;
-  const totalFunded = funded + carryover;
-  const remaining = totalFunded - spent; // Can be negative if overspent
-  const percentUsed = totalFunded > 0
-    ? Math.min(100, (spent / totalFunded) * 100)
-    : 0;
+  // Calculate values based on bucket mode
+  const isSaveBucket = bucket.bucketMode === 'save';
+
+  let spent = 0;
+  let funded = 0;
+  let carryover = 0;
+  let totalFunded = 0;
+  let remaining = 0;
+  let percentUsed = 0;
+
+  if (isSaveBucket) {
+    // For save buckets: show current balance vs target
+    const currentBalance = bucket.currentBalance || 0;
+    const targetAmount = bucket.targetAmount || 0;
+    remaining = currentBalance;
+    totalFunded = targetAmount;
+    percentUsed = targetAmount > 0 ? (currentBalance / targetAmount) * 100 : 0;
+  } else {
+    // For spend buckets: show spent vs funded
+    spent = bucket.spentAmount || 0;
+    funded = bucket.fundedAmount || bucket.allocationValue || 0;
+    carryover = bucket.carryoverBalance || 0;
+    totalFunded = funded + carryover;
+    remaining = totalFunded - spent; // Can be negative if overspent
+    percentUsed = totalFunded > 0
+      ? Math.min(100, (spent / totalFunded) * 100)
+      : 0;
+  }
 
   const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
 
@@ -155,8 +173,10 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
         <View style={styles.headerContent}>
           <Text style={styles.title}>{bucket.name}</Text>
           <Text style={styles.subtitle}>
-            ${remaining.toFixed(2)} of $
-            {totalFunded.toFixed(2)}
+            {isSaveBucket
+              ? `$${remaining.toFixed(2)} saved of $${totalFunded.toFixed(2)}`
+              : `$${remaining.toFixed(2)} of $${totalFunded.toFixed(2)}`
+            }
           </Text>
         </View>
       </View>
@@ -175,9 +195,44 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
           />
         </View>
         <Text style={styles.progressText}>
-          {Math.round(100 - percentUsed)}% remaining
+          {isSaveBucket
+            ? `${Math.round(percentUsed)}% saved`
+            : `${Math.round(100 - percentUsed)}% remaining`
+          }
         </Text>
       </View>
+
+      {/* Savings Info for save buckets */}
+      {isSaveBucket && (
+        <View style={styles.fundingBreakdown}>
+          <Text style={styles.fundingTitle}>Savings Progress</Text>
+          <View style={styles.fundingRow}>
+            <Text style={styles.fundingLabel}>Current balance</Text>
+            <Text style={styles.fundingValue}>${(bucket.currentBalance || 0).toFixed(2)}</Text>
+          </View>
+          <View style={styles.fundingRow}>
+            <Text style={styles.fundingLabel}>Target amount</Text>
+            <Text style={styles.fundingValue}>${(bucket.targetAmount || 0).toFixed(2)}</Text>
+          </View>
+          {bucket.contributionType !== 'none' && (
+            <View style={styles.fundingRow}>
+              <Text style={styles.fundingLabel}>Monthly contribution</Text>
+              <Text style={styles.fundingValue}>
+                {bucket.contributionType === 'amount'
+                  ? `$${(bucket.contributionAmount || 0).toFixed(2)}`
+                  : `${(bucket.contributionPercent || 0)}% of income`
+                }
+              </Text>
+            </View>
+          )}
+          <View style={[styles.fundingRow, styles.fundingRowTotal]}>
+            <Text style={styles.fundingLabelBold}>Still needed</Text>
+            <Text style={styles.fundingValueBold}>
+              ${Math.max(0, (bucket.targetAmount || 0) - (bucket.currentBalance || 0)).toFixed(2)}
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* Funding Breakdown - show if there's a carryover */}
       {bucket.bucketMode === 'spend' && (carryover !== 0 || funded > 0) && (

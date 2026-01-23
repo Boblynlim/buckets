@@ -11,12 +11,14 @@ import {
   Switch,
   Modal,
   Alert,
+  Platform,
 } from 'react-native';
 import {Trash2} from 'lucide-react-native';
 import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
 import {theme} from '../theme';
 import {getFontFamily} from '../theme/fonts';
+import {Drawer} from '../components/Drawer';
 
 interface IncomeManagementProps {
   visible?: boolean;
@@ -44,6 +46,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   );
   const addIncome = useMutation(api.income.add);
   const removeIncome = useMutation(api.income.remove);
+  const recalculateDistribution = useMutation(api.distribution.calculateDistribution);
 
   // Initialize demo user if needed
   React.useEffect(() => {
@@ -62,34 +65,62 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   const calculateDistribution = () => {
     if (incomeAmount <= 0 || allBuckets.length === 0) return [];
 
-    let remainingAmount = incomeAmount;
-    const distribution: Array<{name: string; color: string; amount: number; percentage: number}> = [];
+    // Only include spend and recurring buckets
+    const spendAndRecurringBuckets = allBuckets.filter(
+      b => b.bucketMode === 'spend' || b.bucketMode === 'recurring'
+    );
 
-    // First, handle percentage-based allocations
-    for (const bucket of allBuckets) {
-      if (bucket.allocationType === 'percentage') {
-        const allocation = (incomeAmount * bucket.allocationValue) / 100;
-        distribution.push({
-          name: bucket.name,
-          color: bucket.color,
-          amount: allocation,
-          percentage: bucket.allocationValue,
-        });
-        remainingAmount -= allocation;
+    if (spendAndRecurringBuckets.length === 0) return [];
+
+    // Calculate total planned across all buckets
+    let totalPlanned = 0;
+    for (const bucket of spendAndRecurringBuckets) {
+      let planned = 0;
+
+      // Check new fields first
+      if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
+        planned = (incomeAmount * bucket.plannedPercent) / 100;
+      } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
+        planned = bucket.plannedAmount;
       }
+      // Fall back to legacy allocationValue
+      else if (bucket.allocationValue !== undefined) {
+        planned = bucket.allocationValue;
+      }
+
+      totalPlanned += planned;
     }
 
-    // Then, handle fixed amount allocations
-    for (const bucket of allBuckets) {
-      if (bucket.allocationType === 'amount') {
-        const allocation = Math.min(bucket.allocationValue, remainingAmount);
+    // Calculate funding ratio (proportional if over-planned)
+    const isOverPlanned = totalPlanned > incomeAmount;
+    const fundingRatio = isOverPlanned ? incomeAmount / totalPlanned : 1;
+
+    // Build distribution with proportional allocation
+    const distribution: Array<{name: string; color: string; amount: number; percentage: number}> = [];
+
+    for (const bucket of spendAndRecurringBuckets) {
+      let planned = 0;
+
+      // Check new fields first
+      if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
+        planned = (incomeAmount * bucket.plannedPercent) / 100;
+      } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
+        planned = bucket.plannedAmount;
+      }
+      // Fall back to legacy allocationValue
+      else if (bucket.allocationValue !== undefined) {
+        planned = bucket.allocationValue;
+      }
+
+      const funded = planned * fundingRatio;
+
+      if (funded > 0) {
         distribution.push({
           name: bucket.name,
           color: bucket.color,
-          amount: allocation,
-          percentage: (allocation / incomeAmount) * 100,
+          amount: funded,
+          percentage: (funded / incomeAmount) * 100,
         });
-        remainingAmount -= allocation;
       }
     }
 
@@ -131,12 +162,48 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   };
 
   const handleDelete = async (incomeId: string) => {
+    // Web-compatible confirmation
+    const confirmDelete = Platform.OS === 'web'
+      ? window.confirm('Are you sure you want to delete this income entry?')
+      : await new Promise((resolve) => {
+          Alert.alert(
+            'Delete Income',
+            'Are you sure you want to delete this income entry?',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+
+    if (!confirmDelete) return;
+
     try {
       await removeIncome({ incomeId: incomeId as any });
-      Alert.alert('Success', 'Income entry deleted successfully');
+
+      // Recalculate distribution after deleting
+      if (currentUser) {
+        try {
+          await recalculateDistribution({ userId: currentUser._id });
+        } catch (distError) {
+          console.error('Failed to recalculate distribution:', distError);
+          // Continue anyway - income is deleted
+        }
+      }
+
+      if (Platform.OS === 'web') {
+        alert('Income entry deleted successfully');
+      } else {
+        Alert.alert('Success', 'Income entry deleted successfully');
+      }
     } catch (error: any) {
       console.error('Failed to delete income:', error);
-      Alert.alert('Error', error.message || 'Failed to delete income. Please try again.');
+      const errorMessage = error?.message || error?.toString() || 'Failed to delete income. Please try again.';
+      if (Platform.OS === 'web') {
+        alert(`Error: ${errorMessage}`);
+      } else {
+        Alert.alert('Error', errorMessage);
+      }
     }
   };
 
@@ -266,8 +333,14 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
           <View style={styles.section}>
             <Text style={styles.label}>Your Income Sources</Text>
             <View style={styles.incomeListContainer}>
-              {incomeEntries.map((income) => (
-                <View key={income._id} style={styles.incomeRow}>
+              {incomeEntries.map((income, index) => (
+                <View
+                  key={income._id}
+                  style={[
+                    styles.incomeRow,
+                    index === incomeEntries.length - 1 && styles.incomeRowLast
+                  ]}
+                >
                   <View style={styles.incomeInfo}>
                     <View style={styles.incomeHeader}>
                       <Text style={styles.incomeAmount}>
@@ -288,22 +361,10 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
                   </View>
                   <TouchableOpacity
                     style={styles.deleteButton}
-                    onPress={() => {
-                      Alert.alert(
-                        'Delete Income',
-                        'Are you sure you want to delete this income entry?',
-                        [
-                          { text: 'Cancel', style: 'cancel' },
-                          {
-                            text: 'Delete',
-                            style: 'destructive',
-                            onPress: () => handleDelete(income._id),
-                          },
-                        ]
-                      );
-                    }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    onPress={() => handleDelete(income._id)}
                   >
-                    <Trash2 size={20} color={theme.colors.error} strokeWidth={2} />
+                    <Trash2 size={20} color={theme.colors.danger} strokeWidth={2} />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -325,16 +386,15 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
     </SafeAreaView>
   );
 
-  // If visible prop is provided (web), wrap in Modal
+  // If visible prop is provided (web), wrap in Drawer
   if (onClose) {
     return (
-      <Modal
+      <Drawer
         visible={visible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={onClose}>
+        onClose={onClose}
+        fullScreen>
         {content}
-      </Modal>
+      </Drawer>
     );
   }
 
@@ -403,7 +463,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -411,7 +471,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',
@@ -542,6 +602,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border,
+  },
+  incomeRowLast: {
+    borderBottomWidth: 0,
   },
   incomeInfo: {
     flex: 1,

@@ -21,12 +21,15 @@ import {
   Heart,
   X,
   FileText,
+  Trash2,
 } from 'lucide-react-native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
+import { SwipeableRow } from '../components/SwipeableRow';
+import { Toast } from '../components/Toast';
 import {
   exportExpensesToCSV,
   generateCSVTemplate,
@@ -53,6 +56,11 @@ export const Settings: React.FC<SettingsProps> = ({
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
+  // Toast state
+  const [toastVisible, setToastVisible] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [toastType, setToastType] = useState<'success' | 'error' | 'loading'>('success');
+
   // Notification settings
   const [lowBalanceAlerts, setLowBalanceAlerts] = useState(true);
   const [spendingReminders, setSpendingReminders] = useState(true);
@@ -77,6 +85,9 @@ export const Settings: React.FC<SettingsProps> = ({
   );
   const bulkImport = useMutation(api.expenses.bulkImport);
   const manualRollover = useMutation(api.rollover.manualRollover);
+  const resetAllData = useMutation(api.reset.deleteAllUserData);
+  const removeBucket = useMutation(api.buckets.remove);
+  const calculateDistribution = useMutation(api.distribution.calculateDistribution);
 
   // Initialize demo user if needed
   React.useEffect(() => {
@@ -121,29 +132,42 @@ export const Settings: React.FC<SettingsProps> = ({
     }
   };
 
+  const showToast = (message: string, type: 'success' | 'error' | 'loading') => {
+    setToastMessage(message);
+    setToastType(type);
+    setToastVisible(true);
+  };
+
   const handleDownloadTemplate = () => {
     try {
-      const template = generateCSVTemplate();
+      const template = generateCSVTemplate(allBuckets || []);
       downloadCSV(template, 'buckets_import_template.csv');
-      Alert.alert('Success', 'Downloaded CSV template');
+      showToast('Downloaded CSV template with your bucket names', 'success');
     } catch (error) {
-      Alert.alert('Error', 'Failed to download template');
+      showToast('Failed to download template', 'error');
       console.error('Template error:', error);
     }
   };
 
   const handleImportCSV = async (csvText: string) => {
+    console.log('handleImportCSV called with CSV text length:', csvText?.length);
+
     if (!currentUser || allBuckets.length === 0) {
-      Alert.alert('Error', 'Please create buckets first');
+      showToast('Please create buckets first', 'error');
       return;
     }
 
     try {
+      // Show loading toast
+      showToast('Importing transactions...', 'loading');
+
       // Parse CSV
+      console.log('Parsing CSV with', allBuckets.length, 'buckets');
       const parsedExpenses = parseCSVToExpenses(csvText, allBuckets);
+      console.log('Parsed expenses:', parsedExpenses.length);
 
       if (parsedExpenses.length === 0) {
-        Alert.alert('Error', 'No valid expenses found in CSV');
+        showToast('No valid expenses found in CSV', 'error');
         return;
       }
 
@@ -168,17 +192,19 @@ export const Settings: React.FC<SettingsProps> = ({
         expenses: expensesToImport,
       });
 
-      const message = `Imported: ${results.success}\nFailed: ${results.failed}${
-        results.errors.length > 0
-          ? '\n\nErrors:\n' + results.errors.slice(0, 5).join('\n')
-          : ''
-      }`;
+      // Show success/error based on results
+      if (results.failed === 0) {
+        showToast(`Successfully imported ${results.success} transactions!`, 'success');
+      } else {
+        showToast(`Imported ${results.success}, failed ${results.failed}. Check console for errors.`, 'error');
+        console.error('Import errors:', results.errors);
+      }
 
-      Alert.alert('Import Results', message);
       setShowImport(false);
     } catch (error) {
-      Alert.alert('Error', (error as Error).message);
+      const errorMessage = (error as Error).message || 'Unknown error occurred';
       console.error('Import error:', error);
+      showToast(errorMessage, 'error');
     }
   };
 
@@ -207,6 +233,73 @@ export const Settings: React.FC<SettingsProps> = ({
       alert(
         'Income management coming soon for web!\n\nFor now, use the native app to set income.',
       );
+    }
+  };
+
+  const handleDeleteBucket = async (bucket: Bucket) => {
+    if (!currentUser) return;
+
+    const hasBalance = (bucket.currentBalance || 0) > 0;
+    const confirmMessage = hasBalance
+      ? `Delete "${bucket.name}"?\n\nThis bucket has $${(bucket.currentBalance || 0).toFixed(2)} remaining.\n\nThis action cannot be undone.`
+      : `Delete "${bucket.name}"?\n\nThis action cannot be undone.`;
+
+    const confirmed = confirm(confirmMessage);
+    if (!confirmed) return;
+
+    try {
+      await removeBucket({ bucketId: bucket._id as any });
+    } catch (error: any) {
+      console.error('Failed to delete bucket:', error);
+      alert(`Error: ${error?.message || 'Failed to delete bucket. Please try again.'}`);
+    }
+  };
+
+  const handleResetAllData = async () => {
+    if (!currentUser) return;
+
+    const confirmed = confirm(
+      '⚠️ WARNING: This will permanently delete ALL your data including:\n\n' +
+      '• All buckets\n' +
+      '• All income entries\n' +
+      '• All expenses\n' +
+      '• All recurring expenses\n' +
+      '• All chat history\n' +
+      '• All memories\n\n' +
+      'This action CANNOT be undone!\n\n' +
+      'Are you absolutely sure you want to continue?'
+    );
+
+    if (!confirmed) return;
+
+    // Double confirmation
+    const doubleConfirm = confirm(
+      'This is your last chance!\n\n' +
+      'Type "DELETE" in your mind and click OK to proceed with deleting ALL data.'
+    );
+
+    if (!doubleConfirm) return;
+
+    try {
+      const result = await resetAllData({ userId: currentUser._id });
+
+      alert(
+        `✅ All data has been deleted!\n\n` +
+        `Deleted:\n` +
+        `• ${result.deletedCounts.buckets} buckets\n` +
+        `• ${result.deletedCounts.income} income entries\n` +
+        `• ${result.deletedCounts.expenses} expenses\n` +
+        `• ${result.deletedCounts.recurringExpenses} recurring expenses\n` +
+        `• ${result.deletedCounts.conversations} conversations\n` +
+        `• ${result.deletedCounts.memories} memories\n\n` +
+        `Your app has been reset to a clean slate.`
+      );
+
+      // Reload the page to refresh the UI
+      window.location.reload();
+    } catch (error: any) {
+      console.error('Failed to reset data:', error);
+      alert(`Error: ${error?.message || 'Failed to reset data. Please try again.'}`);
     }
   };
 
@@ -247,9 +340,25 @@ export const Settings: React.FC<SettingsProps> = ({
         <View style={styles.section}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.sectionHeader}>INCOME</Text>
-            <TouchableOpacity onPress={handleSetIncome}>
-              <Text style={styles.addButton}>+ Add</Text>
-            </TouchableOpacity>
+            <View style={styles.headerButtonsRow}>
+              <TouchableOpacity
+                onPress={async () => {
+                  if (!currentUser) return;
+                  try {
+                    showToast('Applying allocations...', 'loading');
+                    await calculateDistribution({ userId: currentUser._id });
+                    showToast('All bucket allocations and save contributions have been updated!', 'success');
+                  } catch (error: any) {
+                    showToast(error.message || 'Failed to apply allocations', 'error');
+                  }
+                }}
+              >
+                <Text style={styles.refreshButton}>↻ Apply</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={handleSetIncome}>
+                <Text style={styles.addButton}>+ Add</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <Pressable style={styles.row} onPress={handleSetIncome}>
             <View style={styles.rowLeft}>
@@ -279,27 +388,31 @@ export const Settings: React.FC<SettingsProps> = ({
           </View>
 
           {allBuckets.map(bucket => (
-            <Pressable
+            <SwipeableRow
               key={bucket._id}
-              style={styles.row}
-              onPress={() => handleEditBucket(bucket)}
+              onDelete={() => handleDeleteBucket(bucket)}
             >
-              <View style={styles.rowLeft}>
-                <View
-                  style={[styles.bucketDot, { backgroundColor: bucket.color }]}
-                />
-                <View>
-                  <Text style={styles.rowTitle}>{bucket.name}</Text>
-                  <Text style={styles.rowSubtitle}>
-                    {bucket.allocationType === 'percentage'
-                      ? `${bucket.allocationValue}%`
-                      : `$${bucket.allocationValue}`}{' '}
-                    per month
-                  </Text>
+              <Pressable
+                style={styles.bucketRow}
+                onPress={() => handleEditBucket(bucket)}
+              >
+                <View style={styles.rowLeft}>
+                  <View
+                    style={[styles.bucketDot, { backgroundColor: bucket.color }]}
+                  />
+                  <View>
+                    <Text style={styles.rowTitle}>{bucket.name}</Text>
+                    <Text style={styles.rowSubtitle}>
+                      {bucket.allocationType === 'percentage'
+                        ? `${bucket.allocationValue}%`
+                        : `$${bucket.allocationValue}`}{' '}
+                      per month
+                    </Text>
+                  </View>
                 </View>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </Pressable>
+                <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
+              </Pressable>
+            </SwipeableRow>
           ))}
         </View>
 
@@ -412,6 +525,16 @@ export const Settings: React.FC<SettingsProps> = ({
                 <BarChart3 size={22} color="#4747FF" strokeWidth={2} />
               </View>
               <Text style={styles.rowTitle}>Export Data</Text>
+            </View>
+            <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
+          </Pressable>
+
+          <Pressable style={styles.row} onPress={handleResetAllData}>
+            <View style={styles.rowLeft}>
+              <View style={styles.iconContainer}>
+                <Trash2 size={22} color="#FF3B30" strokeWidth={2} />
+              </View>
+              <Text style={[styles.rowTitle, styles.dangerText]}>Reset All Data</Text>
             </View>
             <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
           </Pressable>
@@ -616,10 +739,39 @@ export const Settings: React.FC<SettingsProps> = ({
             <TouchableOpacity
               style={styles.exportOption}
               onPress={() => {
-                Alert.alert(
-                  'Import CSV',
-                  'Select a CSV file to import (coming soon!)',
-                );
+                console.log('Import CSV button clicked');
+                // Create file input for web
+                if (typeof document !== 'undefined') {
+                  const input = document.createElement('input');
+                  input.type = 'file';
+                  input.accept = '.csv';
+                  input.onchange = (e: any) => {
+                    console.log('File selected');
+                    const file = e.target?.files?.[0];
+                    if (file) {
+                      console.log('Reading file:', file.name, 'size:', file.size);
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const csvText = event.target?.result as string;
+                        console.log('File read successfully, length:', csvText?.length);
+                        handleImportCSV(csvText);
+                      };
+                      reader.onerror = (error) => {
+                        console.error('FileReader error:', error);
+                        showToast('Failed to read file', 'error');
+                      };
+                      reader.readAsText(file);
+                    } else {
+                      console.log('No file selected');
+                    }
+                  };
+                  input.click();
+                } else {
+                  Alert.alert(
+                    'Import CSV',
+                    'CSV import is only available on web',
+                  );
+                }
               }}
             >
               <View style={styles.exportOptionContent}>
@@ -636,15 +788,27 @@ export const Settings: React.FC<SettingsProps> = ({
                 CSV Format Requirements:
               </Text>
               <Text style={styles.importInstructionsText}>
-                • date: YYYY-MM-DD format{'\n'}• amount: Number (e.g., 42.50)
-                {'\n'}• bucket: Name of bucket (must match existing bucket)
-                {'\n'}• note: Description of transaction{'\n'}• happinessRating:
-                Number from 1-5
+                • Date: YYYY-MM-DD format (e.g., 2024-01-15){'\n'}
+                • Bucket: Must match your bucket names exactly{'\n'}
+                • Amount: Number without $ (e.g., 42.50){'\n'}
+                • Note: Description (use quotes if contains commas){'\n'}
+                • Happiness Rating: Number from 1-5{'\n'}
+                • Category: Optional (e.g., Food & Dining){'\n'}
+                • Merchant: Optional (e.g., Whole Foods){'\n'}
+                • Needs vs Wants: Optional - "need" or "want"
               </Text>
             </View>
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* Toast Notification */}
+      <Toast
+        visible={toastVisible}
+        message={toastMessage}
+        type={toastType}
+        onHide={() => setToastVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -708,6 +872,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginHorizontal: 20,
   },
+  headerButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  refreshButton: {
+    fontSize: 13,
+    color: '#4747FF',
+    fontWeight: '500',
+    fontFamily: 'Merchant, monospace',
+  },
   addButton: {
     fontSize: 13,
     color: '#4747FF',
@@ -724,6 +899,16 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 20,
     marginBottom: 10,
+    cursor: 'pointer' as any,
+  },
+  bucketRow: {
+    backgroundColor: '#FDFCFB',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    borderRadius: 20,
     cursor: 'pointer' as any,
   },
   rowLeft: {
@@ -745,16 +930,16 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   rowTitle: {
-    fontSize: 16,
+    fontSize: 18,
     color: '#2D2D2D',
     fontWeight: '400',
     fontFamily: 'Merchant, monospace',
   },
   rowSubtitle: {
-    fontSize: 13,
+    fontSize: 15,
     color: '#8A8478',
     fontFamily: 'Merchant Copy, monospace',
-    marginTop: 2,
+    marginTop: 3,
   },
   footer: {
     paddingVertical: 40,
@@ -883,5 +1068,8 @@ const styles = StyleSheet.create({
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     lineHeight: 18,
+  },
+  dangerText: {
+    color: '#FF3B30',
   },
 });

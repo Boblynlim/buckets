@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   ScrollView,
   KeyboardAvoidingView,
+  Image,
 } from 'react-native';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -22,14 +23,7 @@ interface Message {
 }
 
 export const ChatScreen: React.FC = () => {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: "Hi! I'm here to help you make thoughtful spending decisions. Ask me anything about your budget, or whether you should make a purchase.",
-      timestamp: Date.now(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
@@ -117,13 +111,11 @@ export const ChatScreen: React.FC = () => {
         throw new Error('User not found');
       }
 
-      // Prepare conversation history (exclude initial greeting)
-      const conversationHistory = messages
-        .filter(m => m.id !== '1')
-        .map(m => ({
-          role: m.role,
-          content: m.content,
-        }));
+      // Prepare conversation history
+      const conversationHistory = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
 
       // Call Claude via Convex action
       const response = await sendMessageToClaude({
@@ -181,13 +173,11 @@ export const ChatScreen: React.FC = () => {
         throw new Error('User not found');
       }
 
-      // Prepare conversation history (exclude initial greeting)
-      const conversationHistory = messages
-        .filter(m => m.id !== '1')
-        .map(m => ({
-          role: m.role,
-          content: m.content,
-        }));
+      // Prepare conversation history
+      const conversationHistory = messages.map(m => ({
+        role: m.role,
+        content: m.content,
+      }));
 
       // Call Claude via Convex action
       const response = await sendMessageToClaude({
@@ -229,11 +219,17 @@ export const ChatScreen: React.FC = () => {
   return (
     <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView style={styles.keyboardAvoid} behavior="padding">
-        {/* Header */}
+        {/* WhatsApp-style Header */}
         <View style={styles.header}>
-          <View style={styles.titleRow}>
-            <Text style={styles.title}>Chat</Text>
-            <View style={styles.headerSpacer} />
+          <View style={styles.headerContent}>
+            <Image
+              source={require('../../public/icons/icon-192x192.png')}
+              style={styles.avatar}
+            />
+            <View style={styles.headerTextContainer}>
+              <Text style={styles.headerName}>Shrimpy</Text>
+              <Text style={styles.headerStatus}>Your budget assistant</Text>
+            </View>
           </View>
         </View>
 
@@ -243,42 +239,27 @@ export const ChatScreen: React.FC = () => {
           style={styles.messagesContainer}
           contentContainerStyle={styles.messagesContent}
           showsVerticalScrollIndicator={false}>
-          {/* Suggested Prompts - show only if no user messages */}
-          {messages.filter(m => m.role === 'user').length === 0 && (
-            <View style={styles.suggestedPromptsContainer}>
-              <Text style={styles.suggestedPromptsTitle}>Try asking:</Text>
-              {suggestedPrompts.map((prompt, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.suggestedPrompt}
-                  onPress={() => handleSuggestedPrompt(prompt)}>
-                  <Text style={styles.suggestedPromptText}>{prompt}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
 
-          {/* Messages */}
+          {/* Messages in WhatsApp/Telegram style */}
           {messages.map(message => (
             <View
               key={message.id}
               style={[
-                styles.messageBubble,
-                message.role === 'user'
-                  ? styles.userBubble
-                  : styles.assistantBubble,
+                styles.messageRow,
+                message.role === 'user' ? styles.userMessageRow : styles.assistantMessageRow,
               ]}>
               {message.role === 'assistant' && (
-                <View style={styles.assistantIcon}>
-                  <Text style={styles.assistantIconText}>💬</Text>
-                </View>
+                <Image
+                  source={require('../../public/icons/icon-192x192.png')}
+                  style={styles.messageAvatar}
+                />
               )}
               <View
                 style={[
-                  styles.messageContent,
+                  styles.messageBubble,
                   message.role === 'user'
-                    ? styles.userMessageContent
-                    : styles.assistantMessageContent,
+                    ? styles.userBubble
+                    : styles.assistantBubble,
                 ]}>
                 <Text
                   style={[
@@ -293,16 +274,31 @@ export const ChatScreen: React.FC = () => {
 
           {/* Loading Indicator */}
           {isLoading && (
-            <View style={[styles.messageBubble, styles.assistantBubble]}>
-              <View style={styles.assistantIcon}>
-                <Text style={styles.assistantIconText}>💬</Text>
-              </View>
-              <View style={styles.assistantMessageContent}>
+            <View style={[styles.messageRow, styles.assistantMessageRow]}>
+              <Image
+                source={require('../../public/icons/icon-192x192.png')}
+                style={styles.messageAvatar}
+              />
+              <View style={[styles.messageBubble, styles.assistantBubble]}>
                 <Text style={styles.loadingText}>...</Text>
               </View>
             </View>
           )}
         </ScrollView>
+
+        {/* Suggested Prompts - bottom right as quick replies */}
+        {messages.length === 0 && (
+          <View style={styles.suggestedPromptsContainer}>
+            {suggestedPrompts.map((prompt, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.suggestedPrompt}
+                onPress={() => handleSuggestedPrompt(prompt)}>
+                <Text style={styles.suggestedPromptText}>{prompt}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
 
         {/* Input */}
         <View style={styles.inputContainer}>
@@ -310,7 +306,7 @@ export const ChatScreen: React.FC = () => {
             style={styles.input}
             value={inputText}
             onChangeText={setInputText}
-            placeholder="Ask me anything..."
+            placeholder="Message Shrimpy..."
             placeholderTextColor="#8A8478"
             multiline
             onSubmitEditing={handleSend}
@@ -333,111 +329,87 @@ export const ChatScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F3F0',
+    backgroundColor: '#ECE5DD',
   },
   keyboardAvoid: {
     flex: 1,
   },
+  // WhatsApp-style header
   header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 0,
+    backgroundColor: '#EAEAFF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#3838DD',
   },
-  titleRow: {
+  headerContent: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    height: 48,
-    marginBottom: 20,
   },
-  headerSpacer: {
-    width: 48,
-    height: 48,
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 12,
   },
-  title: {
-    fontSize: 48,
-    fontWeight: '500',
-    color: '#2D2D2D',
-    fontFamily: 'Merchant, monospace',
-    letterSpacing: -1.2,
+  headerTextContainer: {
+    flex: 1,
   },
+  headerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4747FF',
+    fontFamily: 'Merchant Copy, monospace',
+  },
+  headerStatus: {
+    fontSize: 12,
+    color: '#4747FF',
+    opacity: 0.8,
+    fontFamily: 'Merchant Copy, monospace',
+    marginTop: 2,
+  },
+  // Messages
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    padding: 20,
+    padding: 12,
     paddingBottom: 20,
   },
-  suggestedPromptsContainer: {
-    marginBottom: 20,
-  },
-  suggestedPromptsTitle: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#8A8478',
-    fontFamily: 'Merchant, monospace',
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  suggestedPrompt: {
-    backgroundColor: '#FDFCFB',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#E8E5E0',
-  },
-  suggestedPromptText: {
-    fontSize: 14,
-    color: '#2D2D2D',
-    fontFamily: 'Merchant Copy, monospace',
-  },
-  messageBubble: {
-    marginBottom: 16,
+  messageRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    marginBottom: 8,
+    alignItems: 'flex-end',
   },
-  userBubble: {
-    justifyContent: 'flex-end',
-  },
-  assistantBubble: {
+  assistantMessageRow: {
     justifyContent: 'flex-start',
   },
-  assistantIcon: {
+  userMessageRow: {
+    justifyContent: 'flex-end',
+  },
+  messageAvatar: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#FDFCFB',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#E8E5E0',
+    marginRight: 8,
   },
-  assistantIconText: {
-    fontSize: 16,
+  messageBubble: {
+    maxWidth: '75%',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
   },
-  messageContent: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
+  assistantBubble: {
+    backgroundColor: '#FFFFFF',
+    borderBottomLeftRadius: 2,
   },
-  userMessageContent: {
+  userBubble: {
     backgroundColor: '#4747FF',
-    borderWidth: 1,
-    borderColor: '#4747FF',
-  },
-  assistantMessageContent: {
-    backgroundColor: '#FDFCFB',
-    borderWidth: 1,
-    borderColor: '#E8E5E0',
+    borderBottomRightRadius: 2,
   },
   messageText: {
     fontSize: 14,
-    lineHeight: 22,
+    lineHeight: 20,
     color: '#2D2D2D',
     fontFamily: 'Merchant Copy, monospace',
   },
@@ -445,25 +417,52 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   loadingText: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 14,
+    color: '#8A8478',
+    fontFamily: 'Merchant Copy, monospace',
   },
+  // Suggested prompts as quick replies
+  suggestedPromptsContainer: {
+    position: 'absolute',
+    bottom: 94,
+    right: 12,
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  suggestedPrompt: {
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E8E5E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  suggestedPromptText: {
+    fontSize: 12,
+    color: '#2D2D2D',
+    fontFamily: 'Merchant Copy, monospace',
+  },
+  // Input
   inputContainer: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    paddingBottom: 90,
-    backgroundColor: '#FDFCFB',
+    paddingTop: 8,
+    paddingBottom: 24,
+    backgroundColor: '#F5F3F0',
     borderTopWidth: 1,
     borderTopColor: '#E8E5E0',
   },
   input: {
     flex: 1,
-    backgroundColor: '#F5F3F0',
-    borderRadius: 16,
-    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     fontSize: 15,
     maxHeight: 100,

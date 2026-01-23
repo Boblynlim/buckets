@@ -15,6 +15,7 @@ export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
   // Calculate values based on bucket mode
   const isSpendBucket = bucket.bucketMode === 'spend' || !bucket.bucketMode; // Default to spend for legacy
   const isSaveBucket = bucket.bucketMode === 'save';
+  const isRecurringBucket = bucket.bucketMode === 'recurring';
 
   let spent = 0;
   let total = 0;
@@ -32,6 +33,12 @@ export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
     available = bucket.currentBalance || 0;
     total = bucket.targetAmount || 0;
     percentUsed = total > 0 ? (available / total) * 100 : 0;
+  } else if (isRecurringBucket) {
+    // For recurring buckets, show total paid this month
+    spent = bucket.spentAmount || 0;
+    total = bucket.fundedAmount || bucket.allocationValue || 0;
+    available = 0; // No available balance for recurring
+    percentUsed = 100; // Always fully "paid"
   }
 
   const isLowBalance = percentUsed >= bucket.alertThreshold;
@@ -122,6 +129,23 @@ export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
                 </View>
               </>
             )}
+
+            {isRecurringBucket && (
+              <>
+                <Text style={styles.amountText}>
+                  <Text style={styles.currentAmount}>
+                    ${total.toFixed(2)}
+                  </Text>
+                  <Text style={styles.amountLabel}> allocated this month</Text>
+                </Text>
+
+                {spent > 0 && (
+                  <Text style={styles.carryoverHint}>
+                    ${spent.toFixed(2)} paid via expenses
+                  </Text>
+                )}
+              </>
+            )}
           </View>
 
           {/* Chevron */}
@@ -178,11 +202,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: getFontFamily('bold'),
     color: theme.colors.text,
-    marginBottom: 6,
-    letterSpacing: -0.3,
+    marginBottom: 4,
+    letterSpacing: -0.4,
   },
   amountText: {
-    marginBottom: 8,
+    marginBottom: 10,
     lineHeight: 24,
   },
   currentAmount: {
@@ -190,6 +214,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.primary,
     letterSpacing: 0,
+    fontWeight: '500',
   },
   amountLabel: {
     fontSize: 14,
@@ -203,12 +228,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   carryoverHint: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: getFontFamily('regular'),
     color: theme.colors.textSecondary,
     fontStyle: 'italic',
-    marginTop: 2,
-    marginBottom: 6,
   },
   progressContainer: {
     marginTop: 0,

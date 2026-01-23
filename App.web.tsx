@@ -23,10 +23,11 @@ import { Reports } from './src/screens/Reports';
 import { IncomeManagement } from './src/screens/IncomeManagement';
 import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
+import { Drawer } from './src/components/Drawer';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
-type Screen = 'buckets' | 'chat' | 'settings' | 'reports';
+type Screen = 'buckets' | 'settings' | 'reports';
 
 function App() {
   const [currentScreen, setCurrentScreen] = useState<Screen>('buckets');
@@ -38,6 +39,7 @@ function App() {
   const [showEditExpense, setShowEditExpense] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<{expense: Expense; bucket: Bucket} | null>(null);
   const [isReportSelected, setIsReportSelected] = useState(false);
+  const [showShrimpyDrawer, setShowShrimpyDrawer] = useState(false);
 
   // Register service worker for PWA functionality
   useEffect(() => {
@@ -71,8 +73,6 @@ function App() {
             onEditExpense={handleEditExpense}
           />
         );
-      case 'chat':
-        return <ChatScreen />;
       case 'settings':
         return (
           <Settings
@@ -124,19 +124,19 @@ function App() {
 
             <TouchableOpacity
               style={styles.tab}
-              onPress={() => setCurrentScreen('chat')}
+              onPress={() => setShowShrimpyDrawer(true)}
             >
               <View
                 style={[
                   styles.iconWrapper,
-                  currentScreen === 'chat' && styles.tabActive,
+                  showShrimpyDrawer && styles.tabActive,
                 ]}
               >
                 <MessageCircle
                   size={22}
                   color="#FFFFFF"
                   strokeWidth={1.5}
-                  style={{ opacity: currentScreen === 'chat' ? 1 : 0.7 }}
+                  style={{ opacity: 0.7 }}
                 />
               </View>
             </TouchableOpacity>
@@ -238,6 +238,15 @@ function App() {
             }}
           />
         )}
+
+        {/* Shrimpy Drawer */}
+        <Drawer
+          visible={showShrimpyDrawer}
+          onClose={() => setShowShrimpyDrawer(false)}
+          fullScreen
+        >
+          <ChatScreen />
+        </Drawer>
       </View>
     </ConvexProvider>
   );

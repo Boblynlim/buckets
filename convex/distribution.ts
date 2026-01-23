@@ -29,28 +29,35 @@ export const calculateDistribution = mutation({
       .filter(q => q.eq(q.field('isActive'), true))
       .collect();
 
-    // Calculate planned amounts for all spend buckets
+    // Calculate planned amounts for all spend and recurring buckets
     let totalPlanned = 0;
     const bucketPlans: { id: Id<'buckets'>; planned: number; mode: string }[] = [];
 
     for (const bucket of buckets) {
-      if (bucket.bucketMode === 'spend') {
+      if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
         let planned = 0;
 
+        // Check new fields first
         if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
           planned = (totalIncome * bucket.plannedPercent) / 100;
         } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
           planned = bucket.plannedAmount;
         }
+        // Fall back to legacy allocationValue if new fields not set
+        else if (bucket.allocationValue !== undefined) {
+          // Legacy buckets stored the actual value, need to check if it was percentage or amount
+          // Assume it's a fixed amount for legacy buckets
+          planned = bucket.allocationValue;
+        }
 
         bucketPlans.push({
           id: bucket._id,
           planned,
-          mode: 'spend',
+          mode: bucket.bucketMode,
         });
         totalPlanned += planned;
       } else {
-        // Save buckets don't consume income planning
+        // Save buckets don't consume income planning (they use separate contributions)
         bucketPlans.push({
           id: bucket._id,
           planned: 0,
@@ -65,13 +72,55 @@ export const calculateDistribution = mutation({
 
     // Update each bucket with funding
     for (const plan of bucketPlans) {
-      if (plan.mode === 'spend') {
+      if (plan.mode === 'spend' || plan.mode === 'recurring') {
         const funded = plan.planned * fundingRatio;
         await ctx.db.patch(plan.id, {
           fundedAmount: funded,
         });
       }
     }
+
+    // Process save bucket contributions (only if not done this month)
+    const now = Date.now();
+    const currentMonth = new Date(now).getMonth();
+    const currentYear = new Date(now).getFullYear();
+
+    for (const bucket of buckets) {
+      if (bucket.bucketMode === 'save' && bucket.contributionType !== 'none') {
+        // Check if contribution already applied this month
+        const lastContribution = bucket.lastContributionDate || 0;
+        const lastMonth = new Date(lastContribution).getMonth();
+        const lastYear = new Date(lastContribution).getFullYear();
+
+        const alreadyContributedThisMonth =
+          lastYear === currentYear && lastMonth === currentMonth;
+
+        if (!alreadyContributedThisMonth) {
+          let contribution = 0;
+
+          if (bucket.contributionType === 'amount' && bucket.contributionAmount !== undefined) {
+            contribution = bucket.contributionAmount;
+          } else if (bucket.contributionType === 'percentage' && bucket.contributionPercent !== undefined) {
+            contribution = (totalIncome * bucket.contributionPercent) / 100;
+          }
+
+          // Add contribution to current balance
+          const newBalance = (bucket.currentBalance || 0) + contribution;
+          await ctx.db.patch(bucket._id, {
+            currentBalance: newBalance,
+            lastContributionDate: now,
+          });
+        }
+      }
+    }
+
+    console.log('Distribution completed:', {
+      totalIncome,
+      totalPlanned,
+      bucketsUpdated: bucketPlans.length,
+      isOverPlanned,
+      fundingRatio,
+    });
 
     return {
       totalIncome,
@@ -112,10 +161,15 @@ export const getDistributionStatus = query({
       if (bucket.bucketMode === 'spend') {
         let planned = 0;
 
+        // Check new fields first
         if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
           planned = (totalIncome * bucket.plannedPercent) / 100;
         } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
           planned = bucket.plannedAmount;
+        }
+        // Fall back to legacy allocationValue
+        else if (bucket.allocationValue !== undefined) {
+          planned = bucket.allocationValue;
         }
 
         totalPlanned += planned;

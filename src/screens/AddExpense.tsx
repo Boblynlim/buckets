@@ -9,13 +9,13 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  Modal,
 } from 'react-native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import { DatePicker } from '../components/DatePicker';
+import { Drawer } from '../components/Drawer';
 
 interface AddExpenseProps {
   visible?: boolean;
@@ -24,7 +24,7 @@ interface AddExpenseProps {
 
 export const AddExpense: React.FC<AddExpenseProps> = ({
   visible = true,
-  onClose,
+  onClose = () => {},
 }) => {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -32,6 +32,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
   const [date, setDate] = useState(new Date());
   const [showBucketPicker, setShowBucketPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Get current user and buckets from Convex
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -90,31 +91,42 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
   }, [selectedBucket]);
 
   const handleSave = async () => {
-    // Wait for user to be initialized if it's null
-    if (currentUser === null) {
-      console.log('User is null, initializing before save...');
-      await initDemoUser();
-      // Query will refetch automatically, but user needs to try again
-      alert('Please try saving again. Your account is being set up.');
-      return;
-    }
-
-    // Still loading
-    if (currentUser === undefined) {
-      return; // Wait for query to complete
-    }
-
-    if (!selectedBucket) {
-      alert('Please select a bucket');
-      return;
-    }
-
-    if (!amount || parseFloat(amount) <= 0) {
-      alert('Please enter a valid amount');
+    // Prevent duplicate submissions
+    if (isSaving) {
       return;
     }
 
     try {
+      setIsSaving(true);
+
+      // Wait for user to be initialized if it's null
+      if (currentUser === null) {
+        console.log('User is null, initializing before save...');
+        await initDemoUser();
+        // Query will refetch automatically, but user needs to try again
+        alert('Please try saving again. Your account is being set up.');
+        setIsSaving(false);
+        return;
+      }
+
+      // Still loading
+      if (currentUser === undefined) {
+        setIsSaving(false);
+        return; // Wait for query to complete
+      }
+
+      if (!selectedBucket) {
+        alert('Please select a bucket');
+        setIsSaving(false);
+        return;
+      }
+
+      if (!amount || parseFloat(amount) <= 0) {
+        alert('Please enter a valid amount');
+        setIsSaving(false);
+        return;
+      }
+
       await createExpense({
         userId: currentUser._id,
         bucketId: selectedBucket._id,
@@ -129,6 +141,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
       setNote('');
       setHappinessRating(3);
       setDate(new Date());
+      setIsSaving(false);
 
       // Close modal
       if (onClose) {
@@ -137,6 +150,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
     } catch (error: any) {
       console.error('Failed to create expense:', error);
       alert(error.message || 'Failed to add expense. Please try again.');
+      setIsSaving(false);
     }
   };
 
@@ -196,11 +210,10 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
   }
 
   return (
-    <Modal
+    <Drawer
       visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
+      onClose={onClose}
+      fullScreen
     >
       <SafeAreaView style={styles.container}>
         <ScrollView
@@ -213,14 +226,17 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
               <Text style={styles.cancelButton}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.title}>Add Expense</Text>
-            <TouchableOpacity onPress={handleSave} disabled={!isValid}>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={!isValid || isSaving}
+            >
               <Text
                 style={[
                   styles.saveButton,
-                  !isValid && styles.saveButtonDisabled,
+                  (!isValid || isSaving) && styles.saveButtonDisabled,
                 ]}
               >
-                Save
+                {isSaving ? 'Saving...' : 'Save'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -407,7 +423,7 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
           onClose={() => setShowDatePicker(false)}
         />
       </SafeAreaView>
-    </Modal>
+    </Drawer>
   );
 };
 
@@ -472,7 +488,7 @@ const styles = StyleSheet.create({
     borderColor: '#E8E4DF',
   },
   currencySymbol: {
-    fontSize: 28,
+    fontSize: 16,
     fontWeight: '400',
     color: '#877E6F',
     fontFamily: 'Merchant Copy, monospace',
@@ -480,7 +496,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 28,
+    fontSize: 16,
     fontWeight: '400',
     color: '#1A1A1A',
     fontFamily: 'Merchant Copy, monospace',

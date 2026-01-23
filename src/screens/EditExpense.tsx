@@ -18,6 +18,7 @@ import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import type { Expense, Bucket } from '../types';
 import { DatePicker } from '../components/DatePicker';
+import { Drawer } from '../components/Drawer';
 
 type EditExpenseRouteProp = RouteProp<{ EditExpense: { expense: Expense; bucket: Bucket } }, 'EditExpense'>;
 
@@ -35,7 +36,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
 
   try {
     const { useRoute, useNavigation } = require('@react-navigation/native');
-    route = useRoute<EditExpenseRouteProp>();
+    route = useRoute() as EditExpenseRouteProp;
     navigation = useNavigation();
   } catch (error) {
     // Not in navigation context (web) - use props instead
@@ -58,6 +59,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBucketPicker, setShowBucketPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Get current user and buckets
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -92,6 +94,11 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
 
   const handleSave = async () => {
+    // Prevent duplicate submissions
+    if (isSaving) {
+      return;
+    }
+
     if (!isValid || !currentUser) {
       alert('Please enter a valid amount');
       return;
@@ -115,6 +122,8 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     }
 
     try {
+      setIsSaving(true);
+
       await updateExpense({
         expenseId: expense._id as any,
         bucketId: selectedBucket._id as any,
@@ -125,6 +134,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
       });
 
       alert('Expense updated successfully!');
+      setIsSaving(false);
 
       // Close modal or navigate back
       if (onClose) {
@@ -133,6 +143,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     } catch (error: any) {
       console.error('Failed to update expense:', error);
       alert(error.message || 'Failed to update expense. Please try again.');
+      setIsSaving(false);
     }
   };
 
@@ -178,13 +189,16 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
             <Text style={styles.cancelButton}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.title}>Edit Expense</Text>
-          <TouchableOpacity onPress={handleSave} disabled={!isValid}>
+          <TouchableOpacity
+            onPress={handleSave}
+            disabled={!isValid || isSaving}
+          >
             <Text
               style={[
                 styles.saveButton,
-                !isValid && styles.saveButtonDisabled,
+                (!isValid || isSaving) && styles.saveButtonDisabled,
               ]}>
-              Save
+              {isSaving ? 'Saving...' : 'Save'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -364,16 +378,15 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     </SafeAreaView>
   );
 
-  // If visible prop is provided (web), wrap in Modal
+  // If visible prop is provided (web), wrap in Drawer
   if (onClose) {
     return (
-      <Modal
+      <Drawer
         visible={visible}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={onClose}>
+        onClose={onClose}
+        fullScreen>
         {content}
-      </Modal>
+      </Drawer>
     );
   }
 
@@ -439,7 +452,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant Copy, monospace',
@@ -447,7 +460,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 16,
     fontWeight: '400',
     color: theme.colors.text,
     fontFamily: 'Merchant Copy, monospace',

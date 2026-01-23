@@ -62,18 +62,8 @@ export const getRecurring = query({
 export const remove = mutation({
   args: { incomeId: v.id('income') },
   handler: async (ctx, args) => {
-    const income = await ctx.db.get(args.incomeId);
-    if (!income) {
-      throw new Error('Income not found');
-    }
-
-    // Delete the income record
+    // Delete the income record directly
     await ctx.db.delete(args.incomeId);
-
-    // Recalculate distribution for all buckets
-    await ctx.runMutation(api.distribution.calculateDistribution, {
-      userId: income.userId,
-    });
 
     return { success: true };
   },

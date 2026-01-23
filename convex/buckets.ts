@@ -7,7 +7,7 @@ export const create = mutation({
   args: {
     userId: v.id("users"),
     name: v.string(),
-    bucketMode: v.union(v.literal("spend"), v.literal("save")),
+    bucketMode: v.union(v.literal("spend"), v.literal("save"), v.literal("recurring")),
 
     // For spend buckets
     allocationType: v.optional(v.union(v.literal("amount"), v.literal("percentage"))),
@@ -97,10 +97,10 @@ export const getByUser = query({
       .filter((q) => q.eq(q.field("isActive"), true))
       .collect();
 
-    // Add spent amount for each spend bucket (DERIVED from transactions)
+    // Add spent amount for each spend/recurring bucket (DERIVED from transactions)
     const bucketsWithSpent = await Promise.all(
       buckets.map(async (bucket) => {
-        if (bucket.bucketMode === 'spend') {
+        if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
           // IMPORTANT: Query transactions to compute spent
           // This ensures deletes/edits automatically update the value
           let expensesQuery = ctx.db
@@ -167,7 +167,7 @@ export const update = mutation({
   args: {
     bucketId: v.id("buckets"),
     name: v.optional(v.string()),
-    bucketMode: v.optional(v.union(v.literal("spend"), v.literal("save"))),
+    bucketMode: v.optional(v.union(v.literal("spend"), v.literal("save"), v.literal("recurring"))),
     allocationType: v.optional(v.union(v.literal("amount"), v.literal("percentage"))),
     plannedAmount: v.optional(v.number()),
     plannedPercent: v.optional(v.number()),

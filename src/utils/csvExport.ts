@@ -65,9 +65,9 @@ export const exportExpensesToCSV = (
 };
 
 /**
- * Generate CSV template for import
+ * Generate CSV template for import with user's actual buckets
  */
-export const generateCSVTemplate = (): string => {
+export const generateCSVTemplate = (buckets: Bucket[]): string => {
   const header = [
     'Date',
     'Bucket',
@@ -79,12 +79,34 @@ export const generateCSVTemplate = (): string => {
     'Needs vs Wants',
   ].join(',');
 
+  // Instructions comment
+  const instructions = [
+    '# INSTRUCTIONS:',
+    '# - Date format: YYYY-MM-DD (e.g., 2024-01-15)',
+    '# - Bucket: Choose from your buckets listed below',
+    `# - Available Buckets: ${buckets.map(b => b.name).join(', ')}`,
+    '# - Amount: Number without currency symbol (e.g., 45.50)',
+    '# - Note: Description in quotes if it contains commas',
+    '# - Happiness Rating: 1-5 (1=worst, 5=best)',
+    '# - Category: Optional (e.g., Food & Dining, Transportation)',
+    '# - Merchant: Optional (e.g., Whole Foods, Uber)',
+    '# - Needs vs Wants: Optional - either "need" or "want"',
+    '# ',
+    '# Delete these instruction lines and the example rows before importing your data',
+    '#',
+  ].join('\n');
+
+  // Example rows using actual bucket names if available
+  const firstBucket = buckets[0]?.name || 'Groceries';
+  const secondBucket = buckets[1]?.name || 'Entertainment';
+  const thirdBucket = buckets[2]?.name || 'Transportation';
+
   const examples = [
     [
       '2024-01-15',
-      'Groceries',
+      firstBucket,
       '45.50',
-      '"Weekly groceries at Whole Foods"',
+      '"Weekly groceries"',
       '4',
       'Food & Dining',
       'Whole Foods',
@@ -92,9 +114,9 @@ export const generateCSVTemplate = (): string => {
     ].join(','),
     [
       '2024-01-16',
-      'Entertainment',
+      secondBucket,
       '12.99',
-      '"Netflix subscription"',
+      '"Subscription"',
       '5',
       'Entertainment',
       'Netflix',
@@ -102,9 +124,9 @@ export const generateCSVTemplate = (): string => {
     ].join(','),
     [
       '2024-01-17',
-      'Transportation',
+      thirdBucket,
       '25.00',
-      '"Uber to work"',
+      '"Ride to work"',
       '3',
       'Transportation',
       'Uber',
@@ -112,7 +134,7 @@ export const generateCSVTemplate = (): string => {
     ].join(','),
   ];
 
-  return [header, ...examples].join('\n');
+  return [instructions, '', header, ...examples].join('\n');
 };
 
 /**
@@ -138,6 +160,7 @@ export const parseCSVToExpenses = (
   for (let i = 0; i < dataLines.length; i++) {
     const line = dataLines[i].trim();
     if (!line) continue; // Skip empty lines
+    if (line.startsWith('#')) continue; // Skip comment lines
 
     try {
       // Parse CSV line (handle quoted fields)
@@ -267,4 +290,30 @@ export const downloadCSV = (content: string, filename: string) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+/**
+ * Generate a Google Sheets template URL with data validation dropdown for buckets
+ */
+export const generateGoogleSheetsTemplate = (buckets: Bucket[]): string => {
+  const bucketNames = buckets.map(b => b.name).join(', ');
+
+  // Create the template data
+  const instructions = [
+    'BUCKETS IMPORT TEMPLATE',
+    '',
+    'INSTRUCTIONS:',
+    '- Fill in your expenses below the header row',
+    `- For Bucket column, use dropdown or type exactly: ${bucketNames}`,
+    '- Date format: YYYY-MM-DD (e.g., 2024-01-15)',
+    '- Happiness Rating: 1-5 (1=worst, 5=best)',
+    '- Needs vs Wants: either "need" or "want"',
+    '- Download as CSV when done: File > Download > CSV',
+    '',
+    'YOUR BUCKETS:',
+    ...buckets.map(b => `- ${b.name}`),
+    '',
+  ].join('\n');
+
+  return instructions;
 };

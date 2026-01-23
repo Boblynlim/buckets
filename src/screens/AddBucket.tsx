@@ -7,19 +7,19 @@ import {
   TextInput,
   TouchableOpacity,
   ScrollView,
-  Modal,
 } from 'react-native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import { getRandomBucketIcon } from '../constants/bucketIcons';
+import { Drawer } from '../components/Drawer';
 
 // Budget suggestion engine based on bucket name
-const getBudgetSuggestion = (bucketName: string, bucketMode: 'spend' | 'save') => {
+const getBudgetSuggestion = (bucketName: string, bucketMode: 'spend' | 'save' | 'recurring') => {
   const name = bucketName.toLowerCase().trim();
 
-  if (bucketMode === 'spend') {
+  if (bucketMode === 'spend' || bucketMode === 'recurring') {
     // Spend bucket = Accumulation funds (builds up over time for splurging)
     const accumulationCategories: Record<string, { percent: number; description: string }> = {
       // Essential recurring expenses
@@ -124,7 +124,7 @@ export const AddBucket: React.FC<AddBucketProps> = ({
   onSave,
 }) => {
   const [name, setName] = useState('');
-  const [bucketMode, setBucketMode] = useState<'spend' | 'save'>('spend');
+  const [bucketMode, setBucketMode] = useState<'spend' | 'save' | 'recurring'>('spend');
 
   // Spend bucket state
   const [allocationType, setAllocationType] = useState<'amount' | 'percentage'>('amount');
@@ -192,6 +192,9 @@ export const AddBucket: React.FC<AddBucketProps> = ({
     adjusted?: boolean;
   } | null>(null);
 
+  // Loading state to prevent duplicate submissions
+  const [isSaving, setIsSaving] = useState(false);
+
   // Update suggestion when bucket name or mode changes
   useEffect(() => {
     if (name.length >= 3) {
@@ -231,20 +234,30 @@ export const AddBucket: React.FC<AddBucketProps> = ({
   }, [currentUser, initDemoUser]);
 
   const handleSave = async () => {
+    // Prevent duplicate submissions
+    if (isSaving) {
+      return;
+    }
+
     try {
+      setIsSaving(true);
+
       // Validation based on bucket mode
       if (!name) {
         alert('Please enter a bucket name');
+        setIsSaving(false);
         return;
       }
 
       if (bucketMode === 'spend' && !allocationValue) {
         alert('Please enter an allocation amount');
+        setIsSaving(false);
         return;
       }
 
       if (bucketMode === 'save' && !targetAmount) {
         alert('Please enter a target amount');
+        setIsSaving(false);
         return;
       }
 
@@ -254,11 +267,13 @@ export const AddBucket: React.FC<AddBucketProps> = ({
         await initDemoUser();
         // The query will refetch automatically, but we need to wait
         alert('Please try saving again. Your account is being set up.');
+        setIsSaving(false);
         return;
       }
 
       // Still loading - wait for query to complete
       if (currentUser === undefined) {
+        setIsSaving(false);
         return;
       }
 
@@ -288,7 +303,7 @@ export const AddBucket: React.FC<AddBucketProps> = ({
       };
 
       let bucketParams;
-      if (bucketMode === 'spend') {
+      if (bucketMode === 'spend' || bucketMode === 'recurring') {
         bucketParams = {
           ...baseData,
           allocationType,
@@ -329,16 +344,18 @@ export const AddBucket: React.FC<AddBucketProps> = ({
       setReminderDays(false);
       setNotifyOnComplete(true);
       setCapBehavior('stop');
+      setIsSaving(false);
       onClose();
     } catch (error: any) {
       console.error('Failed to create bucket:', error);
       const errorMessage =
         error?.message || 'Failed to create bucket. Please try again.';
       alert(errorMessage);
+      setIsSaving(false);
     }
   };
 
-  const isValid = bucketMode === 'spend'
+  const isValid = bucketMode === 'spend' || bucketMode === 'recurring'
     ? name.trim() && allocationValue && parseFloat(allocationValue) > 0
     : name.trim() &&
       targetAmount &&
@@ -346,11 +363,10 @@ export const AddBucket: React.FC<AddBucketProps> = ({
       (contributionType === 'none' || (contributionValue && parseFloat(contributionValue) > 0));
 
   return (
-    <Modal
+    <Drawer
       visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
+      onClose={onClose}
+      fullScreen
     >
       <SafeAreaView style={styles.container}>
         <ScrollView
@@ -363,14 +379,17 @@ export const AddBucket: React.FC<AddBucketProps> = ({
               <Text style={styles.cancelButton}>Cancel</Text>
             </TouchableOpacity>
             <Text style={styles.title}>New Bucket</Text>
-            <TouchableOpacity onPress={handleSave} disabled={!isValid}>
+            <TouchableOpacity
+              onPress={handleSave}
+              disabled={!isValid || isSaving}
+            >
               <Text
                 style={[
                   styles.saveButton,
-                  !isValid && styles.saveButtonDisabled,
+                  (!isValid || isSaving) && styles.saveButtonDisabled,
                 ]}
               >
-                Save
+                {isSaving ? 'Saving...' : 'Save'}
               </Text>
             </TouchableOpacity>
           </View>
@@ -466,16 +485,34 @@ export const AddBucket: React.FC<AddBucketProps> = ({
                   Save
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.toggleButton,
+                  bucketMode === 'recurring' && styles.toggleButtonActive,
+                ]}
+                onPress={() => setBucketMode('recurring')}
+              >
+                <Text
+                  style={[
+                    styles.toggleText,
+                    bucketMode === 'recurring' && styles.toggleTextActive,
+                  ]}
+                >
+                  Recurring
+                </Text>
+              </TouchableOpacity>
             </View>
             <Text style={styles.helperText}>
               {bucketMode === 'spend'
                 ? 'Track monthly spending against a budget'
-                : 'Save toward a specific goal'}
+                : bucketMode === 'save'
+                ? 'Save toward a specific goal'
+                : 'Auto-pay recurring expenses like investments & insurance'}
             </Text>
           </View>
 
-          {/* Allocation Type (Spend mode only) */}
-          {bucketMode === 'spend' && (
+          {/* Allocation Type (Spend and Recurring modes) */}
+          {(bucketMode === 'spend' || bucketMode === 'recurring') && (
           <>
             <View style={styles.divider} />
             <View style={styles.section}>
@@ -518,8 +555,8 @@ export const AddBucket: React.FC<AddBucketProps> = ({
           </>
           )}
 
-          {/* Allocation Value (Spend mode only) */}
-          {bucketMode === 'spend' && (
+          {/* Allocation Value (Spend and Recurring modes) */}
+          {(bucketMode === 'spend' || bucketMode === 'recurring') && (
           <View style={styles.section}>
             <Text style={styles.label}>
               {allocationType === 'amount'
@@ -878,7 +915,7 @@ export const AddBucket: React.FC<AddBucketProps> = ({
           <View style={{ height: 40 }} />
         </ScrollView>
       </SafeAreaView>
-    </Modal>
+    </Drawer>
   );
 };
 
@@ -954,7 +991,7 @@ const styles = StyleSheet.create({
     borderColor: '#E8E4DF',
   },
   currencySymbol: {
-    fontSize: 28,
+    fontSize: 16,
     color: '#877E6F',
     fontFamily: 'Merchant Copy, monospace',
     marginRight: 12,
@@ -962,7 +999,7 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
-    fontSize: 28,
+    fontSize: 16,
     color: '#1A1A1A',
     fontFamily: 'Merchant Copy, monospace',
     paddingVertical: 16,
@@ -1002,7 +1039,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   alertInput: {
-    fontSize: 28,
+    fontSize: 16,
     color: '#1A1A1A',
     fontFamily: 'Merchant Copy, monospace',
     backgroundColor: '#FAFAF8',
