@@ -459,7 +459,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     paddingVertical: 8,
     paddingHorizontal: 14,
-    fontSize: 15,
+    fontSize: 16,
     maxHeight: 100,
     marginRight: 8,
     color: '#2D2D2D',
