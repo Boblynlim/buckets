@@ -187,6 +187,8 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F5F3F0',
+    height: '100vh' as any,
+    maxHeight: '100vh' as any,
   },
   header: {
     flexDirection: 'row',
@@ -231,6 +233,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+    overflow: 'scroll' as any,
   },
   scrollContent: {
     paddingHorizontal: 20,
