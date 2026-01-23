@@ -44,8 +44,9 @@ export const ChatScreen: React.FC = () => {
   const allBuckets = buckets || [];
   const userMemories = memories || [];
 
-  // Get Claude action
+  // Get Claude actions
   const sendMessageToClaude = useAction(api.chat.sendMessage);
+  const extractMemories = useAction(api.chat.extractMemories);
 
   // Generate dynamic suggested prompts based on user data
   const suggestedPrompts = useMemo(() => {
@@ -134,6 +135,15 @@ export const ChatScreen: React.FC = () => {
       setMessages(prev => [...prev, assistantMessage]);
       setIsLoading(false);
 
+      // Extract and save memories from this conversation
+      extractMemories({
+        userId: currentUser._id,
+        userMessage: inputText.trim(),
+        assistantResponse: response,
+      }).catch(err => {
+        console.error('Failed to extract memories:', err);
+      });
+
       // Scroll to bottom
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({animated: true});
@@ -195,6 +205,15 @@ export const ChatScreen: React.FC = () => {
 
       setMessages(prev => [...prev, assistantMessage]);
       setIsLoading(false);
+
+      // Extract and save memories from this conversation
+      extractMemories({
+        userId: currentUser._id,
+        userMessage: prompt,
+        assistantResponse: response,
+      }).catch(err => {
+        console.error('Failed to extract memories:', err);
+      });
 
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({animated: true});
@@ -426,6 +445,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 94,
     right: 12,
+    left: 12,
     alignItems: 'flex-end',
     gap: 8,
   },
@@ -441,11 +461,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    maxWidth: '90%',
   },
   suggestedPromptText: {
     fontSize: 12,
     color: '#2D2D2D',
     fontFamily: 'Merchant Copy, monospace',
+    flexWrap: 'wrap',
   },
   // Input
   inputContainer: {

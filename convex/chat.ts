@@ -115,7 +115,7 @@ Always be specific about numbers, validate their feelings about money, and help 
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-3-5-sonnet-20241022",
+        model: "claude-sonnet-4-20250514",
         max_tokens: 1024,
         system: systemPrompt,
         messages,
@@ -132,5 +132,109 @@ Always be specific about numbers, validate their feelings about money, and help 
     const textContent = data.content.find((c: any) => c.type === "text");
 
     return textContent ? textContent.text : "I'm having trouble responding right now. Please try again.";
+  },
+});
+
+/**
+ * Extract and save memories from conversation
+ * This runs after each chat to learn from the user
+ */
+export const extractMemories = action({
+  args: {
+    userId: v.id("users"),
+    userMessage: v.string(),
+    assistantResponse: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      console.error("ANTHROPIC_API_KEY not configured for memory extraction");
+      return;
+    }
+
+    // Ask Claude to extract memorable information
+    const memoryExtractionPrompt = `Analyze this conversation and extract any important information that should be remembered about the user for future conversations.
+
+User said: "${args.userMessage}"
+Assistant responded: "${args.assistantResponse}"
+
+Extract any of the following:
+1. **Preferences**: Likes, dislikes, habits, values (e.g., "loves coffee", "prefers dining out")
+2. **Goals**: Financial goals, savings targets, aspirations (e.g., "saving for a trip to Japan", "wants to buy a house")
+3. **Context**: Important life facts, situation, relationships (e.g., "has two kids", "works remotely")
+4. **Insights**: Patterns or realizations about spending (e.g., "tends to overspend on weekends", "happiest when spending on experiences")
+
+Return a JSON array of memories. Each memory should have:
+- "type": "preference" | "goal" | "context" | "insight"
+- "content": A clear, concise statement (e.g., "Loves spending on coffee shops")
+- "importance": 1-5 (how important is this to remember?)
+
+Only extract information that is clearly stated or strongly implied. If there's nothing memorable, return an empty array.
+
+Return ONLY the JSON array, no other text.`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [
+            {
+              role: "user",
+              content: memoryExtractionPrompt,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        console.error("Memory extraction API error:", response.status);
+        return;
+      }
+
+      const data = await response.json();
+      const textContent = data.content.find((c: any) => c.type === "text");
+
+      if (!textContent) {
+        return;
+      }
+
+      // Parse the JSON response
+      let memories: Array<{
+        type: "preference" | "goal" | "context" | "insight";
+        content: string;
+        importance: number;
+      }> = [];
+
+      try {
+        memories = JSON.parse(textContent.text);
+      } catch (e) {
+        console.error("Failed to parse memory extraction JSON:", e);
+        return;
+      }
+
+      // Save each memory to the database
+      for (const memory of memories) {
+        if (memory.content && memory.type && memory.importance) {
+          await ctx.runMutation(api.memories.create, {
+            userId: args.userId,
+            memoryType: memory.type,
+            content: memory.content,
+            source: "chat",
+            importance: Math.min(5, Math.max(1, memory.importance)),
+          });
+        }
+      }
+
+      console.log(`Extracted and saved ${memories.length} memories`);
+    } catch (error) {
+      console.error("Failed to extract memories:", error);
+    }
   },
 });
