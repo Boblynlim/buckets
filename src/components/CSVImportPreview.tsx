@@ -99,12 +99,13 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
           )}
         </View>
 
-        {/* Preview List */}
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+        {/* Scrollable Content Wrapper */}
+        <View style={styles.scrollWrapper}>
+          <ScrollView
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={true}
+          >
           {expenses.map((expense, index) => {
             const hasError = validationErrors[index] !== null;
             const isDropdownOpen = showDropdownForIndex === index;
@@ -161,7 +162,8 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
               </View>
             );
           })}
-        </ScrollView>
+          </ScrollView>
+        </View>
 
         {/* Footer Actions */}
         <View style={styles.footer}>
@@ -234,12 +236,12 @@ const styles = StyleSheet.create({
     color: '#2D2D2D',
     lineHeight: 21,
   },
+  scrollWrapper: {
+    flex: 1,
+    overflow: 'hidden' as any,
+  },
   scrollView: {
     flex: 1,
-    flexGrow: 1,
-    flexShrink: 1,
-    overflow: 'auto' as any,
-    minHeight: 0,
   },
   scrollContent: {
     paddingHorizontal: 20,

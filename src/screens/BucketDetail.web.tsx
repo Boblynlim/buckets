@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Image,
 } from 'react-native';
-import { Edit2 } from 'lucide-react';
+import { Edit2, Plus } from 'lucide-react';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { formatDistanceToNow } from 'date-fns';
@@ -22,6 +22,7 @@ interface BucketDetailProps {
   onBack: () => void;
   onEditBucket?: (bucket: Bucket) => void;
   onEditExpense?: (expense: Expense, bucket: Bucket) => void;
+  onAddExpense?: (bucket: Bucket) => void;
 }
 
 export const BucketDetail: React.FC<BucketDetailProps> = ({
@@ -29,6 +30,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   onBack,
   onEditBucket,
   onEditExpense,
+  onAddExpense,
 }) => {
   // Calculate values based on bucket mode
   const isSaveBucket = bucket.bucketMode === 'save';
@@ -120,7 +122,18 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
 
         {/* Transactions List */}
         <View style={styles.transactionsContainer}>
-          <Text style={styles.transactionsTitle}>Transactions</Text>
+          <View style={styles.transactionsHeader}>
+            <Text style={styles.transactionsTitle}>Transactions</Text>
+            {onAddExpense && (
+              <TouchableOpacity
+                style={styles.addButton}
+                onPress={() => onAddExpense(bucket)}
+              >
+                <Plus size={18} color="#4747FF" strokeWidth={2} />
+                <Text style={styles.addButtonText}>Add</Text>
+              </TouchableOpacity>
+            )}
+          </View>
 
           {expenses === undefined ? (
             <View style={styles.loadingContainer}>
@@ -324,13 +337,32 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 20,
   },
+  transactionsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   transactionsTitle: {
     fontSize: 18,
     fontWeight: '500',
     color: '#0A0A0A',
-    marginBottom: 16,
     fontFamily: 'Merchant, monospace',
     letterSpacing: -0.3,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'transparent',
+  },
+  addButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#4747FF',
+    fontFamily: 'Merchant, monospace',
   },
   transactionsList: {
     backgroundColor: '#FFFFFF',
