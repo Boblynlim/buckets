@@ -144,27 +144,43 @@ export const parseCSVToExpenses = (
   csvString: string,
   buckets: Bucket[]
 ): CSVExpense[] => {
+  console.log('parseCSVToExpenses called');
+  console.log('Raw CSV text:', csvString.substring(0, 500)); // Log first 500 chars
+
   const lines = csvString.trim().split('\n');
+  console.log(`Total lines in CSV: ${lines.length}`);
+
   if (lines.length < 2) {
-    throw new Error('CSV file is empty or invalid');
+    throw new Error('CSV file is empty or invalid - need at least header and one data row');
   }
+
+  // Log header
+  console.log('Header line:', lines[0]);
 
   // Skip header
   const dataLines = lines.slice(1);
+  console.log(`Data lines to process: ${dataLines.length}`);
 
   const expenses: CSVExpense[] = [];
 
   for (let i = 0; i < dataLines.length; i++) {
     const line = dataLines[i].trim();
-    if (!line) continue; // Skip empty lines
-    if (line.startsWith('#')) continue; // Skip comment lines
+    if (!line) {
+      console.log(`Line ${i + 2}: Empty, skipping`);
+      continue; // Skip empty lines
+    }
+    if (line.startsWith('#')) {
+      console.log(`Line ${i + 2}: Comment, skipping`);
+      continue; // Skip comment lines
+    }
 
     try {
       // Parse CSV line (handle quoted fields)
       const fields = parseCSVLine(line);
+      console.log(`Line ${i + 2}: Parsed ${fields.length} fields:`, fields);
 
       if (fields.length < 5) {
-        console.warn(`Line ${i + 2}: Not enough fields, skipping`);
+        console.warn(`Line ${i + 2}: Not enough fields (need at least 5, got ${fields.length}), skipping`);
         continue;
       }
 
@@ -211,7 +227,7 @@ export const parseCSVToExpenses = (
         }
       }
 
-      expenses.push({
+      const expense = {
         date: dateStr,
         bucket: bucketName.trim(), // Trim bucket name to handle extra whitespace
         amount,
@@ -220,12 +236,18 @@ export const parseCSVToExpenses = (
         category: category.trim() || undefined,
         merchant: merchant.trim() || undefined,
         needsVsWants: validNeedsVsWants,
-      });
+      };
+
+      console.log(`Line ${i + 2}: Successfully parsed expense:`, expense);
+      expenses.push(expense);
     } catch (error) {
-      throw new Error(`Line ${i + 2}: ${(error as Error).message}`);
+      const errorMsg = `Line ${i + 2}: ${(error as Error).message}`;
+      console.error(errorMsg);
+      throw new Error(errorMsg);
     }
   }
 
+  console.log(`Total expenses parsed: ${expenses.length}`);
   return expenses;
 };
 

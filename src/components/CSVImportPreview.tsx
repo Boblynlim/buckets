@@ -9,8 +9,6 @@ import {
   Pressable,
 } from 'react-native';
 import { X, ChevronDown, AlertCircle, CheckCircle } from 'lucide-react-native';
-import { theme } from '../theme';
-import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
 import type { CSVExpense } from '../utils/csvExport';
 
@@ -69,8 +67,8 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
       <View style={styles.container}>
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={onClose}>
-            <X size={24} color={theme.colors.text} strokeWidth={2} />
+          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <X size={24} color="#2D2D2D" strokeWidth={2} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Review Import</Text>
           <View style={{ width: 24 }} />
@@ -80,23 +78,27 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
         <View style={[styles.statusBanner, hasErrors ? styles.errorBanner : styles.successBanner]}>
           {hasErrors ? (
             <>
-              <AlertCircle size={20} color="#DC2626" strokeWidth={2} />
+              <AlertCircle size={18} color="#DC2626" strokeWidth={2} />
               <Text style={styles.statusText}>
                 {errorCount} {errorCount === 1 ? 'transaction has' : 'transactions have'} invalid bucket{errorCount === 1 ? '' : 's'}. Fix {errorCount === 1 ? 'it' : 'them'} below.
               </Text>
             </>
           ) : (
             <>
-              <CheckCircle size={20} color="#10B981" strokeWidth={2} />
+              <CheckCircle size={18} color="#10B981" strokeWidth={2} />
               <Text style={styles.statusText}>
-                All {expenses.length} transactions ready to import
+                All {expenses.length} transaction{expenses.length === 1 ? '' : 's'} ready to import
               </Text>
             </>
           )}
         </View>
 
         {/* Preview List */}
-        <ScrollView style={styles.scrollView}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
           {expenses.map((expense, index) => {
             const hasError = validationErrors[index] !== null;
             const isDropdownOpen = showDropdownForIndex === index;
@@ -123,7 +125,11 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
                     <Text style={[styles.bucketText, hasError && styles.bucketTextError]}>
                       {expense.bucket}
                     </Text>
-                    <ChevronDown size={16} color={hasError ? '#DC2626' : theme.colors.textSecondary} strokeWidth={2} />
+                    <ChevronDown
+                      size={14}
+                      color={hasError ? '#DC2626' : '#8A8478'}
+                      strokeWidth={2}
+                    />
                   </Pressable>
                 </View>
 
@@ -162,7 +168,7 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
             disabled={hasErrors}
           >
             <Text style={styles.importButtonText}>
-              Import {expenses.length} {expenses.length === 1 ? 'Transaction' : 'Transactions'}
+              Import {expenses.length} Transaction{expenses.length === 1 ? '' : 's'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -174,28 +180,35 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#F5F3F0',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 18,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.text,
+    fontSize: 17,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant, monospace',
   },
   statusBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    gap: 10,
   },
   errorBanner: {
     backgroundColor: '#FEF2F2',
@@ -205,63 +218,69 @@ const styles = StyleSheet.create({
   },
   statusText: {
     flex: 1,
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.text,
+    fontSize: 15,
+    fontFamily: 'Merchant, monospace',
+    color: '#2D2D2D',
+    lineHeight: 21,
   },
   scrollView: {
     flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 12,
+    paddingTop: 16,
+    paddingBottom: 120,
   },
   expenseRow: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    padding: 16,
+    backgroundColor: '#FDFCFB',
+    borderRadius: 20,
+    padding: 18,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: '#F3F4F6',
   },
   expenseHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 10,
   },
   expenseDate: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.textSecondary,
+    fontSize: 14,
+    fontFamily: 'Merchant, monospace',
+    color: '#8A8478',
   },
   expenseAmount: {
-    fontSize: 18,
+    fontSize: 20,
     fontFamily: 'Merchant Copy, monospace',
-    color: theme.colors.text,
+    color: '#2D2D2D',
     fontWeight: '500',
+    letterSpacing: 0,
   },
   expenseNote: {
-    fontSize: 15,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.text,
+    fontSize: 16,
+    fontFamily: 'Merchant, monospace',
+    color: '#2D2D2D',
     marginBottom: 12,
+    lineHeight: 22,
   },
   bucketSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
   bucketLabel: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.textSecondary,
+    fontSize: 15,
+    fontFamily: 'Merchant, monospace',
+    color: '#8A8478',
   },
   bucketPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.purple100,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
     gap: 6,
     borderWidth: 1,
     borderColor: 'transparent',
@@ -271,79 +290,83 @@ const styles = StyleSheet.create({
     borderColor: '#DC2626',
   },
   bucketText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.text,
+    fontSize: 15,
+    fontFamily: 'Merchant, monospace',
+    color: '#2D2D2D',
   },
   bucketTextError: {
     color: '#DC2626',
   },
   errorText: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 14,
+    fontFamily: 'Merchant, monospace',
     color: '#DC2626',
-    marginTop: 8,
+    marginTop: 10,
+    fontStyle: 'italic',
   },
   dropdown: {
-    marginTop: 8,
+    marginTop: 12,
     backgroundColor: '#FFFFFF',
-    borderRadius: 8,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: '#F3F4F6',
     overflow: 'hidden',
   },
   dropdownItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
     gap: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
   },
   bucketDot: {
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
   },
   dropdownItemText: {
-    fontSize: 15,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.text,
+    fontSize: 16,
+    fontFamily: 'Merchant, monospace',
+    color: '#2D2D2D',
   },
   footer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingVertical: 20,
     gap: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colors.border,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    backgroundColor: '#F5F3F0',
   },
   cancelButton: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 16,
     alignItems: 'center',
-    backgroundColor: theme.colors.border,
+    backgroundColor: '#E8E6E3',
   },
   cancelButtonText: {
     fontSize: 16,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.textSecondary,
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '500',
+    color: '#8A8478',
   },
   importButton: {
     flex: 2,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: 16,
+    borderRadius: 16,
     alignItems: 'center',
-    backgroundColor: theme.colors.primary,
+    backgroundColor: '#4747FF',
   },
   importButtonDisabled: {
     opacity: 0.5,
   },
   importButtonText: {
     fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '500',
     color: '#FFFFFF',
   },
 });
