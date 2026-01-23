@@ -58,7 +58,17 @@ export const sendMessage = action({
             const current = b.currentBalance || 0;
             const target = b.targetAmount || 0;
             const progress = target > 0 ? ((current / target) * 100).toFixed(0) : '0';
-            return `- ${b.name} (Save): $${current.toFixed(2)} of $${target.toFixed(2)} goal (${progress}%)`;
+
+            // Include monthly contribution info if set
+            let contributionInfo = '';
+            if (b.contributionType && b.contributionType !== 'none') {
+              const contribution = b.contributionType === 'amount'
+                ? `$${(b.contributionAmount || 0).toFixed(2)}`
+                : `${(b.contributionPercent || 0)}% of income`;
+              contributionInfo = `, contributing ${contribution}/month`;
+            }
+
+            return `- ${b.name} (Save): $${current.toFixed(2)} of $${target.toFixed(2)} goal (${progress}%)${contributionInfo}`;
           }
         }).join('\n')
       : 'No buckets set up yet';
