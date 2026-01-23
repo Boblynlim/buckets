@@ -191,7 +191,8 @@ export const parseCSVToExpenses = (
       // Validate bucket
       const bucketId = bucketNameMap.get(bucketName.toLowerCase());
       if (!bucketId) {
-        throw new Error(`Unknown bucket: ${bucketName}`);
+        const availableBuckets = buckets.map(b => b.name).join(', ');
+        throw new Error(`Unknown bucket: "${bucketName}". Available buckets: ${availableBuckets}`);
       }
 
       // Validate amount
