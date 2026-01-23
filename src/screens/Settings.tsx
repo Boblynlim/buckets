@@ -904,7 +904,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant, monospace',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-    marginBottom: 12,
   },
   sectionHeaderRow: {
     flexDirection: 'row',

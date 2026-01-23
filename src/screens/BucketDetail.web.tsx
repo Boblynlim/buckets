@@ -129,8 +129,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                 style={styles.addButton}
                 onPress={() => onAddExpense(bucket)}
               >
-                <Plus size={18} color="#4747FF" strokeWidth={2} />
-                <Text style={styles.addButtonText}>Add</Text>
+                <Text style={styles.addButtonText}>+ Add</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -351,15 +350,11 @@ const styles = StyleSheet.create({
     letterSpacing: -0.3,
   },
   addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingVertical: 0,
   },
   addButtonText: {
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: '500',
     color: '#4747FF',
     fontFamily: 'Merchant, monospace',
