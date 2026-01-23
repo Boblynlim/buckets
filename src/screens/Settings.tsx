@@ -30,11 +30,13 @@ import { getFontFamily } from '../theme/fonts';
 import type { Bucket } from '../types';
 import { SwipeableRow } from '../components/SwipeableRow';
 import { Toast } from '../components/Toast';
+import { CSVImportPreview } from '../components/CSVImportPreview';
 import {
   exportExpensesToCSV,
   generateCSVTemplate,
   downloadCSV,
   parseCSVToExpenses,
+  type CSVExpense,
 } from '../utils/csvExport';
 
 interface SettingsProps {
@@ -55,6 +57,8 @@ export const Settings: React.FC<SettingsProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [parsedExpenses, setParsedExpenses] = useState<CSVExpense[]>([]);
 
   // Toast state
   const [toastVisible, setToastVisible] = useState(false);
@@ -158,24 +162,39 @@ export const Settings: React.FC<SettingsProps> = ({
     }
 
     try {
-      // Show loading toast
-      showToast('Importing transactions...', 'loading');
-
       // Parse CSV
       console.log('Parsing CSV with', allBuckets.length, 'buckets');
-      const parsedExpenses = parseCSVToExpenses(csvText, allBuckets);
-      console.log('Parsed expenses:', parsedExpenses.length);
+      const parsed = parseCSVToExpenses(csvText, allBuckets);
+      console.log('Parsed expenses:', parsed.length);
 
-      if (parsedExpenses.length === 0) {
+      if (parsed.length === 0) {
         showToast('No valid expenses found in CSV', 'error');
         return;
       }
+
+      // Show preview modal
+      setParsedExpenses(parsed);
+      setShowImport(false);
+      setShowImportPreview(true);
+    } catch (error) {
+      const errorMessage = (error as Error).message || 'Unknown error occurred';
+      console.error('Import error:', error);
+      showToast(errorMessage, 'error');
+    }
+  };
+
+  const handleConfirmImport = async (expenses: CSVExpense[]) => {
+    if (!currentUser) return;
+
+    try {
+      // Show loading toast
+      showToast('Importing transactions...', 'loading');
 
       // Convert to format expected by bulkImport mutation
       const bucketNameMap = new Map(
         allBuckets.map(b => [b.name.toLowerCase(), b._id]),
       );
-      const expensesToImport = parsedExpenses.map(exp => ({
+      const expensesToImport = expenses.map(exp => ({
         bucketId: bucketNameMap.get(exp.bucket.toLowerCase())!,
         amount: exp.amount,
         date: new Date(exp.date).getTime(),
@@ -200,7 +219,7 @@ export const Settings: React.FC<SettingsProps> = ({
         console.error('Import errors:', results.errors);
       }
 
-      setShowImport(false);
+      setShowImportPreview(false);
     } catch (error) {
       const errorMessage = (error as Error).message || 'Unknown error occurred';
       console.error('Import error:', error);
@@ -801,6 +820,15 @@ export const Settings: React.FC<SettingsProps> = ({
           </ScrollView>
         </SafeAreaView>
       </Modal>
+
+      {/* CSV Import Preview */}
+      <CSVImportPreview
+        visible={showImportPreview}
+        parsedExpenses={parsedExpenses}
+        availableBuckets={allBuckets}
+        onClose={() => setShowImportPreview(false)}
+        onConfirmImport={handleConfirmImport}
+      />
 
       {/* Toast Notification */}
       <Toast

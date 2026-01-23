@@ -144,9 +144,6 @@ export const parseCSVToExpenses = (
   csvString: string,
   buckets: Bucket[]
 ): CSVExpense[] => {
-  // Create bucket name to ID map
-  const bucketNameMap = new Map(buckets.map(b => [b.name.toLowerCase(), b._id]));
-
   const lines = csvString.trim().split('\n');
   if (lines.length < 2) {
     throw new Error('CSV file is empty or invalid');
@@ -188,12 +185,8 @@ export const parseCSVToExpenses = (
         throw new Error(`Invalid date format: ${dateStr}`);
       }
 
-      // Validate bucket
-      const bucketId = bucketNameMap.get(bucketName.toLowerCase());
-      if (!bucketId) {
-        const availableBuckets = buckets.map(b => b.name).join(', ');
-        throw new Error(`Unknown bucket: "${bucketName}". Available buckets: ${availableBuckets}`);
-      }
+      // Note: We no longer throw error for unknown bucket here
+      // The preview UI will handle validation and allow users to select correct bucket
 
       // Validate amount
       const amount = parseFloat(amountStr);
