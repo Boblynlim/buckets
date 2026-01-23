@@ -197,6 +197,25 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         onBack={() => setSelectedBucket(null)}
         onEditBucket={onEditBucket}
         onEditExpense={onEditExpense}
+        onAddExpense={(bucket) => {
+          // For web, we'll just call onEditExpense with a new empty expense
+          // This will work if the parent handles creating new expenses
+          if (onEditExpense) {
+            // Create a temporary expense object for adding new
+            const newExpense = {
+              _id: 'new' as any,
+              _creationTime: Date.now(),
+              userId: bucket.userId,
+              bucketId: bucket._id,
+              amount: 0,
+              note: '',
+              createdAt: Date.now(),
+              date: Date.now(),
+              happinessRating: 3,
+            } as Expense;
+            onEditExpense(newExpense, bucket);
+          }
+        }}
       />
     );
   }
