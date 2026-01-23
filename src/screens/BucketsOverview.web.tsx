@@ -48,6 +48,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
   const [selectedBucket, setSelectedBucket] = useState<Bucket | null>(null);
+  const [showMonthlyTransactions, setShowMonthlyTransactions] = useState(false);
 
   // Get current user and buckets from Convex
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -90,6 +91,12 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           monthEnd,
         }
       : 'skip',
+  );
+
+  // Get all expenses for the user to show in monthly view
+  const allExpenses = useQuery(
+    api.expenses.getByUser,
+    currentUser ? { userId: currentUser._id } : 'skip',
   );
 
   // Initialize demo user if needed (when query completes and returns null)
@@ -220,6 +227,101 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     );
   }
 
+  // Show monthly transactions view
+  if (showMonthlyTransactions && allExpenses) {
+    // Filter expenses for selected month
+    const monthlyExpenses = allExpenses.filter(expense => {
+      const expenseDate = new Date(expense.date);
+      return (
+        expenseDate.getMonth() === selectedMonth.getMonth() &&
+        expenseDate.getFullYear() === selectedMonth.getFullYear()
+      );
+    });
+
+    // Sort by date descending (newest first)
+    monthlyExpenses.sort((a, b) => b.date - a.date);
+
+    // Create a map of bucket IDs to bucket objects for display
+    const bucketMap = new Map(allBuckets.map(b => [b._id, b]));
+
+    return (
+      <View style={styles.container}>
+        <StatusBar barStyle="dark-content" />
+
+        {/* Header */}
+        <View style={styles.monthlyHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setShowMonthlyTransactions(false)}
+          >
+            <Text style={styles.backIcon}>←</Text>
+          </TouchableOpacity>
+          <Text style={styles.monthlyHeaderTitle}>
+            {format(selectedMonth, 'MMMM yyyy')}
+          </Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        {/* Total Spent Card */}
+        <View style={styles.monthlyTotalCard}>
+          <Text style={styles.monthlyTotalLabel}>TOTAL SPENT</Text>
+          <Text style={styles.monthlyTotalAmount}>${totalSpent.toFixed(2)}</Text>
+          <Text style={styles.monthlyTotalCount}>
+            {monthlyExpenses.length} transaction{monthlyExpenses.length === 1 ? '' : 's'}
+          </Text>
+        </View>
+
+        {/* Transactions List */}
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+          {monthlyExpenses.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No transactions yet</Text>
+              <Text style={styles.emptySubtext}>
+                Start spending from your buckets
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.monthlyTransactionsList}>
+              {monthlyExpenses.map(expense => {
+                const bucket = bucketMap.get(expense.bucketId);
+                return (
+                  <TouchableOpacity
+                    key={expense._id}
+                    style={styles.monthlyTransactionItem}
+                    onPress={() => {
+                      if (onEditExpense && bucket) {
+                        onEditExpense(expense, bucket);
+                      }
+                    }}
+                  >
+                    <View style={styles.monthlyTransactionLeft}>
+                      <View style={styles.monthlyTransactionHeader}>
+                        <Text style={styles.monthlyTransactionNote}>
+                          {expense.note || 'Expense'}
+                        </Text>
+                        {bucket && (
+                          <View style={[styles.bucketPillSmall, { backgroundColor: bucket.color }]}>
+                            <Text style={styles.bucketPillText}>{bucket.name}</Text>
+                          </View>
+                        )}
+                      </View>
+                      <Text style={styles.monthlyTransactionDate}>
+                        {format(new Date(expense.date), 'MMM d, yyyy')}
+                      </Text>
+                    </View>
+                    <Text style={styles.monthlyTransactionAmount}>
+                      ${expense.amount.toFixed(2)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -237,7 +339,10 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         </View>
 
         {/* Month and total spent in card */}
-        <View style={styles.statsCard}>
+        <TouchableOpacity
+          style={styles.statsCard}
+          onPress={() => setShowMonthlyTransactions(true)}
+        >
           <View style={styles.statsCardHeader}>
             <Text style={styles.monthText}>
               {format(selectedMonth, 'MMMM yyyy')}
@@ -249,7 +354,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               ${totalSpent.toFixed(2)}
             </Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Distribution Status Banner */}
         {distributionStatus && distributionStatus.isOverPlanned && (
@@ -658,5 +763,136 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: theme.colors.textSecondary,
     fontFamily: 'Merchant, monospace',
+  },
+  // Monthly Transactions View
+  monthlyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  backIcon: {
+    fontSize: 24,
+    color: '#0A0A0A',
+  },
+  monthlyHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant, monospace',
+  },
+  placeholder: {
+    width: 40,
+  },
+  monthlyTotalCard: {
+    backgroundColor: theme.colors.primary,
+    borderRadius: 16,
+    padding: 24,
+    marginHorizontal: 20,
+    marginVertical: 20,
+    alignItems: 'center',
+  },
+  monthlyTotalLabel: {
+    fontSize: 13,
+    color: 'rgba(255, 255, 255, 0.7)',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontFamily: 'Merchant, monospace',
+  },
+  monthlyTotalAmount: {
+    fontSize: 36,
+    fontWeight: '400',
+    color: '#FFFFFF',
+    fontFamily: 'Merchant Copy, monospace',
+    letterSpacing: 0,
+    marginBottom: 8,
+  },
+  monthlyTotalCount: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontFamily: 'Merchant, monospace',
+  },
+  monthlyTransactionsList: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  monthlyTransactionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  monthlyTransactionLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  monthlyTransactionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+    flexWrap: 'wrap',
+  },
+  monthlyTransactionNote: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant, monospace',
+  },
+  bucketPillSmall: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  bucketPillText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#FFFFFF',
+    fontFamily: 'Merchant, monospace',
+  },
+  monthlyTransactionDate: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    fontFamily: 'Merchant, monospace',
+  },
+  monthlyTransactionAmount: {
+    fontSize: 20,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant Copy, monospace',
+  },
+  emptyContainer: {
+    paddingVertical: 60,
+    alignItems: 'center',
+    gap: 12,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#0A0A0A',
+    fontFamily: 'Merchant, monospace',
+  },
+  emptySubtext: {
+    fontSize: 15,
+    color: '#9CA3AF',
+    fontFamily: 'Merchant, monospace',
+    textAlign: 'center',
   },
 });
