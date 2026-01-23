@@ -32,11 +32,16 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
   const [expenses, setExpenses] = useState<CSVExpense[]>(parsedExpenses);
   const [showDropdownForIndex, setShowDropdownForIndex] = useState<number | null>(null);
 
-  // Check which buckets don't exist
-  const bucketNameMap = new Map(availableBuckets.map(b => [b.name.toLowerCase(), b.name]));
+  // Check which buckets don't exist (normalize with lowercase and trim)
+  const bucketNameMap = new Map(availableBuckets.map(b => [b.name.toLowerCase().trim(), b.name]));
 
   const validationErrors = expenses.map((exp, idx) => {
-    const bucketExists = bucketNameMap.has(exp.bucket.toLowerCase());
+    const normalizedBucketName = exp.bucket.toLowerCase().trim();
+    const bucketExists = bucketNameMap.has(normalizedBucketName);
+    if (!bucketExists) {
+      console.log(`Bucket not found: "${exp.bucket}" (normalized: "${normalizedBucketName}")`);
+      console.log('Available buckets:', Array.from(bucketNameMap.keys()));
+    }
     return bucketExists ? null : `Bucket "${exp.bucket}" not found`;
   });
 

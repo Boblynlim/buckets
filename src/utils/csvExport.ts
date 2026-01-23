@@ -213,7 +213,7 @@ export const parseCSVToExpenses = (
 
       expenses.push({
         date: dateStr,
-        bucket: bucketName,
+        bucket: bucketName.trim(), // Trim bucket name to handle extra whitespace
         amount,
         note: note.trim(),
         happinessRating,

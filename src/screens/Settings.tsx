@@ -191,19 +191,32 @@ export const Settings: React.FC<SettingsProps> = ({
       showToast('Importing transactions...', 'loading');
 
       // Convert to format expected by bulkImport mutation
+      // Create bucket name map with normalized keys (lowercase, trimmed)
       const bucketNameMap = new Map(
-        allBuckets.map(b => [b.name.toLowerCase(), b._id]),
+        allBuckets.map(b => [b.name.toLowerCase().trim(), b._id]),
       );
-      const expensesToImport = expenses.map(exp => ({
-        bucketId: bucketNameMap.get(exp.bucket.toLowerCase())!,
-        amount: exp.amount,
-        date: new Date(exp.date).getTime(),
-        note: exp.note,
-        happinessRating: exp.happinessRating,
-        category: exp.category,
-        merchant: exp.merchant,
-        needsVsWants: exp.needsVsWants,
-      }));
+
+      const expensesToImport = expenses.map(exp => {
+        const normalizedBucketName = exp.bucket.toLowerCase().trim();
+        const bucketId = bucketNameMap.get(normalizedBucketName);
+
+        if (!bucketId) {
+          console.error(`Cannot find bucket ID for: "${exp.bucket}" (normalized: "${normalizedBucketName}")`);
+          console.error('Available buckets:', Array.from(bucketNameMap.keys()));
+          throw new Error(`Unknown bucket: ${exp.bucket}`);
+        }
+
+        return {
+          bucketId,
+          amount: exp.amount,
+          date: new Date(exp.date).getTime(),
+          note: exp.note,
+          happinessRating: exp.happinessRating,
+          category: exp.category,
+          merchant: exp.merchant,
+          needsVsWants: exp.needsVsWants,
+        };
+      });
 
       // Import via mutation
       const results = await bulkImport({
