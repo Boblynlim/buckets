@@ -46,14 +46,15 @@ export const sendMessage = action({
     const bucketsContext = buckets.length > 0
       ? buckets.map(b => {
           const mode = b.bucketMode || 'spend';
-          if (mode === 'spend') {
-            // Calculate spent amount from expenses
+          if (mode === 'spend' || mode === 'recurring') {
+            // Calculate spent amount from expenses (for both spend and recurring buckets)
             const spent = expenses
               .filter(e => e.bucketId === b._id)
               .reduce((sum, e) => sum + e.amount, 0);
             const funded = b.fundedAmount || b.allocationValue || 0;
             const remaining = Math.max(0, funded - spent);
-            return `- ${b.name} (Spend): $${remaining.toFixed(2)} left of $${funded.toFixed(2)}`;
+            const bucketType = mode === 'recurring' ? 'Recurring' : 'Spend';
+            return `- ${b.name} (${bucketType}): $${remaining.toFixed(2)} left of $${funded.toFixed(2)} allocated`;
           } else {
             const current = b.currentBalance || 0;
             const target = b.targetAmount || 0;
@@ -62,10 +63,12 @@ export const sendMessage = action({
             // Include monthly contribution info if set
             let contributionInfo = '';
             if (b.contributionType && b.contributionType !== 'none') {
-              const contribution = b.contributionType === 'amount'
-                ? `$${(b.contributionAmount || 0).toFixed(2)}`
-                : `${(b.contributionPercent || 0)}% of income`;
-              contributionInfo = `, contributing ${contribution}/month`;
+              // Only show contribution if there's an actual value set
+              if (b.contributionType === 'amount' && b.contributionAmount && b.contributionAmount > 0) {
+                contributionInfo = `, contributing $${b.contributionAmount.toFixed(2)}/month`;
+              } else if (b.contributionType === 'percentage' && b.contributionPercent && b.contributionPercent > 0) {
+                contributionInfo = `, contributing ${b.contributionPercent}% of income/month`;
+              }
             }
 
             return `- ${b.name} (Save): $${current.toFixed(2)} of $${target.toFixed(2)} goal (${progress}%)${contributionInfo}`;

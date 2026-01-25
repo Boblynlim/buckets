@@ -15,11 +15,14 @@ export const generateWeeklyReport = mutation({
     periodEnd: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const periodEnd = args.periodEnd || now;
-    const periodStart = args.periodStart || (periodEnd - (7 * 24 * 60 * 60 * 1000));
+    try {
+      console.log('Starting weekly report generation for user:', args.userId);
+      const now = Date.now();
+      const periodEnd = args.periodEnd || now;
+      const periodStart = args.periodStart || (periodEnd - (7 * 24 * 60 * 60 * 1000));
 
     // Get expenses for the period
+    console.log('Fetching weekly expenses for period:', { periodStart, periodEnd });
     const expenses = await ctx.db
       .query('expenses')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
@@ -30,6 +33,7 @@ export const generateWeeklyReport = mutation({
         )
       )
       .collect();
+    console.log('Found expenses:', expenses.length);
 
     // Get previous period for comparison
     const prevPeriodStart = periodStart - (7 * 24 * 60 * 60 * 1000);
@@ -76,12 +80,19 @@ export const generateWeeklyReport = mutation({
       happinessByCategory[category].spent += expense.amount;
     }
 
-    const categoryHappiness = Object.entries(happinessByCategory).map(([category, data]) => ({
-      category,
-      avgHappiness: data.total / data.count,
-      roi: (data.total / data.count) / (data.spent / data.count),
-      spent: data.spent,
-    }));
+    const categoryHappiness = Object.entries(happinessByCategory).map(([category, data]) => {
+      const avgHappiness = data.total / data.count;
+      const avgSpent = data.spent / data.count;
+      // Calculate ROI, handle division by zero
+      const roi = avgSpent > 0 ? avgHappiness / avgSpent : 0;
+
+      return {
+        category,
+        avgHappiness,
+        roi,
+        spent: data.spent,
+      };
+    });
 
     const topHappyCategories = categoryHappiness
       .sort((a, b) => b.avgHappiness - a.avgHappiness)
@@ -101,21 +112,25 @@ export const generateWeeklyReport = mutation({
       : 0;
 
     // Get buckets and calculate performance
+    console.log('Fetching buckets for weekly report...');
     const buckets = await ctx.db
       .query('buckets')
       .withIndex('by_user', (q) => q.eq('userId', args.userId))
       .filter((q) => q.eq(q.field('isActive'), true))
       .collect();
+    console.log('Found buckets:', buckets.length);
 
+    console.log('Calculating bucket performance...');
     const bucketPerformance = await Promise.all(
       buckets.map(async (bucket) => {
-        if (bucket.bucketMode !== 'spend') {
+        // Include both spend and recurring buckets in performance analysis
+        if (bucket.bucketMode !== 'spend' && bucket.bucketMode !== 'recurring') {
           return null;
         }
 
         const bucketExpenses = expenses.filter(e => e.bucketId === bucket._id);
         const spent = bucketExpenses.reduce((sum, e) => sum + e.amount, 0);
-        const planned = bucket.plannedAmount || 0;
+        const planned = bucket.plannedAmount || bucket.plannedPercent || 0;
         const funded = bucket.fundedAmount || 0;
 
         let status = 'on-track';
@@ -227,19 +242,30 @@ export const generateWeeklyReport = mutation({
       createdAt: now,
     });
 
-    // Auto-create memories from insights
+    // Auto-create memories from insights (with error handling)
     for (const insight of insights) {
       if (insight.includes('increased') || insight.includes('decreased')) {
-        await ctx.runMutation(api.memories.createFromInsight, {
-          userId: args.userId,
-          insight,
-          source: 'weekly-report',
-          importance: 3,
-        });
+        try {
+          await ctx.runMutation(api.memories.createFromInsight, {
+            userId: args.userId,
+            insight,
+            source: 'weekly-report',
+            importance: 3,
+          });
+        } catch (error) {
+          console.error('Failed to create memory from insight:', error);
+          // Don't fail the whole report if memory creation fails
+        }
       }
     }
 
+    console.log('Weekly report generated successfully:', reportId);
     return reportId;
+    } catch (error) {
+      console.error('Error generating weekly report:', error);
+      // Re-throw with more context
+      throw new Error(`Failed to generate weekly report: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
 });
 
@@ -251,9 +277,11 @@ export const generateMonthlyReport = mutation({
     periodEnd: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const now = Date.now();
-    const periodEnd = args.periodEnd || now;
-    const periodStart = args.periodStart || (periodEnd - (30 * 24 * 60 * 60 * 1000));
+    try {
+      console.log('Starting monthly report generation for user:', args.userId);
+      const now = Date.now();
+      const periodEnd = args.periodEnd || now;
+      const periodStart = args.periodStart || (periodEnd - (30 * 24 * 60 * 60 * 1000));
 
     // Get expenses for the period
     const expenses = await ctx.db
@@ -311,12 +339,19 @@ export const generateMonthlyReport = mutation({
       happinessByCategory[category].spent += expense.amount;
     }
 
-    const categoryHappiness = Object.entries(happinessByCategory).map(([category, data]) => ({
-      category,
-      avgHappiness: data.total / data.count,
-      roi: (data.total / data.count) / (data.spent / data.count),
-      spent: data.spent,
-    }));
+    const categoryHappiness = Object.entries(happinessByCategory).map(([category, data]) => {
+      const avgHappiness = data.total / data.count;
+      const avgSpent = data.spent / data.count;
+      // Calculate ROI, handle division by zero
+      const roi = avgSpent > 0 ? avgHappiness / avgSpent : 0;
+
+      return {
+        category,
+        avgHappiness,
+        roi,
+        spent: data.spent,
+      };
+    });
 
     const topHappyCategories = categoryHappiness
       .sort((a, b) => b.roi - a.roi)
@@ -481,31 +516,47 @@ export const generateMonthlyReport = mutation({
       createdAt: now,
     });
 
-    // Auto-create high-importance memories from key insights
+    // Auto-create high-importance memories from key insights (with error handling)
     for (const insight of insights) {
       if (insight.includes('increased by') || insight.includes('decreased by')) {
-        await ctx.runMutation(api.memories.createFromInsight, {
-          userId: args.userId,
-          insight,
-          source: 'monthly-report',
-          importance: 4,
-        });
+        try {
+          await ctx.runMutation(api.memories.createFromInsight, {
+            userId: args.userId,
+            insight,
+            source: 'monthly-report',
+            importance: 4,
+          });
+        } catch (error) {
+          console.error('Failed to create memory from insight:', error);
+          // Don't fail the whole report if memory creation fails
+        }
       }
     }
 
-    // Store concerning patterns as memories
+    // Store concerning patterns as memories (with error handling)
     for (const concern of concerns) {
       if (concern.includes('Consistently over budget')) {
-        await ctx.runMutation(api.memories.createFromInsight, {
-          userId: args.userId,
-          insight: concern,
-          source: 'monthly-report',
-          importance: 4,
-        });
+        try {
+          await ctx.runMutation(api.memories.createFromInsight, {
+            userId: args.userId,
+            insight: concern,
+            source: 'monthly-report',
+            importance: 4,
+          });
+        } catch (error) {
+          console.error('Failed to create memory from concern:', error);
+          // Don't fail the whole report if memory creation fails
+        }
       }
     }
 
+    console.log('Monthly report generated successfully:', reportId);
     return reportId;
+    } catch (error) {
+      console.error('Error generating monthly report:', error);
+      // Re-throw with more context
+      throw new Error(`Failed to generate monthly report: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
 });
 

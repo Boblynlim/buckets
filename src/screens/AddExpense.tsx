@@ -174,8 +174,9 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
   const availableBalance = selectedBucket ? getAvailableBalance(selectedBucket) : 0;
   const hasInsufficientBalance =
     selectedBucket && amountValue > availableBalance;
+  // Allow overspending - remove balance check from validation
   const isValid =
-    amount && amountValue > 0 && selectedBucket && !hasInsufficientBalance;
+    amount && amountValue > 0 && selectedBucket;
 
   const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
   const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
@@ -335,20 +336,18 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
               </View>
             )}
 
-            {/* Insufficient Balance Warning */}
+            {/* Overspending Warning (informational only, doesn't block) */}
             {hasInsufficientBalance && (
-              <View style={styles.warningBox}>
-                <Text style={styles.warningText}>
+              <View style={styles.infoBox}>
+                <Text style={styles.infoText}>
                   {availableBalance === 0 && selectedBucket.bucketMode === 'spend' ? (
                     <>
-                      💡 This bucket isn't funded yet!
-                      {'\n'}Add recurring income in Settings to automatically fund your buckets.
+                      💡 This bucket isn't funded yet. The debt will carry forward to next month.
                     </>
                   ) : (
                     <>
-                      ⚠️ Insufficient balance! This bucket only has $
-                      {availableBalance.toFixed(2)} available.
-                      {'\n'}Add more income or reduce the expense amount.
+                      ℹ️ This will overspend the budget by $
+                      {(amountValue - availableBalance).toFixed(2)}. The debt will roll over to next month.
                     </>
                   )}
                 </Text>
@@ -790,6 +789,20 @@ const styles = StyleSheet.create({
   warningText: {
     fontSize: 14,
     color: '#856404',
+    fontFamily: getFontFamily('regular'),
+    lineHeight: 21,
+  },
+  infoBox: {
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1976D2',
     fontFamily: getFontFamily('regular'),
     lineHeight: 21,
   },

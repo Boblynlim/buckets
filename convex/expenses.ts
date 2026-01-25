@@ -26,18 +26,22 @@ export const create = mutation({
       throw new Error("Bucket not found");
     }
 
-    // For spend buckets, check funded amount minus already spent
-    if (bucket.bucketMode === 'spend') {
+    // Allow overspending - the bucket will show negative balance
+    // This is intentionally commented out to allow debt tracking
+    // Users can overspend and the debt will roll over to next month
+    /*
+    if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
       const fundedAmount = bucket.fundedAmount || 0;
+      const carryover = bucket.carryoverBalance || 0;
+      const totalAvailable = fundedAmount + carryover;
 
-      // Calculate how much has been spent already
       const existingExpenses = await ctx.db
         .query("expenses")
         .withIndex("by_bucket", (q) => q.eq("bucketId", args.bucketId))
         .collect();
       const alreadySpent = existingExpenses.reduce((sum, e) => sum + e.amount, 0);
 
-      const available = fundedAmount - alreadySpent;
+      const available = totalAvailable - alreadySpent;
 
       if (available < args.amount) {
         throw new Error(
@@ -45,6 +49,7 @@ export const create = mutation({
         );
       }
     }
+    */
 
     // Create expense
     const expenseId = await ctx.db.insert("expenses", {
@@ -126,11 +131,15 @@ export const update = mutation({
     happinessRating: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const { expenseId, ...updates } = args;
-    const expense = await ctx.db.get(expenseId);
-    if (!expense) {
-      throw new Error("Expense not found");
-    }
+    try {
+      const { expenseId, ...updates } = args;
+      console.log('Updating expense:', expenseId, updates);
+
+      const expense = await ctx.db.get(expenseId);
+      if (!expense) {
+        throw new Error("Expense not found");
+      }
+      console.log('Found expense:', expense);
 
     // If amount or bucket changed, validate new expense against bucket funding
     if (updates.amount !== undefined || updates.bucketId !== undefined) {
@@ -142,8 +151,10 @@ export const update = mutation({
         throw new Error("Bucket not found");
       }
 
-      if (newBucket.bucketMode === 'spend') {
-        // Calculate available balance excluding this expense
+      // Allow overspending - validation disabled to allow debt tracking
+      /*
+      const bucketMode = newBucket.bucketMode || 'spend';
+      if (bucketMode === 'spend' || bucketMode === 'recurring') {
         const otherExpenses = await ctx.db
           .query("expenses")
           .withIndex("by_bucket", (q) => q.eq("bucketId", newBucketId))
@@ -151,7 +162,9 @@ export const update = mutation({
           .collect();
 
         const otherSpent = otherExpenses.reduce((sum, e) => sum + e.amount, 0);
-        const available = (newBucket.fundedAmount || 0) - otherSpent;
+        const fundedAmount = newBucket.fundedAmount || 0;
+        const carryover = newBucket.carryoverBalance || 0;
+        const available = (fundedAmount + carryover) - otherSpent;
 
         if (available < newAmount) {
           throw new Error(
@@ -159,12 +172,19 @@ export const update = mutation({
           );
         }
       }
+      */
     }
 
+    console.log('Updating expense with:', updates);
     await ctx.db.patch(expenseId, {
       ...updates,
       updatedAt: Date.now(),
     });
+    console.log('Expense updated successfully');
+    } catch (error) {
+      console.error('Error updating expense:', error);
+      throw new Error(`Failed to update expense: ${error instanceof Error ? error.message : String(error)}`);
+    }
   },
 });
 
@@ -228,15 +248,17 @@ export const bulkImport = mutation({
           throw new Error(`Bucket not found`);
         }
 
-        // For spend buckets, check if there's enough funding
-        if (bucket.bucketMode === 'spend') {
+        // Allow overspending - validation disabled to allow debt tracking
+        /*
+        if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
           const fundedAmount = bucket.fundedAmount || 0;
+          const carryover = bucket.carryoverBalance || 0;
           const existingExpenses = await ctx.db
             .query("expenses")
             .withIndex("by_bucket", (q) => q.eq("bucketId", expense.bucketId))
             .collect();
           const alreadySpent = existingExpenses.reduce((sum, e) => sum + e.amount, 0);
-          const available = fundedAmount - alreadySpent;
+          const available = (fundedAmount + carryover) - alreadySpent;
 
           if (available < expense.amount) {
             results.errors.push(
@@ -246,6 +268,7 @@ export const bulkImport = mutation({
             continue;
           }
         }
+        */
 
         // Create the expense
         await ctx.db.insert("expenses", {

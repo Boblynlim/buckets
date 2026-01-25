@@ -51,11 +51,14 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
     try {
       if (activeTab === 'weekly') {
         await generateWeekly({ userId: currentUser._id });
+        alert(`Weekly report generated successfully!`);
       } else {
         await generateMonthly({ userId: currentUser._id });
+        alert(`Monthly report generated successfully!`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to generate report:', error);
+      alert(`Failed to generate report: ${error.message || 'Unknown error'}. Check console for details.`);
     } finally {
       setIsGenerating(false);
     }
