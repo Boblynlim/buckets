@@ -10,4 +10,11 @@ crons.monthly(
   internal.rollover.runScheduledRollover
 );
 
+// Generate daily prompts for all users at 9 AM Singapore Time (1 AM UTC for UTC+8)
+crons.daily(
+  "generate daily prompts",
+  { hourUTC: 1, minuteUTC: 0 },
+  internal.dailyPrompts.generateDailyPromptsForAllUsers
+);
+
 export default crons;

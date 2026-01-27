@@ -191,4 +191,23 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_and_type", ["userId", "reportType"])
     .index("by_user_and_period", ["userId", "periodStart"]),
+
+  dailyPrompts: defineTable({
+    userId: v.id("users"),
+    question: v.string(),           // The question to ask
+    category: v.union(              // Type of question
+      v.literal("goal"),            // About financial goals
+      v.literal("preference"),      // About what they value
+      v.literal("reflection"),      // About recent spending
+      v.literal("habit"),           // About spending habits
+      v.literal("happiness")        // About what brings joy
+    ),
+    isAnswered: v.boolean(),        // Has the user responded?
+    answer: v.optional(v.string()), // User's response
+    answeredAt: v.optional(v.number()), // When they answered
+    createdAt: v.number(),          // When prompt was created
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_answered", ["userId", "isAnswered"])
+    .index("by_user_and_date", ["userId", "createdAt"]),
 });

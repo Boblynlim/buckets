@@ -21,6 +21,20 @@ export const generateWeeklyReport = mutation({
       const periodEnd = args.periodEnd || now;
       const periodStart = args.periodStart || (periodEnd - (7 * 24 * 60 * 60 * 1000));
 
+      // Get user memories for context
+      console.log('Fetching user memories for personalized insights...');
+      const memories = await ctx.db
+        .query('memories')
+        .withIndex('by_user_and_active', (q) =>
+          q.eq('userId', args.userId).eq('isActive', true)
+        )
+        .order('desc')
+        .take(20);
+
+      // Sort by importance
+      memories.sort((a, b) => b.importance - a.importance);
+      console.log('Found memories:', memories.length);
+
     // Get expenses for the period
     console.log('Fetching weekly expenses for period:', { periodStart, periodEnd });
     const expenses = await ctx.db
@@ -69,13 +83,16 @@ export const generateWeeklyReport = mutation({
       .slice(0, 5);
 
     // Calculate happiness analysis
+    console.log('Calculating happiness analysis...');
     const happinessByCategory: Record<string, { total: number; count: number; spent: number }> = {};
     for (const expense of expenses) {
       const category = expense.category || 'Uncategorized';
       if (!happinessByCategory[category]) {
         happinessByCategory[category] = { total: 0, count: 0, spent: 0 };
       }
-      happinessByCategory[category].total += expense.happinessRating;
+      // Handle missing happinessRating field
+      const rating = expense.happinessRating ?? 3; // Default to 3 if missing
+      happinessByCategory[category].total += rating;
       happinessByCategory[category].count += 1;
       happinessByCategory[category].spent += expense.amount;
     }
@@ -90,7 +107,7 @@ export const generateWeeklyReport = mutation({
         category,
         avgHappiness,
         roi,
-        spent: data.spent,
+        // Don't include 'spent' - not in schema
       };
     });
 
@@ -108,7 +125,7 @@ export const generateWeeklyReport = mutation({
       .slice(0, 3);
 
     const avgHappiness = expenses.length > 0
-      ? expenses.reduce((sum, e) => sum + e.happinessRating, 0) / expenses.length
+      ? expenses.reduce((sum, e) => sum + (e.happinessRating ?? 3), 0) / expenses.length
       : 0;
 
     // Get buckets and calculate performance
@@ -136,9 +153,8 @@ export const generateWeeklyReport = mutation({
         let status = 'on-track';
         if (spent > funded * 0.9) {
           status = 'over-budget';
-        } else if (spent < funded * 0.5) {
-          status = 'under-utilized';
         }
+        // Removed 'under-utilized' status - not useful for users
 
         return {
           bucketName: bucket.name,
@@ -152,58 +168,118 @@ export const generateWeeklyReport = mutation({
 
     const filteredBucketPerformance = bucketPerformance.filter(b => b !== null) as any[];
 
-    // Generate insights
+    // Generate personalized insights using memories
     const insights: string[] = [];
     const wins: string[] = [];
     const concerns: string[] = [];
     const recommendations: string[] = [];
 
-    // Spending insights
+    // Get user goals and preferences from memories
+    const goals = memories.filter(m => m.memoryType === 'goal');
+    const preferences = memories.filter(m => m.memoryType === 'preference');
+    const contexts = memories.filter(m => m.memoryType === 'context');
+
+    // Spending insights with context
     if (prevTotalSpent > 0) {
       const changePercent = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
       if (Math.abs(changePercent) > 10) {
+        const trend = changePercent > 0 ? 'increased' : 'decreased';
         insights.push(
-          `Spending ${changePercent > 0 ? 'increased' : 'decreased'} by ${Math.abs(changePercent).toFixed(1)}% compared to last week`
+          `Spending ${trend} by ${Math.abs(changePercent).toFixed(1)}% compared to last week`
         );
+
+        // Add contextual insight if there's relevant context
+        if (contexts.length > 0 && changePercent > 15) {
+          const recentContext = contexts[0];
+          concerns.push(`Higher spending this week - consider if this aligns with: ${recentContext.content}`);
+        }
       }
     }
 
-    // Category insights
+    // Category insights with personalization
     if (topCategories.length > 0) {
+      const topCategory = topCategories[0];
       insights.push(
-        `Top spending category: ${topCategories[0].category} ($${topCategories[0].amount.toFixed(2)}, ${topCategories[0].percentOfTotal.toFixed(0)}% of total)`
+        `Top spending category: ${topCategory.category} ($${topCategory.amount.toFixed(2)}, ${topCategory.percentOfTotal.toFixed(0)}% of total)`
       );
+
+      // Check if this category relates to a goal
+      const relatedGoal = goals.find(g => g.content.toLowerCase().includes(topCategory.category.toLowerCase()));
+      if (relatedGoal) {
+        recommendations.push(`Your spending on ${topCategory.category} relates to your goal: "${relatedGoal.content}". Make sure this aligns with your priorities.`);
+      }
     }
 
-    // Happiness insights
+    // Happiness insights with preferences
     if (avgHappiness >= 4) {
       wins.push(`High average happiness rating (${avgHappiness.toFixed(1)}/5) - your spending is bringing you joy!`);
+
+      // Reference preferences about what makes them happy
+      const happinessPrefs = preferences.filter(p =>
+        p.content.toLowerCase().includes('happy') ||
+        p.content.toLowerCase().includes('joy') ||
+        p.content.toLowerCase().includes('love')
+      );
+      if (happinessPrefs.length > 0) {
+        wins.push(`This aligns with what you value: "${happinessPrefs[0].content}"`);
+      }
     } else if (avgHappiness < 3) {
-      concerns.push(`Low average happiness rating (${avgHappiness.toFixed(1)}/5) - consider reviewing your spending priorities`);
-      recommendations.push('Review expenses with low happiness ratings and consider reducing spending in those areas');
+      concerns.push(`Low average happiness rating (${avgHappiness.toFixed(1)}/5) - your spending may not align with what truly matters to you`);
+
+      // Provide context-aware recommendations
+      if (preferences.length > 0) {
+        recommendations.push(`Consider redirecting spending toward things that match your priorities: "${preferences[0].content}"`);
+      } else {
+        recommendations.push('Review expenses with low happiness ratings and consider reducing spending in those areas');
+      }
     }
 
     // Bucket performance insights
     const overBudgetBuckets = filteredBucketPerformance.filter(b => b.status === 'over-budget');
-    const underUtilizedBuckets = filteredBucketPerformance.filter(b => b.status === 'under-utilized');
 
     if (overBudgetBuckets.length > 0) {
       concerns.push(`${overBudgetBuckets.length} bucket(s) over budget: ${overBudgetBuckets.map(b => b.bucketName).join(', ')}`);
-      recommendations.push('Consider increasing planned amounts for frequently over-budget buckets');
+
+      // Check if any over-budget buckets relate to goals
+      const goalBuckets = overBudgetBuckets.filter(b =>
+        goals.some(g => g.content.toLowerCase().includes(b.bucketName.toLowerCase()))
+      );
+
+      if (goalBuckets.length > 0) {
+        recommendations.push(`${goalBuckets.map(b => b.bucketName).join(', ')} relates to your goals - consider if this spending aligns with your priorities`);
+      } else {
+        recommendations.push('Consider increasing planned amounts for frequently over-budget buckets, or review if this spending is necessary');
+      }
     }
 
-    if (underUtilizedBuckets.length > 0 && underUtilizedBuckets.length <= 2) {
-      insights.push(`${underUtilizedBuckets.length} bucket(s) under-utilized: ${underUtilizedBuckets.map(b => b.bucketName).join(', ')}`);
-      recommendations.push('Consider reducing planned amounts for consistently under-utilized buckets');
+    // Add goal-oriented wins
+    if (goals.length > 0 && avgHappiness >= 3.5 && expenses.length > 0) {
+      wins.push(`You're staying mindful of your spending while working toward: "${goals[0].content}"`);
     }
 
-    // Happiness ROI insights
+    // Add context-aware insights
+    if (contexts.length > 0 && totalSpent > 0) {
+      insights.push(`Life context: ${contexts[0].content}`);
+    }
+
+    // Happiness ROI insights with personalization
     if (topHappyCategories.length > 0) {
-      wins.push(`Highest joy: ${topHappyCategories[0].category} (${topHappyCategories[0].avgHappiness.toFixed(1)}/5 happiness)`);
+      const topJoyCategory = topHappyCategories[0];
+      wins.push(`Highest joy: ${topJoyCategory.category} (${topJoyCategory.avgHappiness.toFixed(1)}/5 happiness)`);
+
+      // Encourage more of what brings joy
+      recommendations.push(`${topJoyCategory.category} brings you the most happiness. Consider prioritizing this in your budget.`);
     }
 
     if (concerningCategories.length > 0) {
       concerns.push(`Low satisfaction in: ${concerningCategories.map(c => c.category).join(', ')}`);
+
+      // Provide goal-aligned recommendations
+      if (goals.length > 0) {
+        recommendations.push(`Low satisfaction spending may be taking away from your goals. Remember: "${goals[0].content}"`);
+      } else {
+        recommendations.push('Consider reducing spending in low-satisfaction categories and redirecting to what brings you more joy');
+      }
     }
 
     // Generate summary
@@ -283,6 +359,20 @@ export const generateMonthlyReport = mutation({
       const periodEnd = args.periodEnd || now;
       const periodStart = args.periodStart || (periodEnd - (30 * 24 * 60 * 60 * 1000));
 
+      // Get user memories for context
+      console.log('Fetching user memories for personalized monthly insights...');
+      const memories = await ctx.db
+        .query('memories')
+        .withIndex('by_user_and_active', (q) =>
+          q.eq('userId', args.userId).eq('isActive', true)
+        )
+        .order('desc')
+        .take(20);
+
+      // Sort by importance
+      memories.sort((a, b) => b.importance - a.importance);
+      console.log('Found memories:', memories.length);
+
     // Get expenses for the period
     const expenses = await ctx.db
       .query('expenses')
@@ -328,13 +418,16 @@ export const generateMonthlyReport = mutation({
       .sort((a, b) => b.amount - a.amount);
 
     // Calculate happiness analysis
+    console.log('Calculating happiness analysis...');
     const happinessByCategory: Record<string, { total: number; count: number; spent: number }> = {};
     for (const expense of expenses) {
       const category = expense.category || 'Uncategorized';
       if (!happinessByCategory[category]) {
         happinessByCategory[category] = { total: 0, count: 0, spent: 0 };
       }
-      happinessByCategory[category].total += expense.happinessRating;
+      // Handle missing happinessRating field
+      const rating = expense.happinessRating ?? 3; // Default to 3 if missing
+      happinessByCategory[category].total += rating;
       happinessByCategory[category].count += 1;
       happinessByCategory[category].spent += expense.amount;
     }
@@ -349,7 +442,7 @@ export const generateMonthlyReport = mutation({
         category,
         avgHappiness,
         roi,
-        spent: data.spent,
+        // Don't include 'spent' - not in schema
       };
     });
 
@@ -358,15 +451,21 @@ export const generateMonthlyReport = mutation({
       .slice(0, 5);
 
     const concerningCategories = categoryHappiness
-      .filter(c => c.avgHappiness < 3 && c.spent > totalSpent * 0.05) // Only flag if >5% of spending
-      .map(c => ({
-        category: c.category,
-        avgHappiness: c.avgHappiness,
-        reason: `Significant spending ($${c.spent.toFixed(2)}) with low happiness (${c.avgHappiness.toFixed(1)}/5)`,
-      }));
+      .filter(c => {
+        const categoryData = happinessByCategory[c.category];
+        return c.avgHappiness < 3 && categoryData && categoryData.spent > totalSpent * 0.05;
+      })
+      .map(c => {
+        const categoryData = happinessByCategory[c.category];
+        return {
+          category: c.category,
+          avgHappiness: c.avgHappiness,
+          reason: `Significant spending ($${categoryData.spent.toFixed(2)}) with low happiness (${c.avgHappiness.toFixed(1)}/5)`,
+        };
+      });
 
     const avgHappiness = expenses.length > 0
-      ? expenses.reduce((sum, e) => sum + e.happinessRating, 0) / expenses.length
+      ? expenses.reduce((sum, e) => sum + (e.happinessRating ?? 3), 0) / expenses.length
       : 0;
 
     // Get buckets and calculate performance
@@ -390,9 +489,8 @@ export const generateMonthlyReport = mutation({
         let status = 'on-track';
         if (spent > funded * 0.95) {
           status = 'over-budget';
-        } else if (spent < funded * 0.5) {
-          status = 'under-utilized';
         }
+        // Removed 'under-utilized' status - not useful for users
 
         return {
           bucketName: bucket.name,
@@ -406,13 +504,18 @@ export const generateMonthlyReport = mutation({
 
     const filteredBucketPerformance = bucketPerformance.filter(b => b !== null) as any[];
 
-    // Generate strategic insights
+    // Generate strategic insights with personalization
     const insights: string[] = [];
     const wins: string[] = [];
     const concerns: string[] = [];
     const recommendations: string[] = [];
 
-    // Month-over-month comparison
+    // Get user goals and preferences from memories
+    const goals = memories.filter(m => m.memoryType === 'goal');
+    const preferences = memories.filter(m => m.memoryType === 'preference');
+    const contexts = memories.filter(m => m.memoryType === 'context');
+
+    // Month-over-month comparison with context
     if (prevTotalSpent > 0) {
       const changePercent = ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100;
       insights.push(
@@ -421,6 +524,16 @@ export const generateMonthlyReport = mutation({
 
       if (Math.abs(changePercent) > 20) {
         concerns.push(`Significant ${changePercent > 0 ? 'increase' : 'decrease'} in spending - review what changed`);
+
+        // Add context if available
+        if (contexts.length > 0) {
+          insights.push(`Recent life context: ${contexts[0].content}. Consider if spending changes align with this.`);
+        }
+      }
+
+      // Add goal progress check
+      if (goals.length > 0 && changePercent < -10) {
+        wins.push(`You reduced spending by ${Math.abs(changePercent).toFixed(1)}% - great progress toward: "${goals[0].content}"`);
       }
     }
 
@@ -437,20 +550,49 @@ export const generateMonthlyReport = mutation({
 
       if (needsPercent > 70) {
         wins.push('Prioritizing essential expenses - strong financial discipline');
+
+        // Check if this aligns with goals
+        const savingGoals = goals.filter(g =>
+          g.content.toLowerCase().includes('save') ||
+          g.content.toLowerCase().includes('financial')
+        );
+        if (savingGoals.length > 0) {
+          wins.push(`Your disciplined spending supports your goal: "${savingGoals[0].content}"`);
+        }
       } else if (needsPercent < 40) {
-        recommendations.push('Consider reducing discretionary spending to build more financial cushion');
+        concerns.push('High discretionary spending - ensure this aligns with your priorities');
+
+        if (goals.length > 0) {
+          recommendations.push(`Consider if wants spending is moving you toward: "${goals[0].content}"`);
+        } else {
+          recommendations.push('Consider reducing discretionary spending to build more financial cushion');
+        }
       }
     }
 
-    // Happiness ROI insights
+    // Happiness ROI insights with personalization
     if (topHappyCategories.length > 0) {
-      wins.push(`Best happiness ROI: ${topHappyCategories[0].category} (${topHappyCategories[0].roi.toFixed(3)} joy/$)`);
-      recommendations.push(`Consider allocating more to high-ROI categories like ${topHappyCategories[0].category}`);
+      const topJoy = topHappyCategories[0];
+      wins.push(`Best happiness ROI: ${topJoy.category} (${topJoy.roi.toFixed(3)} joy/$)`);
+      recommendations.push(`${topJoy.category} brings you the most joy per dollar - consider prioritizing this in your budget`);
+
+      // Check if aligns with preferences
+      const relatedPref = preferences.find(p =>
+        p.content.toLowerCase().includes(topJoy.category.toLowerCase())
+      );
+      if (relatedPref) {
+        wins.push(`This aligns perfectly with: "${relatedPref.content}"`);
+      }
     }
 
     if (concerningCategories.length > 0) {
       concerns.push(`Low satisfaction spending: ${concerningCategories.map(c => c.category).join(', ')}`);
-      recommendations.push('Review low-satisfaction categories and consider cutting back or finding alternatives');
+
+      if (preferences.length > 0) {
+        recommendations.push(`Low satisfaction categories may not align with what matters to you: "${preferences[0].content}". Consider reallocating this spending.`);
+      } else {
+        recommendations.push('Review low-satisfaction categories and consider cutting back or finding alternatives');
+      }
     }
 
     // Bucket utilization patterns
@@ -458,26 +600,36 @@ export const generateMonthlyReport = mutation({
       b.status === 'over-budget' && b.spent / b.funded > 1.1
     );
 
-    const consistentlyUnderUtilized = filteredBucketPerformance.filter(b =>
-      b.status === 'under-utilized' && b.spent / b.funded < 0.4
-    );
-
     if (consistentlyOverBudget.length > 0) {
       concerns.push(`Consistently over budget: ${consistentlyOverBudget.map(b => b.bucketName).join(', ')}`);
       recommendations.push('Increase planned amounts for consistently over-budget buckets');
     }
 
-    if (consistentlyUnderUtilized.length > 0) {
-      insights.push(`Under-utilized buckets: ${consistentlyUnderUtilized.map(b => b.bucketName).join(', ')}`);
-      recommendations.push('Consider reallocating funds from under-utilized buckets');
+    // Overall happiness trend with personalization
+    if (avgHappiness >= 4) {
+      wins.push(`Strong month! Average happiness: ${avgHappiness.toFixed(1)}/5 - your spending is bringing you joy`);
+
+      if (goals.length > 0) {
+        wins.push(`You're maintaining happiness while working toward: "${goals[0].content}"`);
+      }
+    } else if (avgHappiness < 3) {
+      concerns.push(`Below-average happiness: ${avgHappiness.toFixed(1)}/5 - your spending may not be aligned with what truly matters`);
+
+      if (topHappyCategories.length > 0) {
+        recommendations.push(`Focus more on ${topHappyCategories[0].category} which brings you ${topHappyCategories[0].avgHappiness.toFixed(1)}/5 happiness`);
+      } else {
+        recommendations.push('Focus spending on categories with proven high happiness ROI');
+      }
+
+      // Add goal-oriented recommendation
+      if (goals.length > 0) {
+        recommendations.push(`Reconnect with your goal: "${goals[0].content}". Does your current spending support this?`);
+      }
     }
 
-    // Overall happiness trend
-    if (avgHappiness >= 4) {
-      wins.push(`Strong month! Average happiness: ${avgHappiness.toFixed(1)}/5`);
-    } else if (avgHappiness < 3) {
-      concerns.push(`Below-average happiness: ${avgHappiness.toFixed(1)}/5`);
-      recommendations.push('Focus spending on categories with proven high happiness ROI');
+    // Add personalized closing insight
+    if (contexts.length > 0) {
+      insights.push(`This month's context: ${contexts[0].content}`);
     }
 
     // Generate summary
