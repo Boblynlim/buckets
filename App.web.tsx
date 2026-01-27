@@ -24,6 +24,7 @@ import { IncomeManagement } from './src/screens/IncomeManagement';
 import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
 import { Drawer } from './src/components/Drawer';
+import { DailyPromptModal } from './src/components/DailyPromptModal';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
@@ -247,6 +248,9 @@ function App() {
         >
           <ChatScreen />
         </Drawer>
+
+        {/* Daily Prompt Modal */}
+        <DailyPromptModal />
       </View>
     </ConvexProvider>
   );
