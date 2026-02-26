@@ -373,10 +373,22 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
             </Text>
           </View>
           <View style={styles.statsCardBody}>
-            <Text style={styles.totalSpentLabel}>Total spent</Text>
-            <Text style={styles.totalSpentAmount}>
-              ${totalSpent.toFixed(2)}
-            </Text>
+            <View style={styles.statColumn}>
+              <Text style={styles.totalSpentLabel}>Total spent</Text>
+              <Text style={styles.totalSpentAmount}>
+                ${totalSpent.toFixed(2)}
+              </Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statColumn}>
+              <Text style={styles.totalSpentLabel}>Free for savings</Text>
+              <Text style={[
+                styles.totalSpentAmount,
+                distributionStatus && distributionStatus.unallocated < 0 && styles.statAmountNegative,
+              ]}>
+                ${(distributionStatus?.unallocated ?? 0).toFixed(2)}
+              </Text>
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -611,7 +623,20 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(255, 255, 255, 0.2)',
   },
   statsCardBody: {
+    flexDirection: 'row',
     alignItems: 'flex-start',
+    gap: 24,
+  },
+  statColumn: {
+    flex: 1,
+  },
+  statDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  statAmountNegative: {
+    color: '#FF8A80',
   },
   monthText: {
     fontSize: 15,
