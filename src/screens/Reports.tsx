@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Alert,
   TextInput,
+  Platform,
 } from 'react-native';
 import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
@@ -193,18 +194,24 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
 
               <TouchableOpacity
                 onPress={() => {
-                  Alert.alert(
-                    'Delete Report',
-                    `Are you sure you want to delete this ${selectedReport.reportType} report?`,
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Delete',
-                        style: 'destructive',
-                        onPress: () => handleDeleteReport(selectedReport),
-                      },
-                    ]
-                  );
+                  if (Platform.OS === 'web') {
+                    if (window.confirm(`Delete this ${selectedReport.reportType} report?`)) {
+                      handleDeleteReport(selectedReport);
+                    }
+                  } else {
+                    Alert.alert(
+                      'Delete Report',
+                      `Are you sure you want to delete this ${selectedReport.reportType} report?`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Delete',
+                          style: 'destructive',
+                          onPress: () => handleDeleteReport(selectedReport),
+                        },
+                      ]
+                    );
+                  }
                 }}
                 style={styles.deleteButton}
               >
