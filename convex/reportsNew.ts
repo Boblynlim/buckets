@@ -399,7 +399,7 @@ export const generateMonthlyReportNew = action({
       const remaining = banked - spent;
       const monthlyAmount = typeof monthlyAlloc === 'number' ? monthlyAlloc : 0;
       const runway = monthlyAmount > 0 ? `${Math.floor(remaining / monthlyAmount)} months buffer` : '—';
-      return { bucketName: bucket.name, monthlyAllocation: monthlyAlloc, bankedSoFar: banked, spentThisMonth: spent, remaining, runway };
+      return { bucketName: bucket.name, monthlyAllocation: monthlyAlloc, bankedSoFar: banked, spentThisWeek: spent, remaining, runway };
     });
 
     const fundsRunningLow = fundStatus
@@ -413,9 +413,9 @@ export const generateMonthlyReportNew = action({
       const spent = expensesInPeriod
         .filter((e: any) => e.bucketId === bucket._id)
         .reduce((sum: number, e: any) => sum + e.amount, 0);
-      return { category: bucket.name, thisMonth: spent, monthlyBudget: bucket.plannedAmount || 0 };
+      return { category: bucket.name, thisWeek: spent, monthlyBudget: bucket.plannedAmount || 0 };
     });
-    const fixedCostsTotal = fixedCosts.reduce((sum: number, f: any) => sum + f.thisMonth, 0);
+    const fixedCostsTotal = fixedCosts.reduce((sum: number, f: any) => sum + f.thisWeek, 0);
 
     // 3. Prepare AI context
     const byCategoryArray = Object.entries(byCategory)
