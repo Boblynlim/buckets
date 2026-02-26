@@ -7,13 +7,16 @@ import {
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
+  TextInput,
 } from 'react-native';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery, useMutation, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
-import { FileText, TrendingUp, Calendar, ChevronRight, ArrowLeft, TrendingDown, Sparkles, AlertCircle, Target, Award } from 'lucide-react-native';
+import { FileText, TrendingUp, Calendar, ArrowLeft, Sparkles, AlertCircle, Target, Award, Trash2, Send, Edit2 } from 'lucide-react-native';
 import type { Report } from '../types';
+import { SwipeableReport } from '../components/SwipeableReport';
 
 interface ReportsProps {
   onReportSelected?: (isSelected: boolean) => void;
@@ -23,6 +26,12 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
   const [activeTab, setActiveTab] = useState<'weekly' | 'monthly'>('weekly');
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [reflectionAnswers, setReflectionAnswers] = useState<Record<number, string>>({});
+  const [savedReflections, setSavedReflections] = useState<Record<number, string>>({});
+  const [editingReflections, setEditingReflections] = useState<Record<number, boolean>>({});
+  const [savingAnswers, setSavingAnswers] = useState<Record<number, boolean>>({});
+
+  console.log('[Reports] Component loaded with delete functionality v2');
 
   // Get current user
   const currentUser = useQuery(api.users.getCurrentUser);
@@ -33,9 +42,17 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
     currentUser ? { userId: currentUser._id, reportType: activeTab } : 'skip',
   );
 
-  // Generate report mutation
-  const generateWeekly = useMutation(api.reports.generateWeeklyReport);
-  const generateMonthly = useMutation(api.reports.generateMonthlyReport);
+  // Get reflection memories for this user
+  const memories = useQuery(
+    api.memories.getByUser,
+    currentUser ? { userId: currentUser._id } : 'skip'
+  );
+
+  // Generate report actions
+  const generateWeekly = useAction(api.reportsNew.generateWeeklyReportNew);
+  const generateMonthly = useAction(api.reportsNew.generateMonthlyReportNew);
+  const deleteReport = useMutation(api.reports.remove);
+  const createMemory = useMutation(api.memories.create);
 
   // Notify parent when report selection changes
   React.useEffect(() => {
@@ -43,6 +60,31 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
       onReportSelected(selectedReport !== null);
     }
   }, [selectedReport, onReportSelected]);
+
+  // Load saved reflections when report is selected
+  React.useEffect(() => {
+    if (selectedReport?.reflectionPrompts && memories) {
+      const saved: Record<number, string> = {};
+
+      selectedReport.reflectionPrompts.forEach((prompt: string, index: number) => {
+        // Find memory that matches this prompt
+        const memory = memories.find((m: any) =>
+          m.source === 'reflection-prompt' && m.content.includes(prompt)
+        );
+
+        if (memory) {
+          // Extract the answer from the memory content
+          // Format: "Reflection on: [prompt] - [answer]"
+          const match = memory.content.match(/Reflection on: "(.+)" - (.+)/);
+          if (match && match[2]) {
+            saved[index] = match[2];
+          }
+        }
+      });
+
+      setSavedReflections(saved);
+    }
+  }, [selectedReport, memories]);
 
   const handleGenerateReport = async () => {
     if (!currentUser) return;
@@ -61,6 +103,60 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
       alert(`Failed to generate report: ${error.message || 'Unknown error'}. Check console for details.`);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleDeleteReport = async (report: Report) => {
+    try {
+      await deleteReport({ reportId: report._id as any });
+      // Close detail view if this report was selected
+      if (selectedReport?._id === report._id) {
+        setSelectedReport(null);
+      }
+    } catch (error: any) {
+      console.error('Failed to delete report:', error);
+      Alert.alert('Error', 'Failed to delete report');
+    }
+  };
+
+  const handleSaveReflectionAnswer = async (index: number, prompt: string, answer: string) => {
+    if (!currentUser || !answer.trim()) return;
+
+    setSavingAnswers(prev => ({ ...prev, [index]: true }));
+    try {
+      await createMemory({
+        userId: currentUser._id,
+        memoryType: 'context',
+        content: `Reflection on: "${prompt}" - ${answer}`,
+        source: 'reflection-prompt',
+        importance: 4, // High importance for user reflections
+      });
+
+      // Save to local state
+      setSavedReflections(prev => ({ ...prev, [index]: answer }));
+
+      // Clear the answer field and editing state
+      setReflectionAnswers(prev => {
+        const updated = { ...prev };
+        delete updated[index];
+        return updated;
+      });
+      setEditingReflections(prev => ({ ...prev, [index]: false }));
+
+      Alert.alert('Saved', 'Your reflection has been saved and will be used for future insights.');
+    } catch (error: any) {
+      console.error('Failed to save reflection:', error);
+      Alert.alert('Error', 'Failed to save your reflection');
+    } finally {
+      setSavingAnswers(prev => ({ ...prev, [index]: false }));
+    }
+  };
+
+  const handleEditReflection = (index: number) => {
+    setEditingReflections(prev => ({ ...prev, [index]: true }));
+    // Pre-fill with saved answer
+    if (savedReflections[index]) {
+      setReflectionAnswers(prev => ({ ...prev, [index]: savedReflections[index] }));
     }
   };
 
@@ -86,13 +182,35 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
         >
           {/* Header */}
           <View style={styles.detailHeader}>
-            <TouchableOpacity
-              onPress={() => setSelectedReport(null)}
-              style={styles.backButtonContainer}
-            >
-              <ArrowLeft size={20} color={theme.colors.primary} strokeWidth={2} />
-              <Text style={styles.backButton}>Back</Text>
-            </TouchableOpacity>
+            <View style={styles.detailHeaderTop}>
+              <TouchableOpacity
+                onPress={() => setSelectedReport(null)}
+                style={styles.backButtonContainer}
+              >
+                <ArrowLeft size={20} color={theme.colors.primary} strokeWidth={2} />
+                <Text style={styles.backButton}>Back</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => {
+                  Alert.alert(
+                    'Delete Report',
+                    `Are you sure you want to delete this ${selectedReport.reportType} report?`,
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Delete',
+                        style: 'destructive',
+                        onPress: () => handleDeleteReport(selectedReport),
+                      },
+                    ]
+                  );
+                }}
+                style={styles.deleteButton}
+              >
+                <Trash2 size={18} color="#8E8E93" strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
 
             <View style={styles.reportHeaderContent}>
               <Text style={styles.reportTitle}>
@@ -117,124 +235,290 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
               <View style={styles.summaryIconContainer}>
                 <FileText size={24} color="#4747FF" strokeWidth={2} />
               </View>
-              <Text style={styles.summaryText}>{selectedReport.summary}</Text>
+              <Text style={styles.summaryText}>
+                {selectedReport.vibeCheck || selectedReport.summary || 'No summary available'}
+              </Text>
             </View>
 
-            {/* Key Metrics Grid */}
-            <View style={styles.metricsGrid}>
-              <View style={styles.metricCard}>
-                <View style={styles.metricIconContainer}>
-                  <TrendingUp size={20} color="#4747FF" strokeWidth={2} />
-                </View>
-                <Text style={styles.metricValue}>
-                  ${selectedReport.spendingAnalysis.totalSpent.toFixed(0)}
-                </Text>
-                <Text style={styles.metricLabel}>Total Spent</Text>
-                {selectedReport.spendingAnalysis.comparisonToPrevious && (
-                  <View style={[
-                    styles.metricBadge,
-                    {
-                      backgroundColor: selectedReport.spendingAnalysis.comparisonToPrevious.change > 0
-                        ? 'rgba(239, 68, 68, 0.1)'
-                        : 'rgba(34, 197, 94, 0.1)',
-                    }
-                  ]}>
-                    <Text style={[
-                      styles.metricBadgeText,
+            {/* Key Metrics Grid - Only show for old format */}
+            {selectedReport.spendingAnalysis && selectedReport.happinessAnalysis && (
+              <View style={styles.metricsGrid}>
+                <View style={styles.metricCard}>
+                  <View style={styles.metricIconContainer}>
+                    <TrendingUp size={20} color="#4747FF" strokeWidth={2} />
+                  </View>
+                  <Text style={styles.metricValue}>
+                    ${selectedReport.spendingAnalysis.totalSpent.toFixed(0)}
+                  </Text>
+                  <Text style={styles.metricLabel}>Total Spent</Text>
+                  {selectedReport.spendingAnalysis.comparisonToPrevious && (
+                    <View style={[
+                      styles.metricBadge,
                       {
-                        color: selectedReport.spendingAnalysis.comparisonToPrevious.change > 0
-                          ? '#EF4444'
-                          : '#22C55E',
+                        backgroundColor: selectedReport.spendingAnalysis.comparisonToPrevious.change > 0
+                          ? 'rgba(239, 68, 68, 0.1)'
+                          : 'rgba(34, 197, 94, 0.1)',
                       }
                     ]}>
-                      {selectedReport.spendingAnalysis.comparisonToPrevious.change > 0 ? '+' : ''}
-                      {selectedReport.spendingAnalysis.comparisonToPrevious.percentChange.toFixed(1)}%
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View style={styles.metricCard}>
-                <View style={styles.metricIconContainer}>
-                  <Sparkles size={20} color="#4747FF" strokeWidth={2} />
+                      <Text style={[
+                        styles.metricBadgeText,
+                        {
+                          color: selectedReport.spendingAnalysis.comparisonToPrevious.change > 0
+                            ? '#EF4444'
+                            : '#22C55E',
+                        }
+                      ]}>
+                        {selectedReport.spendingAnalysis.comparisonToPrevious.change > 0 ? '+' : ''}
+                        {selectedReport.spendingAnalysis.comparisonToPrevious.percentChange.toFixed(1)}%
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <Text style={styles.metricValue}>
-                  {selectedReport.happinessAnalysis.averageHappiness.toFixed(1)}
-                </Text>
-                <Text style={styles.metricLabel}>Happiness</Text>
-                <View style={styles.happinessStars}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <View
-                      key={star}
-                      style={[
-                        styles.star,
-                        star <= Math.round(selectedReport.happinessAnalysis.averageHappiness) && styles.starFilled
-                      ]}
-                    />
-                  ))}
+
+                <View style={styles.metricCard}>
+                  <View style={styles.metricIconContainer}>
+                    <Sparkles size={20} color="#4747FF" strokeWidth={2} />
+                  </View>
+                  <Text style={styles.metricValue}>
+                    {selectedReport.happinessAnalysis.averageHappiness.toFixed(1)}
+                  </Text>
+                  <Text style={styles.metricLabel}>Happiness</Text>
+                  <View style={styles.happinessStars}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <View
+                        key={star}
+                        style={[
+                          styles.star,
+                          star <= Math.round(selectedReport.happinessAnalysis.averageHappiness) && styles.starFilled
+                        ]}
+                      />
+                    ))}
+                  </View>
                 </View>
-              </View>
-            </View>
-
-            {/* Wins & Concerns */}
-            {(selectedReport.wins.length > 0 || selectedReport.concerns.length > 0) && (
-              <View style={styles.section}>
-                {selectedReport.wins.length > 0 && (
-                  <View style={styles.winsCard}>
-                    <View style={styles.cardHeader}>
-                      <View style={styles.cardHeaderLeft}>
-                        <View style={styles.iconBadgeSuccess}>
-                          <Award size={18} color="#22C55E" strokeWidth={2} />
-                        </View>
-                        <Text style={styles.cardHeaderTitle}>Wins</Text>
-                      </View>
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>{selectedReport.wins.length}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardContent}>
-                      {selectedReport.wins.map((win, index) => (
-                        <View key={index} style={styles.listItemModern}>
-                          <View style={styles.listItemDot} />
-                          <Text style={styles.listItemTextModern}>{win}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {selectedReport.concerns.length > 0 && (
-                  <View style={styles.concernsCard}>
-                    <View style={styles.cardHeader}>
-                      <View style={styles.cardHeaderLeft}>
-                        <View style={styles.iconBadgeWarning}>
-                          <AlertCircle size={18} color="#F59E0B" strokeWidth={2} />
-                        </View>
-                        <Text style={styles.cardHeaderTitle}>Concerns</Text>
-                      </View>
-                      <View style={[styles.badge, styles.badgeWarning]}>
-                        <Text style={styles.badgeTextWarning}>{selectedReport.concerns.length}</Text>
-                      </View>
-                    </View>
-                    <View style={styles.cardContent}>
-                      {selectedReport.concerns.map((concern, index) => (
-                        <View key={index} style={styles.listItemModern}>
-                          <View style={[styles.listItemDot, styles.listItemDotWarning]} />
-                          <Text style={styles.listItemTextModern}>{concern}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
               </View>
             )}
 
-            {/* Spending Breakdown */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Spending Breakdown</Text>
+            {/* Values Alignment - New format */}
+            {selectedReport.valuesAlignment && (
+              <View style={styles.section}>
+                <View style={styles.winsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeSuccess}>
+                        <Target size={18} color="#4747FF" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Values Alignment</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    <Text style={styles.listItemTextModern}>{selectedReport.valuesAlignment.narrative}</Text>
+                    {selectedReport.valuesAlignment.aligned && selectedReport.valuesAlignment.aligned.length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={[styles.cardHeaderTitle, { fontSize: 14, marginBottom: 8 }]}>Aligned Spending</Text>
+                        {selectedReport.valuesAlignment.aligned.map((item: string, index: number) => (
+                          <View key={index} style={styles.listItemModern}>
+                            <View style={styles.listItemDot} />
+                            <Text style={styles.listItemTextModern}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    {selectedReport.valuesAlignment.worthALook && selectedReport.valuesAlignment.worthALook.length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <Text style={[styles.cardHeaderTitle, { fontSize: 14, marginBottom: 8 }]}>Worth a Look</Text>
+                        {selectedReport.valuesAlignment.worthALook.map((item: string, index: number) => (
+                          <View key={index} style={styles.listItemModern}>
+                            <View style={styles.listItemDot} />
+                            <Text style={styles.listItemTextModern}>{item}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
 
-              <View style={styles.categoryCard}>
-                {selectedReport.spendingAnalysis.topCategories.slice(0, 5).map((cat, index) => {
+            {/* Wins */}
+            {selectedReport.wins && selectedReport.wins.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.winsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeSuccess}>
+                        <Award size={18} color="#22C55E" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Wins</Text>
+                    </View>
+                    <View style={styles.badge}>
+                      <Text style={styles.badgeText}>{selectedReport.wins.length}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    {selectedReport.wins.map((win, index) => (
+                      <View key={index} style={styles.listItemModern}>
+                        <View style={styles.listItemDot} />
+                        <Text style={styles.listItemTextModern}>{win}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Concerns */}
+            {selectedReport.concerns && selectedReport.concerns.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.concernsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeWarning}>
+                        <AlertCircle size={18} color="#F59E0B" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Concerns</Text>
+                    </View>
+                    <View style={[styles.badge, styles.badgeWarning]}>
+                      <Text style={styles.badgeTextWarning}>{selectedReport.concerns.length}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    {selectedReport.concerns.map((concern, index) => (
+                      <View key={index} style={styles.listItemModern}>
+                        <View style={[styles.listItemDot, styles.listItemDotWarning]} />
+                        <Text style={styles.listItemTextModern}>{concern}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Patterns & Flags - Trends */}
+            {selectedReport.patternsAndFlags && selectedReport.patternsAndFlags.trends && selectedReport.patternsAndFlags.trends.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.winsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeSuccess}>
+                        <TrendingUp size={18} color="#4747FF" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Trends</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    {selectedReport.patternsAndFlags.trends.map((trend: string, index: number) => (
+                      <View key={index} style={styles.listItemModern}>
+                        <View style={styles.listItemDot} />
+                        <Text style={styles.listItemTextModern}>{trend}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Patterns & Flags - Joy Efficiency */}
+            {selectedReport.patternsAndFlags && selectedReport.patternsAndFlags.joyEfficiency && selectedReport.patternsAndFlags.joyEfficiency.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.winsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeSuccess}>
+                        <Sparkles size={18} color="#4747FF" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Joy Efficiency</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    {selectedReport.patternsAndFlags.joyEfficiency.map((item: string, index: number) => (
+                      <View key={index} style={styles.listItemModern}>
+                        <View style={styles.listItemDot} />
+                        <Text style={styles.listItemTextModern}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Reflection Prompts - New format */}
+            {selectedReport.reflectionPrompts && selectedReport.reflectionPrompts.length > 0 && (
+              <View style={styles.section}>
+                <View style={styles.winsCard}>
+                  <View style={styles.cardHeader}>
+                    <View style={styles.cardHeaderLeft}>
+                      <View style={styles.iconBadgeSuccess}>
+                        <Target size={18} color="#4747FF" strokeWidth={2} />
+                      </View>
+                      <Text style={styles.cardHeaderTitle}>Reflection Prompts</Text>
+                    </View>
+                  </View>
+                  <View style={styles.cardContent}>
+                    {selectedReport.reflectionPrompts.map((prompt: string, index: number) => {
+                      const hasSavedAnswer = savedReflections[index] && !editingReflections[index];
+
+                      return (
+                        <View key={index} style={styles.reflectionPromptItem}>
+                          <Text style={styles.reflectionPromptText}>{prompt}</Text>
+
+                          {hasSavedAnswer ? (
+                            // Show saved answer with edit button
+                            <View style={styles.savedReflectionContainer}>
+                              <Text style={styles.savedReflectionText}>{savedReflections[index]}</Text>
+                              <TouchableOpacity
+                                style={styles.editReflectionButton}
+                                onPress={() => handleEditReflection(index)}
+                              >
+                                <Edit2 size={16} color={theme.colors.primary} strokeWidth={2} />
+                                <Text style={styles.editReflectionButtonText}>Edit</Text>
+                              </TouchableOpacity>
+                            </View>
+                          ) : (
+                            // Show input field
+                            <>
+                              <TextInput
+                                style={styles.reflectionInput}
+                                placeholder="Type your reflection here..."
+                                placeholderTextColor={theme.colors.textSecondary}
+                                value={reflectionAnswers[index] || ''}
+                                onChangeText={(text) => setReflectionAnswers(prev => ({ ...prev, [index]: text }))}
+                                multiline
+                                numberOfLines={3}
+                              />
+                              <TouchableOpacity
+                                style={[
+                                  styles.saveReflectionButton,
+                                  (!reflectionAnswers[index]?.trim() || savingAnswers[index]) && styles.saveReflectionButtonDisabled
+                                ]}
+                                onPress={() => handleSaveReflectionAnswer(index, prompt, reflectionAnswers[index] || '')}
+                                disabled={!reflectionAnswers[index]?.trim() || savingAnswers[index]}
+                              >
+                                {savingAnswers[index] ? (
+                                  <ActivityIndicator size="small" color="#FFF" />
+                                ) : (
+                                  <>
+                                    <Send size={16} color="#FFF" strokeWidth={2} />
+                                    <Text style={styles.saveReflectionButtonText}>Save Reflection</Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+                            </>
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {/* Spending Breakdown - Old format only */}
+            {selectedReport.spendingAnalysis && selectedReport.spendingAnalysis.topCategories && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Spending Breakdown</Text>
+
+                <View style={styles.categoryCard}>
+                  {selectedReport.spendingAnalysis.topCategories.slice(0, 5).map((cat, index) => {
                   const percentage = cat.percentOfTotal;
                   return (
                     <View key={index} style={styles.categoryItem}>
@@ -255,12 +539,13 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
                       </View>
                     </View>
                   );
-                })}
+                  })}
+                </View>
               </View>
-            </View>
+            )}
 
-            {/* Happiness Analysis */}
-            {selectedReport.happinessAnalysis.topHappyCategories.length > 0 && (
+            {/* Happiness Analysis - Old format only */}
+            {selectedReport.happinessAnalysis && selectedReport.happinessAnalysis.topHappyCategories && selectedReport.happinessAnalysis.topHappyCategories.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Top Joy Categories</Text>
 
@@ -290,8 +575,8 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
               </View>
             )}
 
-            {/* Bucket Performance */}
-            {selectedReport.bucketPerformance.length > 0 && (
+            {/* Bucket Performance - Old format only */}
+            {selectedReport.bucketPerformance && selectedReport.bucketPerformance.length > 0 && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Bucket Performance</Text>
 
@@ -361,8 +646,8 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
               </View>
             )}
 
-            {/* Insights */}
-            {selectedReport.insights.length > 0 && (
+            {/* Insights - Old format only */}
+            {selectedReport.insights && selectedReport.insights.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.cardHeaderInline}>
                   <View style={styles.iconBadgeInfo}>
@@ -384,8 +669,8 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
               </View>
             )}
 
-            {/* Recommendations */}
-            {selectedReport.recommendations.length > 0 && (
+            {/* Recommendations - Old format only */}
+            {selectedReport.recommendations && selectedReport.recommendations.length > 0 && (
               <View style={styles.section}>
                 <View style={styles.cardHeaderInline}>
                   <View style={styles.iconBadgeInfo}>
@@ -485,51 +770,12 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
           {reports && reports.length > 0 && (
             <>
               {reports.map((report) => (
-                <TouchableOpacity
+                <SwipeableReport
                   key={report._id}
-                  style={styles.reportCard}
-                  onPress={() => setSelectedReport(report)}>
-                  <View style={styles.reportCardHeader}>
-                    <Text style={styles.reportCardTitle}>
-                      {new Date(report.periodStart).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                      })}{' '}
-                      -{' '}
-                      {new Date(report.periodEnd).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
-                    </Text>
-                    <ChevronRight size={20} color={theme.colors.textSecondary} strokeWidth={2} />
-                  </View>
-
-                  <Text style={styles.reportCardSummary} numberOfLines={2}>
-                    {report.summary}
-                  </Text>
-
-                  <View style={styles.reportCardStats}>
-                    <View style={styles.reportCardStat}>
-                      <Text style={styles.reportCardStatLabel}>Spent</Text>
-                      <Text style={styles.reportCardStatValue}>
-                        ${report.spendingAnalysis.totalSpent.toFixed(0)}
-                      </Text>
-                    </View>
-                    <View style={styles.reportCardStat}>
-                      <Text style={styles.reportCardStatLabel}>Happiness</Text>
-                      <Text style={styles.reportCardStatValue}>
-                        {report.happinessAnalysis.averageHappiness.toFixed(1)}/5
-                      </Text>
-                    </View>
-                    <View style={styles.reportCardStat}>
-                      <Text style={styles.reportCardStatLabel}>Insights</Text>
-                      <Text style={styles.reportCardStatValue}>
-                        {report.insights.length}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
+                  report={report}
+                  onPress={() => setSelectedReport(report)}
+                  onDelete={() => handleDeleteReport(report)}
+                />
               ))}
             </>
           )}
@@ -575,17 +821,29 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0, 0, 0, 0.05)',
   },
+  detailHeaderTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
   backButtonContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 16,
   },
   backButton: {
     fontSize: 16,
     fontFamily: 'Merchant, monospace',
     color: theme.colors.primary,
     fontWeight: '500',
+  },
+  deleteButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   reportHeaderContent: {
     gap: 4,
@@ -690,7 +948,6 @@ const styles = StyleSheet.create({
   reportCard: {
     backgroundColor: theme.colors.cardBackground,
     borderRadius: 16,
-    padding: 20,
     marginBottom: 16,
     borderWidth: 1,
     borderColor: theme.colors.border,
@@ -699,13 +956,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 8,
+  },
+  reportCardTitleContainer: {
+    flex: 1,
+  },
+  reportCardHeaderButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   reportCardTitle: {
     fontSize: 18,
     fontFamily: 'Merchant, monospace',
     fontWeight: '500',
     color: theme.colors.text,
+  },
+  deleteIconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EF4444',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reportCardContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   reportCardSummary: {
     fontSize: 16,
@@ -845,7 +1124,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
     padding: 20,
-    marginBottom: 12,
     borderWidth: 2,
     borderColor: 'rgba(34, 197, 94, 0.2)',
   },
@@ -1244,5 +1522,81 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant Copy, monospace',
     color: theme.colors.text,
     lineHeight: 24,
+  },
+
+  // Reflection Prompts
+  reflectionPromptItem: {
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  reflectionPromptText: {
+    fontSize: 16,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.text,
+    lineHeight: 24,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  reflectionInput: {
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.text,
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 12,
+  },
+  saveReflectionButton: {
+    backgroundColor: theme.colors.primary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  saveReflectionButtonDisabled: {
+    backgroundColor: theme.colors.textSecondary,
+    opacity: 0.5,
+  },
+  saveReflectionButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '500',
+  },
+  savedReflectionContainer: {
+    backgroundColor: '#F0F9FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  savedReflectionText: {
+    fontSize: 16,
+    fontFamily: 'Merchant Copy, monospace',
+    color: theme.colors.text,
+    lineHeight: 24,
+    marginBottom: 12,
+  },
+  editReflectionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    alignSelf: 'flex-start',
+  },
+  editReflectionButtonText: {
+    color: theme.colors.primary,
+    fontSize: 14,
+    fontFamily: 'Merchant, monospace',
+    fontWeight: '500',
   },
 });
