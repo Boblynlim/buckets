@@ -9,10 +9,11 @@ import {
   StatusBar,
   ActivityIndicator,
   RefreshControl,
+  TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { DollarSign, Plus, Droplets } from 'lucide-react-native';
+import { DollarSign, Plus, Droplets, Search } from 'lucide-react-native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { BucketCard } from '../components/BucketCard';
@@ -33,15 +34,24 @@ type NavigationProp = NativeStackNavigationProp<BucketsStackParamList>;
 export const BucketsOverview: React.FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const [activeTab, setActiveTab] = useState<FilterTab>('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [showAddBucket, setShowAddBucket] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   // Get current user and buckets from Convex
+  // Current month boundaries for expense filtering — carryoverBalance already
+  // accounts for previous months, so spentAmount must only include this month.
+  const _now = new Date();
+  const currentMonthStart = new Date(_now.getFullYear(), _now.getMonth(), 1).getTime();
+  const currentMonthEnd = new Date(_now.getFullYear(), _now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+
   const currentUser = useQuery(api.users.getCurrentUser);
   const initDemoUser = useMutation(api.users.initDemoUser);
   const buckets = useQuery(
     api.buckets.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
+    currentUser
+      ? { userId: currentUser._id, monthStart: currentMonthStart, monthEnd: currentMonthEnd }
+      : 'skip',
   );
 
   // Initialize demo user if needed
@@ -75,7 +85,7 @@ export const BucketsOverview: React.FC = () => {
     );
   }
 
-  const filteredBuckets =
+  const tabFilteredBuckets =
     activeTab === 'all'
       ? allBuckets
       : allBuckets.filter(bucket => {
@@ -91,6 +101,12 @@ export const BucketsOverview: React.FC = () => {
           // Only show as low balance if there's actual spending AND it exceeds threshold
           return percentUsed > 0 && percentUsed >= (bucket.alertThreshold || 75);
         });
+
+  const filteredBuckets = searchQuery.trim()
+    ? tabFilteredBuckets.filter(b =>
+        b.name.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : tabFilteredBuckets;
 
   const lowBalanceCount = allBuckets.filter(bucket => {
     // Calculate percent used - handle rollovers correctly
@@ -139,6 +155,20 @@ export const BucketsOverview: React.FC = () => {
         <View style={styles.titleRow}>
           <Text style={styles.title}>Buckets</Text>
           <View style={styles.headerSpacer} />
+        </View>
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputWrapper}>
+            <Search size={16} color="#877E6F" strokeWidth={2} />
+            <TextInput
+              style={styles.searchInput}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search buckets..."
+              placeholderTextColor="#B5AFA5"
+            />
+          </View>
         </View>
 
         {/* Simple tabs */}
@@ -254,6 +284,26 @@ const styles = StyleSheet.create({
     fontFamily: getFontFamily('bold'),
     color: theme.colors.primary,
     letterSpacing: -1.2,
+  },
+  searchContainer: {
+    marginBottom: 12,
+  },
+  searchInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8F7F5',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E8E4DF',
+    paddingHorizontal: 12,
+    gap: 8,
+    height: 44,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1A1A1A',
+    fontFamily: getFontFamily('regular'),
   },
   tabsContainer: {
     flexDirection: 'row',

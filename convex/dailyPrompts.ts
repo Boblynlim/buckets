@@ -67,6 +67,21 @@ export const generateDailyPrompt = mutation({
       return existingPrompt._id; // Already have a prompt for today
     }
 
+    // Dismiss any unanswered prompts from previous days so they don't pile up
+    const oldUnanswered = await ctx.db
+      .query('dailyPrompts')
+      .withIndex('by_user_and_answered', (q) =>
+        q.eq('userId', args.userId).eq('isAnswered', false)
+      )
+      .collect();
+
+    for (const oldPrompt of oldUnanswered) {
+      await ctx.db.patch(oldPrompt._id, {
+        isAnswered: true,
+        answeredAt: now,
+      });
+    }
+
     // Get recent prompts to avoid repetition
     const recentPrompts = await ctx.db
       .query('dailyPrompts')
@@ -108,12 +123,15 @@ export const getTodayPrompt = query({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+
+    // Only return today's unanswered prompt — never surface prompts from previous days
     const prompt = await ctx.db
       .query('dailyPrompts')
-      .withIndex('by_user_and_answered', (q) =>
-        q.eq('userId', args.userId).eq('isAnswered', false)
+      .withIndex('by_user_and_date', (q) =>
+        q.eq('userId', args.userId).gte('createdAt', todayStart)
       )
-      .order('desc')
+      .filter((q) => q.eq(q.field('isAnswered'), false))
       .first();
 
     return prompt;
