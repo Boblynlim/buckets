@@ -51,13 +51,30 @@ export const performMonthlyRollover = mutation({
       if (bucket.bucketMode === 'spend') {
         // SPEND BUCKET ROLLOVER
 
-        // Get all expenses for this bucket
-        const expenses = await ctx.db
+        // Only count expenses from the month being rolled over (the previous month).
+        // Using all-time expenses would double-count historical spending across rollover cycles.
+        const prevMonthEnd = now;
+        const prevMonthStart = new Date(now);
+        prevMonthStart.setDate(1);       // 1st of this month
+        prevMonthStart.setHours(0, 0, 0, 0);
+        const prevMonthStartTs = prevMonthStart.getTime() - 1; // end of last day of prev month
+
+        // Last rollover date tells us when the previous cycle started
+        const cycleStart = bucket.lastRolloverDate
+          ? bucket.lastRolloverDate
+          : prevMonthStart.getTime() - (31 * 24 * 60 * 60 * 1000); // fallback: ~31 days ago
+
+        const allExpenses = await ctx.db
           .query('expenses')
           .withIndex('by_bucket', q => q.eq('bucketId', bucket._id))
           .collect();
 
-        const totalSpent = expenses.reduce((sum, e) => sum + e.amount, 0);
+        // Only count expenses that occurred during the just-ended cycle
+        const periodExpenses = allExpenses.filter(
+          e => e.date >= cycleStart && e.date <= prevMonthEnd
+        );
+
+        const totalSpent = periodExpenses.reduce((sum, e) => sum + e.amount, 0);
 
         // Calculate available balance before rollover
         const previousCarryover = bucket.carryoverBalance || 0;
