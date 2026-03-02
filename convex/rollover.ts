@@ -337,6 +337,107 @@ export const manualRollover = mutation({
 });
 
 /**
+ * Replay all expense history month-by-month and recalculate correct carryover
+ * balances for every spend bucket. Use this to repair data corrupted by the
+ * old rollover bug that summed all-time expenses instead of per-cycle expenses.
+ */
+export const replayAndFixCarryovers = mutation({
+  args: { userId: v.id('users') },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+
+    // Current month start
+    const currentMonthDate = new Date(now);
+    currentMonthDate.setDate(1);
+    currentMonthDate.setHours(0, 0, 0, 0);
+    const currentMonthStart = currentMonthDate.getTime();
+
+    // Get recurring income
+    const incomeRecords = await ctx.db
+      .query('income')
+      .withIndex('by_user', q => q.eq('userId', args.userId))
+      .filter(q => q.eq(q.field('isRecurring'), true))
+      .collect();
+    const totalIncome = incomeRecords.reduce((sum, i) => sum + i.amount, 0);
+
+    // Get all active spend buckets
+    const allBuckets = await ctx.db
+      .query('buckets')
+      .withIndex('by_user', q => q.eq('userId', args.userId))
+      .filter(q => q.eq(q.field('isActive'), true))
+      .collect();
+    const spendBuckets = allBuckets.filter(b => b.bucketMode === 'spend');
+
+    // Calculate funding ratio (same logic as performMonthlyRollover)
+    let totalPlanned = 0;
+    for (const b of spendBuckets) {
+      if (b.allocationType === 'percentage' && b.plannedPercent !== undefined) {
+        totalPlanned += (totalIncome * b.plannedPercent) / 100;
+      } else if (b.allocationType === 'amount' && b.plannedAmount !== undefined) {
+        totalPlanned += b.plannedAmount;
+      }
+    }
+    const fundingRatio = totalPlanned > totalIncome ? totalIncome / totalPlanned : 1;
+
+    const results = [];
+
+    for (const bucket of spendBuckets) {
+      // Calculate this bucket's monthly funding
+      let monthlyFunding = 0;
+      if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
+        monthlyFunding = (totalIncome * bucket.plannedPercent) / 100 * fundingRatio;
+      } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
+        monthlyFunding = bucket.plannedAmount * fundingRatio;
+      }
+
+      // Get all expenses for this bucket
+      const allExpenses = await ctx.db
+        .query('expenses')
+        .withIndex('by_bucket', q => q.eq('bucketId', bucket._id))
+        .collect();
+
+      // Replay from bucket's creation month forward, month by month
+      const creationDate = new Date(bucket._creationTime);
+      let monthCursor = new Date(creationDate.getFullYear(), creationDate.getMonth(), 1);
+
+      let carryover = 0;
+      while (monthCursor.getTime() < currentMonthStart) {
+        const monthStart = monthCursor.getTime();
+        const nextMonth = new Date(monthCursor.getFullYear(), monthCursor.getMonth() + 1, 1);
+        const monthEnd = nextMonth.getTime();
+
+        const monthSpent = allExpenses
+          .filter(e => e.date >= monthStart && e.date < monthEnd)
+          .reduce((sum, e) => sum + e.amount, 0);
+
+        carryover = carryover + monthlyFunding - monthSpent;
+        monthCursor = nextMonth;
+      }
+
+      const oldCarryover = bucket.carryoverBalance || 0;
+      await ctx.db.patch(bucket._id, {
+        carryoverBalance: carryover,
+        fundedAmount: monthlyFunding,
+      });
+
+      results.push({
+        bucketName: bucket.name,
+        oldCarryover,
+        newCarryover: carryover,
+        monthlyFunding,
+      });
+    }
+
+    return {
+      success: true,
+      bucketsFixed: results.length,
+      totalIncome,
+      results,
+    };
+  },
+});
+
+/**
  * Scheduled rollover - runs automatically on the 1st of each month
  * This is called by the cron job and processes all users
  */

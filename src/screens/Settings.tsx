@@ -89,6 +89,7 @@ export const Settings: React.FC<SettingsProps> = ({
   );
   const bulkImport = useMutation(api.expenses.bulkImport);
   const manualRollover = useMutation(api.rollover.manualRollover);
+  const replayCarryovers = useMutation(api.rollover.replayAndFixCarryovers);
   const resetAllData = useMutation(api.reset.deleteAllUserData);
   const removeBucket = useMutation(api.buckets.remove);
   const calculateDistribution = useMutation(api.distribution.calculateDistribution);
@@ -501,6 +502,41 @@ export const Settings: React.FC<SettingsProps> = ({
               thumbColor="#FFFFFF"
             />
           </View>
+
+          <Pressable
+            style={styles.row}
+            onPress={async () => {
+              if (!currentUser) return;
+              const confirmed = confirm(
+                'Recalculate all bucket balances from scratch?\n\n' +
+                'This replays your full expense history month-by-month to fix any ' +
+                'incorrect carryover values. Your expense records are not changed.'
+              );
+              if (!confirmed) return;
+              try {
+                const result = await replayCarryovers({ userId: currentUser._id });
+                const lines = (result.results as any[])
+                  .map((r: any) =>
+                    `• ${r.bucketName}: $${r.oldCarryover.toFixed(2)} → $${r.newCarryover.toFixed(2)}`
+                  )
+                  .join('\n');
+                alert(`✅ Fixed ${result.bucketsFixed} bucket(s)\n\n${lines}`);
+              } catch (error: any) {
+                alert(`Error: ${error?.message || 'Failed to recalculate balances'}`);
+              }
+            }}
+          >
+            <View style={styles.rowLeft}>
+              <View style={styles.iconContainer}>
+                <BarChart3 size={22} color="#FF9500" strokeWidth={2} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.rowTitle}>Recalculate Balances</Text>
+                <Text style={styles.rowSubtitle}>Fix carryover amounts from historical data</Text>
+              </View>
+            </View>
+            <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
+          </Pressable>
         </View>
 
         {/* General Section */}
