@@ -28,7 +28,8 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
 }) => {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [happinessRating, setHappinessRating] = useState(3);
+  const [worthRating, setWorthRating] = useState(3);
+  const [alignmentRating, setAlignmentRating] = useState(3);
   const [date, setDate] = useState(new Date());
   const [showBucketPicker, setShowBucketPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -133,13 +134,15 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
         amount: parseFloat(amount),
         date: date.getTime(),
         note,
-        happinessRating,
+        worthRating,
+        alignmentRating,
       });
 
       // Reset form
       setAmount('');
       setNote('');
-      setHappinessRating(3);
+      setWorthRating(3);
+      setAlignmentRating(3);
       setDate(new Date());
       setIsSaving(false);
 
@@ -178,8 +181,11 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
   const isValid =
     amount && amountValue > 0 && selectedBucket;
 
-  const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
-  const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
+  const worthEmojis = ['💸', '😕', '😐', '👍', '💎'];
+  const worthLabels = ['Waste', 'Regret', 'Okay', 'Good', 'Worth It'];
+
+  const alignmentEmojis = ['❌', '🤔', '😐', '✓', '🎯'];
+  const alignmentLabels = ['Not at all', 'Somewhat', 'Neutral', 'Mostly', 'Perfectly'];
 
   // Show loading state while fetching data
   if (currentUser === undefined || buckets === undefined) {
@@ -368,10 +374,10 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
             />
           </View>
 
-          {/* Happiness Rating */}
+          {/* Worth It Rating */}
           <View style={styles.section}>
             <Text style={styles.label}>
-              How happy does this purchase make you?
+              Was this worth the money?
             </Text>
             <View style={styles.ratingContainer}>
               {[1, 2, 3, 4, 5].map(rating => (
@@ -379,20 +385,51 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
                   key={rating}
                   style={[
                     styles.ratingButton,
-                    happinessRating === rating && styles.ratingButtonSelected,
+                    worthRating === rating && styles.ratingButtonSelected,
                   ]}
-                  onPress={() => setHappinessRating(rating)}
+                  onPress={() => setWorthRating(rating)}
                 >
                   <Text style={styles.ratingEmoji}>
-                    {happinessEmojis[rating - 1]}
+                    {worthEmojis[rating - 1]}
                   </Text>
                   <Text
                     style={[
                       styles.ratingLabel,
-                      happinessRating === rating && styles.ratingLabelSelected,
+                      worthRating === rating && styles.ratingLabelSelected,
                     ]}
                   >
-                    {happinessLabels[rating - 1]}
+                    {worthLabels[rating - 1]}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+
+          {/* Alignment Rating */}
+          <View style={styles.section}>
+            <Text style={styles.label}>
+              Does this align with your priorities?
+            </Text>
+            <View style={styles.ratingContainer}>
+              {[1, 2, 3, 4, 5].map(rating => (
+                <TouchableOpacity
+                  key={rating}
+                  style={[
+                    styles.ratingButton,
+                    alignmentRating === rating && styles.ratingButtonSelected,
+                  ]}
+                  onPress={() => setAlignmentRating(rating)}
+                >
+                  <Text style={styles.ratingEmoji}>
+                    {alignmentEmojis[rating - 1]}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.ratingLabel,
+                      alignmentRating === rating && styles.ratingLabelSelected,
+                    ]}
+                  >
+                    {alignmentLabels[rating - 1]}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -617,11 +654,12 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ratingLabel: {
-    fontSize: 13,
+    fontSize: 11,
     color: '#877E6F',
     fontWeight: '500',
     fontFamily: getFontFamily('regular'),
     letterSpacing: -0.2,
+    textAlign: 'center',
   },
   ratingLabelSelected: {
     color: '#FFFFFF',

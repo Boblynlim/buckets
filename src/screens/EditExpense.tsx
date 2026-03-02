@@ -54,7 +54,8 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
 
   const [amount, setAmount] = useState(expense.amount.toString());
   const [note, setNote] = useState(expense.note);
-  const [happinessRating, setHappinessRating] = useState(expense.happinessRating);
+  const [worthRating, setWorthRating] = useState(expense.worthRating ?? 3);
+  const [alignmentRating, setAlignmentRating] = useState(expense.alignmentRating ?? 3);
   const [date, setDate] = useState(new Date(expense.date));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBucketPicker, setShowBucketPicker] = useState(false);
@@ -90,8 +91,10 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   };
 
   const isValid = amount && parseFloat(amount) > 0;
-  const happinessEmojis = ['😢', '😕', '😐', '🙂', '😄'];
-  const happinessLabels = ['Poor', 'Fair', 'Okay', 'Good', 'Great'];
+  const worthEmojis = ['💸', '😕', '😐', '👍', '💎'];
+  const worthLabels = ['Waste', 'Regret', 'Okay', 'Good', 'Worth It'];
+  const alignmentEmojis = ['❌', '🤔', '😐', '✓', '🎯'];
+  const alignmentLabels = ['Not at all', 'Somewhat', 'Neutral', 'Mostly', 'Perfectly'];
 
   const handleSave = async () => {
     // Prevent duplicate submissions
@@ -130,7 +133,8 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
         amount: newAmount,
         date: date.getTime(),
         note: note.trim(),
-        happinessRating,
+        worthRating,
+        alignmentRating,
       });
 
       alert('Expense updated successfully!');
@@ -286,10 +290,10 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
           />
         </View>
 
-        {/* Happiness Rating */}
+        {/* Worth Rating */}
         <View style={styles.section}>
           <Text style={styles.label}>
-            How happy does this purchase make you?
+            Was this worth the money?
           </Text>
           <View style={styles.ratingContainer}>
             {[1, 2, 3, 4, 5].map(rating => (
@@ -297,18 +301,47 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
                 key={rating}
                 style={[
                   styles.ratingButton,
-                  happinessRating === rating && styles.ratingButtonSelected,
+                  worthRating === rating && styles.ratingButtonSelected,
                 ]}
-                onPress={() => setHappinessRating(rating)}>
+                onPress={() => setWorthRating(rating)}>
                 <Text style={styles.ratingEmoji}>
-                  {happinessEmojis[rating - 1]}
+                  {worthEmojis[rating - 1]}
                 </Text>
                 <Text
                   style={[
                     styles.ratingLabel,
-                    happinessRating === rating && styles.ratingLabelSelected,
+                    worthRating === rating && styles.ratingLabelSelected,
                   ]}>
-                  {happinessLabels[rating - 1]}
+                  {worthLabels[rating - 1]}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        {/* Alignment Rating */}
+        <View style={styles.section}>
+          <Text style={styles.label}>
+            Does this align with your priorities?
+          </Text>
+          <View style={styles.ratingContainer}>
+            {[1, 2, 3, 4, 5].map(rating => (
+              <TouchableOpacity
+                key={rating}
+                style={[
+                  styles.ratingButton,
+                  alignmentRating === rating && styles.ratingButtonSelected,
+                ]}
+                onPress={() => setAlignmentRating(rating)}>
+                <Text style={styles.ratingEmoji}>
+                  {alignmentEmojis[rating - 1]}
+                </Text>
+                <Text
+                  style={[
+                    styles.ratingLabel,
+                    alignmentRating === rating && styles.ratingLabelSelected,
+                  ]}>
+                  {alignmentLabels[rating - 1]}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -564,10 +597,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   ratingLabel: {
-    fontSize: 12,
+    fontSize: 11,
     color: theme.colors.textSecondary,
     fontWeight: '500',
     fontFamily: getFontFamily('regular'),
+    textAlign: 'center',
   },
   ratingLabelSelected: {
     color: theme.colors.textOnPrimary,
