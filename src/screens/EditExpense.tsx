@@ -52,7 +52,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     return null;
   }
 
-  const [amount, setAmount] = useState(expense.amount.toString());
+  const [amount, setAmount] = useState((expense._id as any) === 'new' ? '' : expense.amount.toString());
   const [note, setNote] = useState(expense.note);
   const [worthRating, setWorthRating] = useState(expense.worthRating ?? 3);
   const [alignmentRating, setAlignmentRating] = useState(expense.alignmentRating ?? 3);
@@ -68,8 +68,10 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     api.buckets.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
+  const createExpense = useMutation(api.expenses.create);
   const updateExpense = useMutation(api.expenses.update);
   const removeExpense = useMutation(api.expenses.remove);
+  const isNewExpense = (expense._id as any) === 'new';
 
   const allBuckets = buckets || [];
   const [selectedBucket, setSelectedBucket] = useState(bucket);
@@ -111,7 +113,8 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     const amountDiff = newAmount - expense.amount;
 
     // Check if new bucket has sufficient balance (if changing buckets or increasing amount)
-    if (selectedBucket._id !== bucket._id || amountDiff > 0) {
+    // Skip for new expenses — overspending is allowed (debt rolls over)
+    if (!isNewExpense && (selectedBucket._id !== bucket._id || amountDiff > 0)) {
       const targetBucket = selectedBucket._id !== bucket._id ? selectedBucket : bucket;
       const requiredBalance = selectedBucket._id !== bucket._id ? newAmount : amountDiff;
       const availableBalance = getAvailableBalance(targetBucket);
@@ -127,17 +130,34 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
     try {
       setIsSaving(true);
 
-      await updateExpense({
-        expenseId: expense._id as any,
-        bucketId: selectedBucket._id as any,
-        amount: newAmount,
-        date: date.getTime(),
-        note: note.trim(),
-        worthRating,
-        alignmentRating,
-      });
-
-      alert('Expense updated successfully!');
+      if (isNewExpense) {
+        if (!currentUser) {
+          alert('Please try again');
+          setIsSaving(false);
+          return;
+        }
+        await createExpense({
+          userId: currentUser._id,
+          bucketId: selectedBucket._id as any,
+          amount: newAmount,
+          date: date.getTime(),
+          note: note.trim(),
+          worthRating,
+          alignmentRating,
+        });
+        alert('Expense added successfully!');
+      } else {
+        await updateExpense({
+          expenseId: expense._id as any,
+          bucketId: selectedBucket._id as any,
+          amount: newAmount,
+          date: date.getTime(),
+          note: note.trim(),
+          worthRating,
+          alignmentRating,
+        });
+        alert('Expense updated successfully!');
+      }
       setIsSaving(false);
 
       // Close modal or navigate back
@@ -192,7 +212,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
           <TouchableOpacity onPress={onClose}>
             <Text style={styles.cancelButton}>Cancel</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Edit Expense</Text>
+          <Text style={styles.title}>{isNewExpense ? 'Add Expense' : 'Edit Expense'}</Text>
           <TouchableOpacity
             onPress={handleSave}
             disabled={!isValid || isSaving}
@@ -361,14 +381,16 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
         </View>
 
         {/* Delete Button */}
-        <View style={styles.deleteSection}>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete Expense</Text>
-          </TouchableOpacity>
-          <Text style={styles.deleteHint}>
-            Balance will be refunded to bucket
-          </Text>
-        </View>
+        {!isNewExpense && (
+          <View style={styles.deleteSection}>
+            <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+              <Text style={styles.deleteButtonText}>Delete Expense</Text>
+            </TouchableOpacity>
+            <Text style={styles.deleteHint}>
+              Balance will be refunded to bucket
+            </Text>
+          </View>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
