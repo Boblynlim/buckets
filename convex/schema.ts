@@ -155,7 +155,7 @@ export default defineSchema({
     periodEnd: v.number(),   // End of the period (timestamp)
 
     // New template structure
-    vibeCheck: v.string(),  // 2-3 sentence warm narrative summary
+    vibeCheck: v.optional(v.string()),
 
     goalPulse: v.optional(v.object({
       renovationFund: v.optional(v.object({
@@ -173,44 +173,44 @@ export default defineSchema({
       quickTake: v.string(),
     })),
 
-    fundStatus: v.array(v.object({
+    fundStatus: v.optional(v.array(v.object({
       bucketName: v.string(),
-      monthlyAllocation: v.union(v.number(), v.string()), // number or "10% of income"
+      monthlyAllocation: v.union(v.number(), v.string()),
       bankedSoFar: v.number(),
       spentThisWeek: v.number(),
       remaining: v.number(),
-      runway: v.string(), // e.g., "3 months buffer"
-    })),
-    fundsRunningLow: v.array(v.string()),
-    fundsHealthy: v.array(v.string()),
+      runway: v.string(),
+    }))),
+    fundsRunningLow: v.optional(v.array(v.string())),
+    fundsHealthy: v.optional(v.array(v.string())),
 
-    valuesAlignment: v.object({
-      narrative: v.string(), // Specific analysis of spending vs values
+    valuesAlignment: v.optional(v.object({
+      narrative: v.string(),
       aligned: v.array(v.string()),
       worthALook: v.array(v.string()),
-    }),
+    })),
 
-    patternsAndFlags: v.object({
+    patternsAndFlags: v.optional(v.object({
       trends: v.array(v.string()),
       repeats: v.array(v.string()),
       joyEfficiency: v.array(v.string()),
-    }),
+    })),
 
-    sgNudges: v.object({
+    sgNudges: v.optional(v.object({
       thisWeek: v.array(v.string()),
       generalReminders: v.array(v.string()),
-    }),
+    })),
 
-    reflectionPrompts: v.array(v.string()), // 1-2 contextual questions
+    reflectionPrompts: v.optional(v.array(v.string())),
 
-    fixedCosts: v.array(v.object({
+    fixedCosts: v.optional(v.array(v.object({
       category: v.string(),
       thisWeek: v.number(),
       monthlyBudget: v.number(),
-    })),
-    fixedCostsTotal: v.number(),
+    }))),
+    fixedCostsTotal: v.optional(v.number()),
 
-    wins: v.array(v.string()),
+    wins: v.optional(v.array(v.string())),
 
     // Legacy fields for backward compatibility (optional)
     summary: v.optional(v.string()),
