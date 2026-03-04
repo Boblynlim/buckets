@@ -17,7 +17,11 @@ export const create = mutation({
     amount: v.number(),
     date: v.number(),
     note: v.string(),
-    happinessRating: v.number(),
+    // New dual rating system
+    worthRating: v.optional(v.number()),
+    alignmentRating: v.optional(v.number()),
+    // Legacy field for backward compatibility
+    happinessRating: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     // Check if bucket exists and has sufficient balance
@@ -58,7 +62,9 @@ export const create = mutation({
       amount: args.amount,
       date: args.date,
       note: args.note,
-      happinessRating: args.happinessRating,
+      worthRating: args.worthRating,
+      alignmentRating: args.alignmentRating,
+      happinessRating: args.happinessRating, // Keep for backward compatibility
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -128,6 +134,8 @@ export const update = mutation({
     bucketId: v.optional(v.id("buckets")),
     date: v.optional(v.number()),
     note: v.optional(v.string()),
+    worthRating: v.optional(v.number()),
+    alignmentRating: v.optional(v.number()),
     happinessRating: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
@@ -225,7 +233,9 @@ export const bulkImport = mutation({
       amount: v.number(),
       date: v.number(), // timestamp
       note: v.string(),
-      happinessRating: v.number(),
+      worthRating: v.optional(v.number()),
+      alignmentRating: v.optional(v.number()),
+      happinessRating: v.optional(v.number()),
       category: v.optional(v.string()),
       merchant: v.optional(v.string()),
       needsVsWants: v.optional(v.union(v.literal("need"), v.literal("want"))),
@@ -277,6 +287,8 @@ export const bulkImport = mutation({
           amount: expense.amount,
           date: expense.date,
           note: expense.note,
+          worthRating: expense.worthRating,
+          alignmentRating: expense.alignmentRating,
           happinessRating: expense.happinessRating,
           category: expense.category,
           merchant: expense.merchant,

@@ -65,7 +65,14 @@ export default defineSchema({
     amount: v.number(),
     date: v.number(), // timestamp - user can edit this
     note: v.string(),
-    happinessRating: v.number(), // 1-5 scale
+
+    // New dual rating system (replacing single happiness rating)
+    worthRating: v.optional(v.number()), // 1-5: Was this worth the money?
+    alignmentRating: v.optional(v.number()), // 1-5: Does this align with your priorities?
+
+    // Legacy field for backward compatibility
+    happinessRating: v.optional(v.number()), // 1-5 scale (deprecated, use worthRating/alignmentRating)
+
     createdAt: v.number(),
     updatedAt: v.number(),
 
@@ -147,9 +154,67 @@ export default defineSchema({
     periodStart: v.number(), // Start of the period (timestamp)
     periodEnd: v.number(),   // End of the period (timestamp)
 
-    // Report sections
-    summary: v.string(),           // High-level summary
-    spendingAnalysis: v.object({
+    // New template structure
+    vibeCheck: v.string(),  // 2-3 sentence warm narrative summary
+
+    goalPulse: v.optional(v.object({
+      renovationFund: v.optional(v.object({
+        target: v.number(),
+        currentProgress: v.number(),
+        rentalIncome: v.number(),
+        gap: v.number(),
+        onTrack: v.string(), // "Yes" / "Getting there" / "Needs attention"
+      })),
+      emergencyFund: v.optional(v.object({
+        target: v.number(),
+        currentProgress: v.number(),
+        percentComplete: v.number(),
+      })),
+      quickTake: v.string(),
+    })),
+
+    fundStatus: v.array(v.object({
+      bucketName: v.string(),
+      monthlyAllocation: v.union(v.number(), v.string()), // number or "10% of income"
+      bankedSoFar: v.number(),
+      spentThisWeek: v.number(),
+      remaining: v.number(),
+      runway: v.string(), // e.g., "3 months buffer"
+    })),
+    fundsRunningLow: v.array(v.string()),
+    fundsHealthy: v.array(v.string()),
+
+    valuesAlignment: v.object({
+      narrative: v.string(), // Specific analysis of spending vs values
+      aligned: v.array(v.string()),
+      worthALook: v.array(v.string()),
+    }),
+
+    patternsAndFlags: v.object({
+      trends: v.array(v.string()),
+      repeats: v.array(v.string()),
+      joyEfficiency: v.array(v.string()),
+    }),
+
+    sgNudges: v.object({
+      thisWeek: v.array(v.string()),
+      generalReminders: v.array(v.string()),
+    }),
+
+    reflectionPrompts: v.array(v.string()), // 1-2 contextual questions
+
+    fixedCosts: v.array(v.object({
+      category: v.string(),
+      thisWeek: v.number(),
+      monthlyBudget: v.number(),
+    })),
+    fixedCostsTotal: v.number(),
+
+    wins: v.array(v.string()),
+
+    // Legacy fields for backward compatibility (optional)
+    summary: v.optional(v.string()),
+    spendingAnalysis: v.optional(v.object({
       totalSpent: v.number(),
       topCategories: v.array(v.object({
         category: v.string(),
@@ -160,8 +225,8 @@ export default defineSchema({
         change: v.number(),
         percentChange: v.number(),
       })),
-    }),
-    happinessAnalysis: v.object({
+    })),
+    happinessAnalysis: v.optional(v.object({
       averageHappiness: v.number(),
       topHappyCategories: v.array(v.object({
         category: v.string(),
@@ -173,18 +238,17 @@ export default defineSchema({
         avgHappiness: v.number(),
         reason: v.string(),
       })),
-    }),
-    bucketPerformance: v.array(v.object({
+    })),
+    bucketPerformance: v.optional(v.array(v.object({
       bucketName: v.string(),
       planned: v.number(),
       funded: v.number(),
       spent: v.number(),
-      status: v.string(), // "on-track", "over-budget", "under-utilized"
-    })),
-    insights: v.array(v.string()),      // Key insights discovered
-    recommendations: v.array(v.string()), // Action items
-    wins: v.array(v.string()),          // Things going well
-    concerns: v.array(v.string()),      // Things to watch
+      status: v.string(),
+    }))),
+    insights: v.optional(v.array(v.string())),
+    recommendations: v.optional(v.array(v.string())),
+    concerns: v.optional(v.array(v.string())),
 
     createdAt: v.number(),
   })

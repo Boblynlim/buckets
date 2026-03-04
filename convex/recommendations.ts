@@ -251,7 +251,7 @@ export const getHappinessROI = query({
       }
 
       categoryData[category].totalSpent += expense.amount;
-      categoryData[category].totalHappiness += expense.happinessRating;
+      categoryData[category].totalHappiness += expense.happinessRating ?? 3; // Default to neutral
       categoryData[category].count += 1;
     }
 

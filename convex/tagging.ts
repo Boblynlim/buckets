@@ -86,12 +86,13 @@ export const generateMetadata = mutation({
     // Extract item description
     metadata.item = expense.note;
 
-    // Generate sentiment based on happiness rating
-    if (expense.happinessRating <= 2) {
+    // Generate sentiment based on happiness rating (or dual ratings if available)
+    const happinessRating = expense.happinessRating ?? 3; // Default to neutral if not set
+    if (happinessRating <= 2) {
       metadata.sentiment = 'regretful';
-    } else if (expense.happinessRating === 3) {
+    } else if (happinessRating === 3) {
       metadata.sentiment = 'neutral';
-    } else if (expense.happinessRating >= 4) {
+    } else if (happinessRating >= 4) {
       metadata.sentiment = 'happy';
     }
 
@@ -137,7 +138,7 @@ export const getSpendingByCategory = query({
 
       categoryTotals[category].total += expense.amount;
       categoryTotals[category].count += 1;
-      categoryTotals[category].avgHappiness += expense.happinessRating;
+      categoryTotals[category].avgHappiness += expense.happinessRating ?? 3; // Default to neutral
     }
 
     // Calculate averages

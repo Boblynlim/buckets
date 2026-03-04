@@ -296,6 +296,29 @@ export const generateWeeklyReport = mutation({
       reportType: 'weekly',
       periodStart,
       periodEnd,
+      vibeCheck: summary, // Use summary as vibe check for legacy
+      fundStatus: [],
+      fundsRunningLow: [],
+      fundsHealthy: [],
+      valuesAlignment: {
+        narrative: '',
+        aligned: [],
+        worthALook: [],
+      },
+      patternsAndFlags: {
+        trends: [],
+        repeats: [],
+        joyEfficiency: [],
+      },
+      sgNudges: {
+        thisWeek: [],
+        generalReminders: [],
+      },
+      reflectionPrompts: [],
+      fixedCosts: [],
+      fixedCostsTotal: 0,
+      wins,
+      // Legacy fields
       summary,
       spendingAnalysis: {
         totalSpent,
@@ -313,7 +336,6 @@ export const generateWeeklyReport = mutation({
       bucketPerformance: filteredBucketPerformance,
       insights,
       recommendations,
-      wins,
       concerns,
       createdAt: now,
     });
@@ -646,6 +668,29 @@ export const generateMonthlyReport = mutation({
       reportType: 'monthly',
       periodStart,
       periodEnd,
+      vibeCheck: summary, // Use summary as vibe check for legacy
+      fundStatus: [],
+      fundsRunningLow: [],
+      fundsHealthy: [],
+      valuesAlignment: {
+        narrative: '',
+        aligned: [],
+        worthALook: [],
+      },
+      patternsAndFlags: {
+        trends: [],
+        repeats: [],
+        joyEfficiency: [],
+      },
+      sgNudges: {
+        thisWeek: [],
+        generalReminders: [],
+      },
+      reflectionPrompts: [],
+      fixedCosts: [],
+      fixedCostsTotal: 0,
+      wins,
+      // Legacy fields
       summary,
       spendingAnalysis: {
         totalSpent,
@@ -663,7 +708,6 @@ export const generateMonthlyReport = mutation({
       bucketPerformance: filteredBucketPerformance,
       insights,
       recommendations,
-      wins,
       concerns,
       createdAt: now,
     });
@@ -777,5 +821,24 @@ export const remove = mutation({
   },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.reportId);
+  },
+});
+
+// Delete all reports for a user
+export const removeAllForUser = mutation({
+  args: {
+    userId: v.id('users'),
+  },
+  handler: async (ctx, args) => {
+    const reports = await ctx.db
+      .query('reports')
+      .withIndex('by_user', (q) => q.eq('userId', args.userId))
+      .collect();
+
+    for (const report of reports) {
+      await ctx.db.delete(report._id);
+    }
+
+    return { deleted: reports.length };
   },
 });
