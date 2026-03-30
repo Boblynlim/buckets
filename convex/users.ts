@@ -35,13 +35,34 @@ export const update = mutation({
   },
 });
 
-// Get or create the current user (demo - will be replaced with proper auth)
+// Get current user from session token
 export const getCurrentUser = query({
-  args: {},
-  handler: async (ctx) => {
-    // For demo, just return the first user or null
-    const users = await ctx.db.query("users").collect();
-    return users.length > 0 ? users[0] : null;
+  args: { sessionToken: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    if (!args.sessionToken) return null;
+
+    const session = await ctx.db
+      .query("sessions")
+      .withIndex("by_token", (q) => q.eq("token", args.sessionToken!))
+      .unique();
+
+    if (!session || session.expiresAt < Date.now()) return null;
+
+    return await ctx.db.get(session.userId);
+  },
+});
+
+// Logout — delete session
+export const logout = mutation({
+  args: { sessionToken: v.string() },
+  handler: async (ctx, args) => {
+    const session = await ctx.db
+      .query("sessions")
+      .withIndex("by_token", (q) => q.eq("token", args.sessionToken))
+      .unique();
+    if (session) {
+      await ctx.db.delete(session._id);
+    }
   },
 });
 

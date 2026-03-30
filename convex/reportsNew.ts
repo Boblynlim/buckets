@@ -29,293 +29,158 @@ export const insertReport = mutation({
   },
 });
 
-/**
- * New Report Generation System - Narrative Style
- * Generates warm, personalized weekly reports
- */
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-export const generateWeeklyReportNew = action({
-  args: {
-    userId: v.id('users'),
-    periodStart: v.optional(v.number()),
-    periodEnd: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const periodEnd = args.periodEnd || now;
-    const periodStart = args.periodStart || (periodEnd - (7 * 24 * 60 * 60 * 1000));
+interface MonthBucket {
+  label: string; // e.g. "2026-01"
+  start: number;
+  end: number;
+  expenses: any[];
+  total: number;
+  discretionary: any[];
+  necessary: any[];
+  discretionaryTotal: number;
+  necessaryTotal: number;
+  worthItCount: number;
+  notWorthItCount: number;
+  byCategory: Record<string, { amount: number; worthIt: number; notWorthIt: number; notes: string[] }>;
+}
 
-    // 1. Gather all data using queries (actions can't access db directly)
-    const expenses = await ctx.runQuery(api.expenses.getByUser, { userId: args.userId }) as any[];
-    const expensesInPeriod = expenses.filter((e: any) =>
-      e.date >= periodStart && e.date <= periodEnd
-    );
+interface WorthItIntelligence {
+  worthItPercent: number;
+  notWorthItTotal: number;
+  topNotWorthItCategories: string[];
+  insight: string;
+}
 
-    const buckets = await ctx.runQuery(api.buckets.getByUser, { userId: args.userId }) as any[];
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
-    const memories = await ctx.runQuery(api.memories.getByUser, { userId: args.userId }) as any[];
+function getMonthLabel(timestamp: number): string {
+  const d = new Date(timestamp);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
-    // Get previous period for comparison
-    const prevPeriodStart = periodStart - (7 * 24 * 60 * 60 * 1000);
-    const prevExpenses = expenses.filter((e: any) =>
-      e.date >= prevPeriodStart && e.date < periodStart
-    );
+function getMonthRange(timestamp: number): { start: number; end: number } {
+  const d = new Date(timestamp);
+  const start = new Date(d.getFullYear(), d.getMonth(), 1).getTime();
+  const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+  return { start, end };
+}
 
-    // 2. Calculate metrics
-    const totalSpent = expensesInPeriod.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const prevTotalSpent = prevExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const avgHappiness = expensesInPeriod.length > 0
-      ? expensesInPeriod.reduce((sum: number, e: any) => sum + (e.happinessRating || 3), 0) / expensesInPeriod.length
-      : 0;
+function buildMonthBuckets(expenses: any[]): MonthBucket[] {
+  const byMonth: Record<string, any[]> = {};
 
-    // Calculate by category
-    const byCategory: Record<string, { amount: number; happiness: number[]; notes: string[] }> = {};
-    for (const expense of expensesInPeriod) {
-      const cat = expense.category || 'Uncategorized';
-      if (!byCategory[cat]) byCategory[cat] = { amount: 0, happiness: [], notes: [] };
-      byCategory[cat].amount += expense.amount;
-      if (expense.happinessRating) byCategory[cat].happiness.push(expense.happinessRating);
-      if (expense.note) byCategory[cat].notes.push(expense.note);
-    }
+  for (const e of expenses) {
+    const label = getMonthLabel(e.date);
+    if (!byMonth[label]) byMonth[label] = [];
+    byMonth[label].push(e);
+  }
 
-    // Calculate fund status from buckets
-    const signalBuckets = buckets.filter((b: any) =>
-      !['Asian tax (parents)', 'Transport', 'Insurance', 'Maintenance (health)',
-        'Taxes', 'Shared account', 'Endowus', 'IBKR'].includes(b.name)
-    );
+  return Object.entries(byMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([label, monthExpenses]) => {
+      const necessary = monthExpenses.filter((e: any) => e.isNecessary === true);
+      const discretionary = monthExpenses.filter((e: any) => e.isNecessary !== true);
 
-    const noiseBuckets = buckets.filter((b: any) =>
-      ['Asian tax (parents)', 'Transport', 'Insurance', 'Maintenance (health)',
-        'Taxes', 'Shared account', 'Endowus', 'IBKR'].includes(b.name)
-    );
+      const byCategory: Record<string, { amount: number; worthIt: number; notWorthIt: number; notes: string[] }> = {};
+      for (const e of monthExpenses) {
+        const cat = e.category || 'Uncategorized';
+        if (!byCategory[cat]) byCategory[cat] = { amount: 0, worthIt: 0, notWorthIt: 0, notes: [] };
+        byCategory[cat].amount += e.amount;
+        if (e.isNecessary !== true) {
+          if (e.worthIt === true) byCategory[cat].worthIt++;
+          if (e.worthIt === false) byCategory[cat].notWorthIt++;
+        }
+        if (e.note) byCategory[cat].notes.push(e.note);
+      }
 
-    const fundStatus = signalBuckets.map((bucket: any) => {
-      const spent = expensesInPeriod
-        .filter((e: any) => e.bucketId === bucket._id)
-        .reduce((sum: number, e: any) => sum + e.amount, 0);
+      const discretionaryWithRating = discretionary.filter((e: any) => e.worthIt === true || e.worthIt === false);
+      const worthItCount = discretionary.filter((e: any) => e.worthIt === true).length;
+      const notWorthItCount = discretionary.filter((e: any) => e.worthIt === false).length;
 
-      const monthlyAlloc = bucket.allocationType === 'percentage'
-        ? `${bucket.plannedPercent || 0}% of income`
-        : bucket.plannedAmount || 0;
-
-      const banked = bucket.currentBalance || 0;
-      const remaining = banked - spent;
-      const monthlyAmount = typeof monthlyAlloc === 'number' ? monthlyAlloc : 0;
-      const runway = monthlyAmount > 0 ? `${Math.floor(remaining / monthlyAmount)} months buffer` : '—';
+      const range = getMonthRange(monthExpenses[0].date);
 
       return {
-        bucketName: bucket.name,
-        monthlyAllocation: monthlyAlloc,
-        bankedSoFar: banked,
-        spentThisWeek: spent,
-        remaining,
-        runway,
+        label,
+        start: range.start,
+        end: range.end,
+        expenses: monthExpenses,
+        total: monthExpenses.reduce((s: number, e: any) => s + e.amount, 0),
+        discretionary,
+        necessary,
+        discretionaryTotal: discretionary.reduce((s: number, e: any) => s + e.amount, 0),
+        necessaryTotal: necessary.reduce((s: number, e: any) => s + e.amount, 0),
+        worthItCount,
+        notWorthItCount,
+        byCategory,
       };
     });
+}
 
-    const fundsRunningLow = fundStatus
-      .filter((f: any) => typeof f.monthlyAllocation === 'number' && f.remaining < f.monthlyAllocation)
-      .map((f: any) => f.bucketName);
+function calculateWorthItIntelligence(months: MonthBucket[]): Omit<WorthItIntelligence, 'insight'> {
+  let totalDiscretionaryRated = 0;
+  let totalWorthIt = 0;
+  let notWorthItDollars = 0;
+  const notWorthItByCategory: Record<string, number> = {};
 
-    const fundsHealthy = fundStatus
-      .filter((f: any) => {
-        if (typeof f.monthlyAllocation !== 'number') return false;
-        return f.remaining >= (f.monthlyAllocation * 3);
-      })
-      .map((f: any) => f.bucketName);
-
-    // Fixed costs
-    const fixedCosts = noiseBuckets.map((bucket: any) => {
-      const spent = expensesInPeriod
-        .filter((e: any) => e.bucketId === bucket._id)
-        .reduce((sum: number, e: any) => sum + e.amount, 0);
-
-      return {
-        category: bucket.name,
-        thisWeek: spent,
-        monthlyBudget: bucket.plannedAmount || 0,
-      };
-    });
-
-    const fixedCostsTotal = fixedCosts.reduce((sum: number, f: any) => sum + f.thisWeek, 0);
-
-    // 3. Prepare context for AI
-    const contextForAI = {
-      periodStart: new Date(periodStart).toLocaleDateString(),
-      periodEnd: new Date(periodEnd).toLocaleDateString(),
-      totalSpent,
-      prevTotalSpent,
-      changePercent: prevTotalSpent > 0 ? ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100 : 0,
-      avgHappiness,
-      expenseCount: expensesInPeriod.length,
-      byCategory: Object.entries(byCategory).map(([cat, data]) => ({
-        category: cat,
-        amount: data.amount,
-        avgHappiness: data.happiness.length > 0
-          ? data.happiness.reduce((a: number, b: number) => a + b, 0) / data.happiness.length
-          : 0,
-        notes: data.notes.slice(0, 5), // Sample of notes
-      })),
-      fundStatus,
-      fundsRunningLow,
-      fundsHealthy,
-      userValues: [
-        'Quality time with Xinghan',
-        'Experiences over things',
-        'Investing in yourself (learning, fitness, self-care)',
-        'Building toward financial independence & renovation',
-      ],
-      memories: memories.slice(0, 10).map((m: any) => m.content),
-    };
-
-    // 4. Generate narrative sections with AI
-    const prompt = `You are a warm, insightful financial friend helping Jaz (27, married, living in Singapore) understand her weekly spending.
-
-Context about Jaz:
-- Values: ${contextForAI.userValues.join(', ')}
-- Current goals: $50k renovation fund, $30k emergency fund
-- Living with in-laws (no rent), expecting $2k/month rental income soon
-- Previous insights from memory: ${contextForAI.memories.join('; ')}
-
-This week's data (${contextForAI.periodStart} - ${contextForAI.periodEnd}):
-- Total spent: $${contextForAI.totalSpent.toFixed(2)} (${contextForAI.changePercent > 0 ? '+' : ''}${contextForAI.changePercent.toFixed(1)}% from last week)
-- ${contextForAI.expenseCount} transactions
-- Average happiness: ${contextForAI.avgHappiness.toFixed(1)}/5
-
-Spending by category:
-${contextForAI.byCategory.map((c: any) => `- ${c.category}: $${c.amount.toFixed(2)} (happiness: ${c.avgHappiness.toFixed(1)}/5)\n  Notes: ${c.notes.join(', ')}`).join('\n')}
-
-Generate a weekly report in this exact structure:
-
-## 1. VIBE CHECK (2-3 sentences)
-[Warm narrative summary - not just numbers. What does this week mean? Connect spending to life context.]
-
-## 2. VALUES ALIGNMENT NARRATIVE
-[Detailed analysis: did spending match her stated values? Be specific with examples from the notes.]
-
-## 3. VALUES - ALIGNED (bullet list)
-[Specific examples of spending that matched values]
-
-## 4. VALUES - WORTH A LOOK (bullet list)
-[Spending that might not align - no judgment, just flagging]
-
-## 5. PATTERNS - TRENDS (bullet list)
-[Trends over time, comparisons to previous weeks]
-
-## 6. PATTERNS - REPEATS (bullet list)
-[Repeated behaviors or purchases worth noting]
-
-## 7. PATTERNS - JOY EFFICIENCY (bullet list)
-[Categories with high/low joy per dollar spent]
-
-## 8. SG NUDGES - THIS WEEK (bullet list)
-[1-2 practical Singapore-specific suggestions based on spending]
-
-## 9. SG NUDGES - GENERAL (bullet list)
-[1-2 general reminders relevant to Jaz's context]
-
-## 10. REFLECTION PROMPTS (2 questions)
-[Contextual questions based on this week's spending to help her reflect]
-
-## 11. WINS (2-3 bullet points)
-[Celebrate what went well - be genuine and specific]
-
-Keep the tone: friend + therapist. Warm, curious, non-judgmental. Ask questions rather than make accusations.`;
-
-    const anthropic = new Anthropic({
-      apiKey: process.env.ANTHROPIC_API_KEY,
-    });
-
-    const completion = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: prompt,
-      }],
-    });
-
-    const aiResponse = completion.content[0].type === 'text' ? completion.content[0].text : '';
-
-    // 5. Parse AI response into structured sections
-    const sections = parseAIResponse(aiResponse);
-
-    // 6. Calculate goal pulse (these are fixed for now, could be made dynamic)
-    const goalPulse = {
-      renovationFund: {
-        target: 50000,
-        currentProgress: 0, // TODO: Get from savings bucket
-        rentalIncome: 24000, // $2000 * 12 months
-        gap: 50000, // TODO: Calculate
-        onTrack: 'Getting there',
-      },
-      emergencyFund: {
-        target: 30000,
-        currentProgress: 0, // TODO: Get from savings bucket
-        percentComplete: 0,
-      },
-      quickTake: sections.quickTake || 'Keep building toward your goals with the rental income coming in.',
-    };
-
-    // 7. Create report
-    const reportId: any = await ctx.runMutation(api.reportsNew.insertReport, {
-      userId: args.userId,
-      reportType: 'weekly',
-      periodStart,
-      periodEnd,
-      vibeCheck: sections.vibeCheck,
-      goalPulse,
-      fundStatus,
-      fundsRunningLow,
-      fundsHealthy,
-      valuesAlignment: {
-        narrative: sections.valuesNarrative,
-        aligned: sections.valuesAligned,
-        worthALook: sections.valuesWorthALook,
-      },
-      patternsAndFlags: {
-        trends: sections.patternsTrends,
-        repeats: sections.patternsRepeats,
-        joyEfficiency: sections.patternsJoy,
-      },
-      sgNudges: {
-        thisWeek: sections.sgNudgesThisWeek,
-        generalReminders: sections.sgNudgesGeneral,
-      },
-      reflectionPrompts: sections.reflectionPrompts,
-      fixedCosts,
-      fixedCostsTotal,
-      wins: sections.wins,
-      createdAt: now,
-    });
-
-    // 8. Create memories from insights
-    const insightMemories = [
-      ...sections.patternsTrends.slice(0, 2),
-      ...sections.valuesWorthALook.slice(0, 1),
-    ];
-
-    for (const insight of insightMemories) {
-      if (insight && insight.length > 10) {
-        await ctx.runMutation(api.memories.create, {
-          userId: args.userId,
-          memoryType: 'context',
-          content: insight,
-          source: 'weekly-report',
-          importance: 3,
-        });
+  for (const month of months) {
+    for (const e of month.discretionary) {
+      if (e.worthIt === true) {
+        totalWorthIt++;
+        totalDiscretionaryRated++;
+      } else if (e.worthIt === false) {
+        totalDiscretionaryRated++;
+        notWorthItDollars += e.amount;
+        const cat = e.category || 'Uncategorized';
+        notWorthItByCategory[cat] = (notWorthItByCategory[cat] || 0) + 1;
       }
     }
+  }
 
-    return reportId;
-  },
-});
+  const worthItPercent = totalDiscretionaryRated > 0
+    ? Math.round((totalWorthIt / totalDiscretionaryRated) * 100)
+    : 0;
 
-/**
- * New Report Generation System - Narrative Style (Monthly)
- * Generates warm, personalized monthly reports using the same AI approach as weekly.
- */
-export const generateMonthlyReportNew = action({
+  const topNotWorthItCategories = Object.entries(notWorthItByCategory)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([cat]) => cat);
+
+  return {
+    worthItPercent,
+    notWorthItTotal: Math.round(notWorthItDollars * 100) / 100,
+    topNotWorthItCategories,
+  };
+}
+
+function calculateCategoryTrends(months: MonthBucket[]): string {
+  if (months.length < 2) return 'Not enough data for trends yet.';
+
+  const allCategories = new Set<string>();
+  for (const m of months) {
+    for (const cat of Object.keys(m.byCategory)) allCategories.add(cat);
+  }
+
+  const lines: string[] = [];
+  for (const cat of allCategories) {
+    const amounts = months.map(m => m.byCategory[cat]?.amount || 0);
+    if (amounts.length >= 3) {
+      const last3 = amounts.slice(-3);
+      const increasing = last3[0] < last3[1] && last3[1] < last3[2];
+      const decreasing = last3[0] > last3[1] && last3[1] > last3[2];
+      if (increasing || decreasing) {
+        const direction = increasing ? 'increasing' : 'decreasing';
+        lines.push(`${cat}: $${last3.map(a => a.toFixed(0)).join(' -> ')} (${direction} over 3 months)`);
+      }
+    }
+  }
+
+  return lines.length > 0 ? lines.join('\n') : 'No strong multi-month trends detected.';
+}
+
+// ─── Main Action ─────────────────────────────────────────────────────────────
+
+export const generateMonthlyReport = action({
   args: {
     userId: v.id('users'),
     periodStart: v.optional(v.number()),
@@ -324,61 +189,97 @@ export const generateMonthlyReportNew = action({
   handler: async (ctx, args) => {
     const now = Date.now();
     const periodEnd = args.periodEnd || now;
-    const periodStart = args.periodStart || (periodEnd - (30 * 24 * 60 * 60 * 1000));
+    // Default: current month
+    const periodEndDate = new Date(periodEnd);
+    const currentMonthRange = getMonthRange(periodEnd);
+    const periodStart = args.periodStart || currentMonthRange.start;
 
-    // 1. Gather all data
-    const expenses = await ctx.runQuery(api.expenses.getByUser, { userId: args.userId }) as any[];
-    const expensesInPeriod = expenses.filter((e: any) =>
-      e.date >= periodStart && e.date <= periodEnd
-    );
+    // ── 1. Gather ALL data ──────────────────────────────────────────────────
 
+    const allExpenses = await ctx.runQuery(api.expenses.getByUser, { userId: args.userId }) as any[];
     const buckets = await ctx.runQuery(api.buckets.getByUser, { userId: args.userId }) as any[];
     const memories = await ctx.runQuery(api.memories.getByUser, { userId: args.userId }) as any[];
 
-    // Previous 30-day period for comparison
-    const prevPeriodStart = periodStart - (30 * 24 * 60 * 60 * 1000);
-    const prevExpenses = expenses.filter((e: any) =>
-      e.date >= prevPeriodStart && e.date < periodStart
+    // ── 2. Build month buckets for cross-month analysis ─────────────────────
+
+    const allMonths = buildMonthBuckets(allExpenses);
+    const currentMonthLabel = getMonthLabel(periodEnd);
+    const currentMonth = allMonths.find(m => m.label === currentMonthLabel);
+
+    // Get at least the last 3 months for trend analysis
+    const recentMonths = allMonths.slice(-Math.max(3, allMonths.length));
+
+    // Expenses in the report period specifically
+    const expensesInPeriod = allExpenses.filter((e: any) =>
+      e.date >= periodStart && e.date <= periodEnd
     );
 
-    // 2. Calculate metrics
-    const totalSpent = expensesInPeriod.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const prevTotalSpent = prevExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const changePercent = prevTotalSpent > 0 ? ((totalSpent - prevTotalSpent) / prevTotalSpent) * 100 : 0;
+    // ── 3. Calculate structured metrics ─────────────────────────────────────
 
-    const avgWorthRating = expensesInPeriod.length > 0
-      ? expensesInPeriod.reduce((sum: number, e: any) => sum + (e.worthRating || e.happinessRating || 3), 0) / expensesInPeriod.length
-      : 0;
-    const avgAlignmentRating = expensesInPeriod.length > 0
-      ? expensesInPeriod.reduce((sum: number, e: any) => sum + (e.alignmentRating || e.happinessRating || 3), 0) / expensesInPeriod.length
-      : 0;
+    const totalSpent = expensesInPeriod.reduce((s: number, e: any) => s + e.amount, 0);
+    const necessaryInPeriod = expensesInPeriod.filter((e: any) => e.isNecessary === true);
+    const discretionaryInPeriod = expensesInPeriod.filter((e: any) => e.isNecessary !== true);
+    const necessaryTotal = necessaryInPeriod.reduce((s: number, e: any) => s + e.amount, 0);
+    const discretionaryTotal = discretionaryInPeriod.reduce((s: number, e: any) => s + e.amount, 0);
+    const necessaryPercent = totalSpent > 0 ? Math.round((necessaryTotal / totalSpent) * 100) : 0;
 
-    // Needs vs wants breakdown
-    const needsExpenses = expensesInPeriod.filter((e: any) => e.needsVsWants === 'need');
-    const wantsExpenses = expensesInPeriod.filter((e: any) => e.needsVsWants === 'want');
-    const needsTotal = needsExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const wantsTotal = wantsExpenses.reduce((sum: number, e: any) => sum + e.amount, 0);
-    const needsPercent = totalSpent > 0 ? (needsTotal / totalSpent) * 100 : 0;
+    // Worth-it intelligence across all available months
+    const worthItStats = calculateWorthItIntelligence(recentMonths);
 
-    // By category with worth + alignment ratings
-    const byCategory: Record<string, { amount: number; worth: number[]; alignment: number[]; notes: string[]; prevAmount: number }> = {};
-    for (const expense of expensesInPeriod) {
-      const cat = expense.category || 'Uncategorized';
-      if (!byCategory[cat]) byCategory[cat] = { amount: 0, worth: [], alignment: [], notes: [], prevAmount: 0 };
-      byCategory[cat].amount += expense.amount;
-      if (expense.worthRating || expense.happinessRating) byCategory[cat].worth.push(expense.worthRating || expense.happinessRating);
-      if (expense.alignmentRating || expense.happinessRating) byCategory[cat].alignment.push(expense.alignmentRating || expense.happinessRating);
-      if (expense.note) byCategory[cat].notes.push(expense.note);
+    // Category breakdown for current period
+    const byCategory: Record<string, { amount: number; worthItCount: number; notWorthItCount: number; notes: string[] }> = {};
+    for (const e of expensesInPeriod) {
+      const cat = e.category || 'Uncategorized';
+      if (!byCategory[cat]) byCategory[cat] = { amount: 0, worthItCount: 0, notWorthItCount: 0, notes: [] };
+      byCategory[cat].amount += e.amount;
+      if (e.isNecessary !== true) {
+        if (e.worthIt === true) byCategory[cat].worthItCount++;
+        if (e.worthIt === false) byCategory[cat].notWorthItCount++;
+      }
+      if (e.note) byCategory[cat].notes.push(e.note);
     }
 
-    // Previous month amounts per category for trend comparison
-    for (const expense of prevExpenses) {
-      const cat = expense.category || 'Uncategorized';
-      if (!byCategory[cat]) byCategory[cat] = { amount: 0, worth: [], alignment: [], notes: [], prevAmount: 0 };
-      byCategory[cat].prevAmount += expense.amount;
-    }
+    const categoryBreakdown = Object.entries(byCategory)
+      .sort(([, a], [, b]) => b.amount - a.amount)
+      .map(([cat, data]) => {
+        const totalRated = data.worthItCount + data.notWorthItCount;
+        const worthPct = totalRated > 0 ? Math.round((data.worthItCount / totalRated) * 100) : null;
+        return {
+          category: cat,
+          amount: data.amount,
+          worthItPercent: worthPct,
+          notWorthItCount: data.notWorthItCount,
+          notes: data.notes.slice(0, 5),
+        };
+      });
 
-    // Bucket fund status
+    // Month-over-month totals
+    const monthTotals = recentMonths.map(m => ({
+      label: m.label,
+      total: m.total,
+      discretionary: m.discretionaryTotal,
+      necessary: m.necessaryTotal,
+    }));
+
+    // Category trend strings
+    const categoryTrends = calculateCategoryTrends(recentMonths);
+
+    // Worth-it by category for current period (for worth-it intelligence per category)
+    const worthItByCategory = Object.entries(byCategory)
+      .filter(([, d]) => (d.worthItCount + d.notWorthItCount) > 0)
+      .map(([cat, d]) => {
+        const total = d.worthItCount + d.notWorthItCount;
+        return {
+          category: cat,
+          worthItPercent: Math.round((d.worthItCount / total) * 100),
+          notWorthItCount: d.notWorthItCount,
+          amount: d.amount,
+        };
+      })
+      .sort((a, b) => a.worthItPercent - b.worthItPercent);
+
+    // ── 4. Bucket health ────────────────────────────────────────────────────
+
     const signalBuckets = buckets.filter((b: any) =>
       !['Asian tax (parents)', 'Transport', 'Insurance', 'Maintenance (health)',
         'Taxes', 'Shared account', 'Endowus', 'IBKR'].includes(b.name)
@@ -391,14 +292,14 @@ export const generateMonthlyReportNew = action({
     const fundStatus = signalBuckets.map((bucket: any) => {
       const spent = expensesInPeriod
         .filter((e: any) => e.bucketId === bucket._id)
-        .reduce((sum: number, e: any) => sum + e.amount, 0);
+        .reduce((s: number, e: any) => s + e.amount, 0);
       const monthlyAlloc = bucket.allocationType === 'percentage'
         ? `${bucket.plannedPercent || 0}% of income`
         : bucket.plannedAmount || 0;
       const banked = bucket.currentBalance || 0;
       const remaining = banked - spent;
       const monthlyAmount = typeof monthlyAlloc === 'number' ? monthlyAlloc : 0;
-      const runway = monthlyAmount > 0 ? `${Math.floor(remaining / monthlyAmount)} months buffer` : '—';
+      const runway = monthlyAmount > 0 ? `${Math.floor(remaining / monthlyAmount)} months buffer` : '-';
       return { bucketName: bucket.name, monthlyAllocation: monthlyAlloc, bankedSoFar: banked, spentThisWeek: spent, remaining, runway };
     });
 
@@ -412,111 +313,67 @@ export const generateMonthlyReportNew = action({
     const fixedCosts = noiseBuckets.map((bucket: any) => {
       const spent = expensesInPeriod
         .filter((e: any) => e.bucketId === bucket._id)
-        .reduce((sum: number, e: any) => sum + e.amount, 0);
+        .reduce((s: number, e: any) => s + e.amount, 0);
       return { category: bucket.name, thisWeek: spent, monthlyBudget: bucket.plannedAmount || 0 };
     });
-    const fixedCostsTotal = fixedCosts.reduce((sum: number, f: any) => sum + f.thisWeek, 0);
+    const fixedCostsTotal = fixedCosts.reduce((s: number, f: any) => s + f.thisWeek, 0);
 
-    // 3. Prepare AI context
-    const byCategoryArray = Object.entries(byCategory)
-      .sort(([, a], [, b]) => b.amount - a.amount)
-      .map(([cat, data]) => ({
-        category: cat,
-        amount: data.amount,
-        prevAmount: data.prevAmount,
-        monthOverMonthChange: data.prevAmount > 0
-          ? (((data.amount - data.prevAmount) / data.prevAmount) * 100).toFixed(1)
-          : 'new',
-        avgWorth: data.worth.length > 0
-          ? (data.worth.reduce((a: number, b: number) => a + b, 0) / data.worth.length).toFixed(1)
-          : 'n/a',
-        avgAlignment: data.alignment.length > 0
-          ? (data.alignment.reduce((a: number, b: number) => a + b, 0) / data.alignment.length).toFixed(1)
-          : 'n/a',
-        notes: data.notes.slice(0, 6),
-      }));
+    // ── 5. Build AI prompt ──────────────────────────────────────────────────
 
-    const contextForAI = {
-      periodStart: new Date(periodStart).toLocaleDateString('en-SG', { month: 'long', year: 'numeric' }),
-      periodEnd: new Date(periodEnd).toLocaleDateString('en-SG', { month: 'long', year: 'numeric' }),
-      totalSpent,
-      prevTotalSpent,
-      changePercent,
-      expenseCount: expensesInPeriod.length,
-      avgWorthRating,
-      avgAlignmentRating,
-      needsPercent: needsPercent.toFixed(1),
-      needsTotal,
-      wantsTotal,
-      byCategory: byCategoryArray,
-      fundStatus,
-      fundsRunningLow,
-      fundsHealthy,
-      userValues: [
-        'Quality time with Xinghan',
-        'Experiences over things',
-        'Investing in yourself (learning, fitness, self-care)',
-        'Building toward financial independence & renovation',
-      ],
-      memories: memories.slice(0, 10).map((m: any) => m.content),
-    };
+    const prompt = `You are a sharp, data-driven financial friend. Not a therapist. Think of yourself as the friend who's good with money and notices patterns others miss. You're helping analyze spending data.
 
-    // 4. AI prompt — monthly lens
-    const prompt = `You are a warm, insightful financial friend helping Jaz (27, married, living in Singapore) understand her monthly spending.
+Here's the raw data. Use actual numbers and percentages in your response.
 
-Context about Jaz:
-- Values: ${contextForAI.userValues.join(', ')}
-- Current goals: $50k renovation fund, $30k emergency fund
-- Living with in-laws (no rent), expecting $2k/month rental income soon
-- Previous insights from memory: ${contextForAI.memories.join('; ')}
+REPORT PERIOD: ${new Date(periodStart).toLocaleDateString('en-SG', { month: 'long', year: 'numeric' })}
 
-This month's data (${contextForAI.periodStart}):
-- Total spent: $${contextForAI.totalSpent.toFixed(2)} (${contextForAI.changePercent > 0 ? '+' : ''}${contextForAI.changePercent.toFixed(1)}% vs last month)
-- ${contextForAI.expenseCount} transactions
-- Average worth rating: ${contextForAI.avgWorthRating.toFixed(1)}/5 | Average alignment rating: ${contextForAI.avgAlignmentRating.toFixed(1)}/5
-- Needs: $${contextForAI.needsTotal.toFixed(2)} (${contextForAI.needsPercent}%) | Wants: $${contextForAI.wantsTotal.toFixed(2)}
+CURRENT MONTH:
+- Total spent: $${totalSpent.toFixed(2)}
+- Necessary spending: $${necessaryTotal.toFixed(2)} (${necessaryPercent}%)
+- Discretionary spending: $${discretionaryTotal.toFixed(2)} (${100 - necessaryPercent}%)
+- ${expensesInPeriod.length} transactions
 
-Spending by category (with month-over-month change):
-${contextForAI.byCategory.map((c: any) =>
-  `- ${c.category}: $${c.amount.toFixed(2)} (${c.monthOverMonthChange}% vs last month) | worth: ${c.avgWorth}/5, alignment: ${c.avgAlignment}/5\n  Notes: ${c.notes.join(', ')}`
-).join('\n')}
+MONTH-OVER-MONTH TOTALS (recent months):
+${monthTotals.map(m => `- ${m.label}: $${m.total.toFixed(2)} (necessary: $${m.necessary.toFixed(2)}, discretionary: $${m.discretionary.toFixed(2)})`).join('\n')}
 
-Generate a monthly report in this exact structure:
+CATEGORY BREAKDOWN (this month, sorted by spend):
+${categoryBreakdown.map(c => `- ${c.category}: $${c.amount.toFixed(2)}${c.worthItPercent !== null ? ` | ${c.worthItPercent}% worth it (${c.notWorthItCount} marked not worth it)` : ''}\n  Notes: ${c.notes.join(', ') || 'none'}`).join('\n')}
 
-## 1. VIBE CHECK (2-3 sentences)
-[Monthly narrative summary — what kind of month was it financially? Connect spending to life context and bigger picture.]
+CATEGORY TRENDS (multi-month):
+${categoryTrends}
 
-## 2. VALUES ALIGNMENT NARRATIVE
-[Detailed monthly analysis: did spending match her values over the full month? Look at patterns, not just individual purchases.]
+WORTH-IT INTELLIGENCE (across ${recentMonths.length} months):
+- ${worthItStats.worthItPercent}% of rated discretionary spending marked "worth it"
+- $${worthItStats.notWorthItTotal.toFixed(2)} total spent on things marked "not worth it"
+- Top "not worth it" categories: ${worthItStats.topNotWorthItCategories.join(', ') || 'none yet'}
 
-## 3. VALUES - ALIGNED (bullet list)
-[Categories or habits this month that matched her values well]
+WORTH-IT BY CATEGORY (this month):
+${worthItByCategory.map(c => `- ${c.category}: ${c.worthItPercent}% worth it ($${c.amount.toFixed(2)} total, ${c.notWorthItCount} not-worth-it)`).join('\n') || 'No rated expenses this month.'}
 
-## 4. VALUES - WORTH A LOOK (bullet list)
-[Patterns or categories this month that may not align — no judgment, just awareness]
+BUCKET HEALTH:
+- Running low: ${fundsRunningLow.join(', ') || 'none'}
+- Healthy: ${fundsHealthy.join(', ') || 'none'}
 
-## 5. PATTERNS - TRENDS (bullet list)
-[Month-over-month trends — what grew, what shrank, and what that might mean]
+MEMORIES/CONTEXT:
+${memories.slice(0, 10).map((m: any) => `- ${m.content}`).join('\n') || 'none'}
 
-## 6. PATTERNS - REPEATS (bullet list)
-[Recurring spending patterns or habits that showed up consistently this month]
+---
 
-## 7. PATTERNS - JOY EFFICIENCY (bullet list)
-[Which categories gave the best and worst value for money based on worth/alignment ratings]
+Generate exactly these sections. Be concise and data-driven. Use actual numbers from the data above.
 
-## 8. SG NUDGES - THIS MONTH (bullet list)
-[1-2 practical Singapore-specific actions or optimisations based on this month's spending]
+## LIFESTYLE FINGERPRINT
+[One paragraph: who is this person as a spender based on ${recentMonths.length} months of data? What categories dominate? What's the necessary vs discretionary split? What does the spending pattern say about their lifestyle? Be specific with numbers.]
 
-## 9. SG NUDGES - GENERAL (bullet list)
-[1-2 broader reminders relevant to Jaz's financial context and goals]
+## SHIFTS
+[Bullet list: What's genuinely changing month over month? Only flag real trends backed by the data above, not noise. If nothing is trending, say so. Each bullet should include the actual numbers.]
 
-## 10. REFLECTION PROMPTS (2 questions)
-[Big-picture monthly questions to help her reflect on the month as a whole — more strategic than weekly prompts]
+## WORTH IT INSIGHT
+[One paragraph: What does the worth-it data reveal? Where does regret concentrate? Any categories that are consistently worth it vs consistently not? Connect the dots between categories and satisfaction. Use the actual percentages.]
 
-## 11. WINS (2-3 bullet points)
-[Celebrate what went well this month — be genuine and specific, look at the full month's arc]
+## NUDGES
+[2-3 specific, actionable bullets based on the data. Not generic tips. Reference actual numbers and categories. E.g. "You rated X worth it Y% of the time vs Z% for W. Swapping N of W per month would save ~$X."]
 
-Keep the tone: friend + therapist. Warm, curious, non-judgmental. Monthly reports should feel like a proper monthly review — bigger picture than weekly, more strategic, celebrating progress toward long-term goals.`;
+## ONE THING
+[A single sentence. The one insight that connects the most dots. The kind of thing a financially-savvy friend would say over coffee.]`;
 
     const anthropic = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY,
@@ -524,146 +381,145 @@ Keep the tone: friend + therapist. Warm, curious, non-judgmental. Monthly report
 
     const completion = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 1500,
       messages: [{ role: 'user', content: prompt }],
     });
 
     const aiResponse = completion.content[0].type === 'text' ? completion.content[0].text : '';
 
-    // 5. Parse AI response
-    const sections = parseAIResponse(aiResponse);
+    // ── 6. Parse AI response ────────────────────────────────────────────────
 
-    const goalPulse = {
-      renovationFund: {
-        target: 50000,
-        currentProgress: 0,
-        rentalIncome: 24000,
-        gap: 50000,
-        onTrack: 'Getting there',
-      },
-      emergencyFund: {
-        target: 30000,
-        currentProgress: 0,
-        percentComplete: 0,
-      },
-      quickTake: sections.quickTake || 'Keep building toward your goals.',
+    const parsed = parseReportResponse(aiResponse);
+
+    // ── 7. Build worth-it intelligence object ───────────────────────────────
+
+    const worthItIntelligence: WorthItIntelligence = {
+      ...worthItStats,
+      insight: parsed.worthItInsight,
     };
 
-    // 6. Store report
+    // ── 8. Save report ──────────────────────────────────────────────────────
+
     const reportId: any = await ctx.runMutation(api.reportsNew.insertReport, {
       userId: args.userId,
       reportType: 'monthly',
       periodStart,
       periodEnd,
-      vibeCheck: sections.vibeCheck,
-      goalPulse,
+      // lifestyleFingerprint -> vibeCheck
+      vibeCheck: parsed.lifestyleFingerprint,
+      // worthItIntelligence -> goalPulse (v.any())
+      goalPulse: worthItIntelligence,
       fundStatus,
       fundsRunningLow,
       fundsHealthy,
+      // unused but required by schema
       valuesAlignment: {
-        narrative: sections.valuesNarrative,
-        aligned: sections.valuesAligned,
-        worthALook: sections.valuesWorthALook,
+        narrative: '',
+        aligned: [],
+        worthALook: [],
       },
+      // shifts -> patternsAndFlags.trends
       patternsAndFlags: {
-        trends: sections.patternsTrends,
-        repeats: sections.patternsRepeats,
-        joyEfficiency: sections.patternsJoy,
+        trends: parsed.shifts,
+        repeats: [],
+        joyEfficiency: [],
       },
       sgNudges: {
-        thisWeek: sections.sgNudgesThisWeek,
-        generalReminders: sections.sgNudgesGeneral,
+        thisWeek: [],
+        generalReminders: [],
       },
-      reflectionPrompts: sections.reflectionPrompts,
+      // oneThing -> reflectionPrompts (single item array)
+      reflectionPrompts: [parsed.oneThing],
       fixedCosts,
       fixedCostsTotal,
-      wins: sections.wins,
+      // nudges -> wins
+      wins: parsed.nudges,
       createdAt: now,
     });
 
-    // 7. Save key insights as memories
+    // ── 9. Save key insights as memories ────────────────────────────────────
+
     const insightMemories = [
-      ...sections.patternsTrends.slice(0, 2),
-      ...sections.valuesWorthALook.slice(0, 1),
-    ];
+      ...parsed.shifts.slice(0, 2),
+      parsed.oneThing,
+    ].filter(s => s && s.length > 10);
+
     for (const insight of insightMemories) {
-      if (insight && insight.length > 10) {
-        await ctx.runMutation(api.memories.create, {
-          userId: args.userId,
-          memoryType: 'context',
-          content: insight,
-          source: 'monthly-report',
-          importance: 4,
-        });
-      }
+      await ctx.runMutation(api.memories.create, {
+        userId: args.userId,
+        memoryType: 'context',
+        content: insight,
+        source: 'monthly-report',
+        importance: 4,
+      });
     }
 
     return reportId;
   },
 });
 
-// Helper to parse AI response into structured sections
-function parseAIResponse(response: string) {
-  const sections: Record<string, any> = {
-    vibeCheck: '',
-    valuesNarrative: '',
-    valuesAligned: [],
-    valuesWorthALook: [],
-    patternsTrends: [],
-    patternsRepeats: [],
-    patternsJoy: [],
-    sgNudgesThisWeek: [],
-    sgNudgesGeneral: [],
-    reflectionPrompts: [],
-    wins: [],
+// ─── Parse AI Response ───────────────────────────────────────────────────────
+
+function parseReportResponse(response: string): {
+  lifestyleFingerprint: string;
+  shifts: string[];
+  worthItInsight: string;
+  nudges: string[];
+  oneThing: string;
+} {
+  const result = {
+    lifestyleFingerprint: '',
+    shifts: [] as string[],
+    worthItInsight: '',
+    nudges: [] as string[],
+    oneThing: '',
   };
 
   const lines = response.split('\n');
   let currentSection = '';
 
   for (const line of lines) {
-    if (line.includes('VIBE CHECK')) currentSection = 'vibeCheck';
-    else if (line.includes('VALUES ALIGNMENT NARRATIVE')) currentSection = 'valuesNarrative';
-    else if (line.includes('VALUES - ALIGNED')) currentSection = 'valuesAligned';
-    else if (line.includes('VALUES - WORTH A LOOK')) currentSection = 'valuesWorthALook';
-    else if (line.includes('PATTERNS - TRENDS')) currentSection = 'patternsTrends';
-    else if (line.includes('PATTERNS - REPEATS')) currentSection = 'patternsRepeats';
-    else if (line.includes('PATTERNS - JOY')) currentSection = 'patternsJoy';
-    else if (line.includes('SG NUDGES - THIS WEEK')) currentSection = 'sgNudgesThisWeek';
-    else if (line.includes('SG NUDGES - GENERAL')) currentSection = 'sgNudgesGeneral';
-    else if (line.includes('REFLECTION PROMPTS')) currentSection = 'reflectionPrompts';
-    else if (line.includes('WINS')) currentSection = 'wins';
-    else if (line.trim() && !line.startsWith('#')) {
-      if (currentSection === 'vibeCheck' || currentSection === 'valuesNarrative') {
-        sections[currentSection] += line.trim() + ' ';
-      } else if (currentSection === 'reflectionPrompts') {
-        // Reflection prompts might be written as questions without bullets
-        // Try to split by question marks to separate multiple questions
-        const text = line.trim();
-        if (text) {
-          if (text.startsWith('-') || text.startsWith('•') || text.startsWith('*')) {
-            sections[currentSection].push(text.replace(/^[-•*]\s*/, '').trim());
-          } else {
-            // Split by question marks and add each as separate prompt
-            const questions = text.split('?').filter(q => q.trim().length > 10);
-            questions.forEach(q => {
-              const question = q.trim() + '?';
-              if (question.length > 15) {
-                sections[currentSection].push(question);
-              }
-            });
-          }
+    const trimmed = line.trim();
+
+    if (trimmed.includes('LIFESTYLE FINGERPRINT')) { currentSection = 'fingerprint'; continue; }
+    if (trimmed.includes('SHIFTS')) { currentSection = 'shifts'; continue; }
+    if (trimmed.includes('WORTH IT INSIGHT')) { currentSection = 'worthIt'; continue; }
+    if (trimmed.includes('NUDGES')) { currentSection = 'nudges'; continue; }
+    if (trimmed.includes('ONE THING')) { currentSection = 'oneThing'; continue; }
+
+    if (!trimmed || trimmed.startsWith('#')) continue;
+
+    switch (currentSection) {
+      case 'fingerprint':
+        result.lifestyleFingerprint += (result.lifestyleFingerprint ? ' ' : '') + trimmed;
+        break;
+      case 'shifts':
+        if (trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.match(/^\d+\./)) {
+          result.shifts.push(trimmed.replace(/^[-*\d.]\s*/, '').trim());
         }
-      } else if (line.trim().startsWith('-') || line.trim().startsWith('•') || line.trim().startsWith('*') || line.trim().match(/^\d+\./)) {
-        const text = line.replace(/^[-•*\d.]\s*/, '').trim();
-        if (text) sections[currentSection].push(text);
-      }
+        break;
+      case 'worthIt':
+        result.worthItInsight += (result.worthItInsight ? ' ' : '') + trimmed;
+        break;
+      case 'nudges':
+        if (trimmed.startsWith('-') || trimmed.startsWith('*') || trimmed.match(/^\d+\./)) {
+          result.nudges.push(trimmed.replace(/^[-*\d.]\s*/, '').trim());
+        }
+        break;
+      case 'oneThing':
+        if (!result.oneThing && trimmed.length > 5) {
+          result.oneThing = trimmed;
+        }
+        break;
     }
   }
 
-  // Clean up string sections
-  sections.vibeCheck = sections.vibeCheck.trim();
-  sections.valuesNarrative = sections.valuesNarrative.trim();
+  // Fallbacks
+  if (!result.lifestyleFingerprint) result.lifestyleFingerprint = 'Not enough data to generate a lifestyle fingerprint yet.';
+  if (!result.worthItInsight) result.worthItInsight = 'Not enough worth-it ratings to generate insights yet.';
+  if (!result.oneThing) result.oneThing = 'Keep tracking - patterns emerge with more data.';
+  if (result.nudges.length === 0) result.nudges = ['Rate more expenses as "worth it" or "not worth it" to unlock personalized nudges.'];
+  if (result.shifts.length === 0) result.shifts = ['Not enough months of data to detect shifts yet.'];
 
-  return sections;
+  return result;
 }

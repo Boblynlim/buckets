@@ -1,60 +1,59 @@
-// Theme configuration inspired by One Year: Daily Journal aesthetic
-// Minimalist palette with vibrant blue-violet and warm beige backgrounds
-// Space Mono font with garden-inspired blue theme
+// Theme configuration - Earthy pottery aesthetic
+// Warm neutrals, sage greens, and natural tones
 
 export const theme = {
   colors: {
-    // Primary blue-violet - main brand color (matching One Year app)
-    primary: '#4747FF',
-    primaryLight: '#6B6BFF',
-    primaryDark: '#2E2EE8',
+    // Primary — celadon glaze
+    primary: '#5C8A7A',
+    primaryLight: '#7DA99A',
+    primaryDark: '#3D6B5C',
 
-    // Background colors - light beige/cream tones (matching One Year)
-    background: '#F5F3F0',
-    backgroundLight: '#FDFCFB',
-    cardBackground: '#FFFFFF',
+    // Background — warm ivory clay body
+    background: '#EAE3D5',
+    backgroundLight: '#F2EDE3',
+    cardBackground: '#F5F0E7',
 
-    // Text colors - softer tones
-    text: '#2D2D2D',
-    textSecondary: '#8A8478',
-    textTertiary: '#C4BCAE',
-    textOnPrimary: '#FFFFFF',
+    // Text — chocolate brown decoration
+    text: '#3D3229',
+    textSecondary: '#7A6E62',
+    textTertiary: '#A89E92',
+    textOnPrimary: '#F2EDE3',
 
-    // Accent colors - muted palette with blue as primary
-    success: '#87B48E',
-    warning: '#E5A861',
-    danger: '#DA0F0F',
-    info: '#6B9BD1',
+    // Earthy accent palette
+    sage: '#8A8570',        // Warm sage from rim
+    sageMuted: '#C2BDB0',   // Light sage
+    honeyed: '#B8986A',     // Warm amber
+    sunsetDust: '#C8B8A2',  // Warm beige
+    earth: '#5C4438',       // Chocolate brown decoration
+    clay: '#A0785C',        // Raw terracotta foot
+    linen: '#E8E0D0',       // Warm ivory
 
-    // Blue/purple tints for various uses (matching One Year theme)
-    purple50: '#F7F7FF',
-    purple100: '#EDEDFF',
-    purple200: '#DBDBFF',
-    purple300: '#C9C9FF',
-    purple400: '#9494FF',
-    purple500: '#4747FF', // Primary blue-violet
-    purple600: '#2E2EE8',
-    purple700: '#1F1FD1',
-    purple800: '#1515BA',
-    purple900: '#0E0EA3',
+    // Semantic colors
+    success: '#7A9A6D',
+    warning: '#B8986A',
+    danger: '#B85C4A',
+    info: '#8A8570',
 
-    // Warm grays - softer, more beige-tinted
-    gray50: '#FAFAF9',
-    gray100: '#F5F4F2',
-    gray200: '#EBEAE7',
-    gray300: '#D9D7D3',
-    gray400: '#ABA89F',
-    gray500: '#7C7870',
-    gray600: '#5D5B52',
-    gray700: '#45433C',
-    gray800: '#2D2C27',
-    gray900: '#1A1916',
+    // Warm neutrals
+    gray50: '#F5F0E7',
+    gray100: '#EAE3D5',
+    gray200: '#E0D8C8',
+    gray300: '#D0C8B8',
+    gray400: '#A89E92',
+    gray500: '#7A6E62',
+    gray600: '#5E5448',
+    gray700: '#4A4038',
+    gray800: '#3D3229',
+    gray900: '#2A231C',
 
-    // Semantic colors - softer tones with blue shadows
-    border: '#EBEAE7',
-    separator: '#D9D7D3',
-    overlay: 'rgba(45, 45, 45, 0.3)',
-    shadow: 'rgba(71, 71, 255, 0.15)',
+    // UI tones
+    purple100: '#E8E0D0',
+
+    // Semantic UI
+    border: '#DDD6C8',
+    separator: '#D0C8B8',
+    overlay: 'rgba(61, 50, 41, 0.3)',
+    shadow: 'rgba(92, 68, 56, 0.12)',
   },
 
   fonts: {
@@ -97,23 +96,23 @@ export const theme = {
 
   shadows: {
     sm: {
-      shadowColor: '#4747FF',
+      shadowColor: '#5C8A7A',
       shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.08,
+      shadowOpacity: 0.06,
       shadowRadius: 3,
       elevation: 1,
     },
     md: {
-      shadowColor: '#4747FF',
+      shadowColor: '#5C8A7A',
       shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
+      shadowOpacity: 0.08,
       shadowRadius: 6,
       elevation: 2,
     },
     lg: {
-      shadowColor: '#4747FF',
+      shadowColor: '#5C8A7A',
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.12,
+      shadowOpacity: 0.1,
       shadowRadius: 12,
       elevation: 4,
     },

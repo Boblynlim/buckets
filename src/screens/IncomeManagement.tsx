@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useMemo} from 'react';
 import {
   View,
   Text,
@@ -8,213 +8,164 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Switch,
   Modal,
-  Alert,
   Platform,
 } from 'react-native';
-import {Trash2} from 'lucide-react-native';
+import {Check, Plus, Trash2, ChevronLeft, ChevronRight} from 'lucide-react-native';
 import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
+import { useAuth } from '../lib/AuthContext';
 import {theme} from '../theme';
-import {getFontFamily} from '../theme/fonts';
 import {Drawer} from '../components/Drawer';
+import {PotteryLoader} from '../components/PotteryLoader';
+import {format, addMonths, subMonths, startOfMonth, isSameMonth} from 'date-fns';
 
 interface IncomeManagementProps {
   visible?: boolean;
   onClose?: () => void;
 }
 
+const formatMonth = (date: Date) => format(date, 'yyyy-MM');
+
 export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   visible = true,
   onClose,
 }) => {
-  const [amount, setAmount] = useState('');
-  const [isRecurring, setIsRecurring] = useState(true);
-  const [note, setNote] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(startOfMonth(new Date()));
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [showAdHoc, setShowAdHoc] = useState(false);
+  const [newSourceAmount, setNewSourceAmount] = useState('');
+  const [newSourceNote, setNewSourceNote] = useState('');
+  const [adHocAmount, setAdHocAmount] = useState('');
+  const [adHocNote, setAdHocNote] = useState('');
 
-  // Get current user and buckets
-  const currentUser = useQuery(api.users.getCurrentUser);
-  const initDemoUser = useMutation(api.users.initDemoUser);
-  const buckets = useQuery(
-    api.buckets.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
-  );
+  const { user: currentUser } = useAuth();
   const incomeEntries = useQuery(
     api.income.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
+    currentUser ? {userId: currentUser._id} : 'skip',
   );
+  // Track receipts in local state until incomeReceipts table is available
+  // TODO: Replace with useQuery(api.incomeReceipts.getAll) after dev server restart
+  const [localReceipts, setLocalReceipts] = useState<Array<{
+    _id: string;
+    sourceId?: string;
+    amount: number;
+    month: string;
+    note?: string;
+    receivedAt: number;
+  }>>([]);
+  const monthReceipts = React.useMemo(() => {
+    const m = formatMonth(selectedMonth);
+    return localReceipts.filter(r => r.month === m);
+  }, [localReceipts, selectedMonth]);
   const addIncome = useMutation(api.income.add);
   const removeIncome = useMutation(api.income.remove);
   const recalculateDistribution = useMutation(api.distribution.calculateDistribution);
 
-  // Initialize demo user if needed
-  React.useEffect(() => {
-    if (currentUser === null) {
-      console.log('No user found, initializing...');
-      initDemoUser().catch(err => {
-        console.error('Error initializing demo user:', err);
-      });
-    }
-  }, [currentUser, initDemoUser]);
+  const recurringSources = useMemo(() => {
+    if (!incomeEntries) return [];
+    return incomeEntries.filter(i => i.isRecurring);
+  }, [incomeEntries]);
 
-  const allBuckets = buckets || [];
-  const incomeAmount = parseFloat(amount) || 0;
+  const expectedTotal = useMemo(() => {
+    return recurringSources.reduce((sum, s) => sum + s.amount, 0);
+  }, [recurringSources]);
 
-  // Calculate distribution preview
-  const calculateDistribution = () => {
-    if (incomeAmount <= 0 || allBuckets.length === 0) return [];
+  const receivedTotal = useMemo(() => {
+    if (!monthReceipts) return 0;
+    return monthReceipts.reduce((sum, r) => sum + r.amount, 0);
+  }, [monthReceipts]);
 
-    // Only include spend and recurring buckets
-    const spendAndRecurringBuckets = allBuckets.filter(
-      b => b.bucketMode === 'spend' || b.bucketMode === 'recurring'
-    );
+  const adHocReceipts = useMemo(() => {
+    if (!monthReceipts) return [];
+    return monthReceipts.filter(r => !r.sourceId);
+  }, [monthReceipts]);
 
-    if (spendAndRecurringBuckets.length === 0) return [];
+  // Check which sources have been confirmed this month
+  const confirmedSourceIds = useMemo(() => {
+    if (!monthReceipts) return new Set<string>();
+    return new Set(monthReceipts.filter(r => r.sourceId).map(r => r.sourceId!));
+  }, [monthReceipts]);
 
-    // Calculate total planned across all buckets
-    let totalPlanned = 0;
-    for (const bucket of spendAndRecurringBuckets) {
-      let planned = 0;
+  const progressPercent = expectedTotal > 0
+    ? Math.min(100, (receivedTotal / expectedTotal) * 100)
+    : 0;
 
-      // Check new fields first
-      if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
-        planned = (incomeAmount * bucket.plannedPercent) / 100;
-      } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
-        planned = bucket.plannedAmount;
-      }
-      // Fall back to legacy allocationValue
-      else if (bucket.allocationValue !== undefined) {
-        planned = bucket.allocationValue;
-      }
+  const isCurrentMonth = isSameMonth(selectedMonth, new Date());
 
-      totalPlanned += planned;
-    }
-
-    // Calculate funding ratio (proportional if over-planned)
-    const isOverPlanned = totalPlanned > incomeAmount;
-    const fundingRatio = isOverPlanned ? incomeAmount / totalPlanned : 1;
-
-    // Build distribution with proportional allocation
-    const distribution: Array<{name: string; color: string; amount: number; percentage: number}> = [];
-
-    for (const bucket of spendAndRecurringBuckets) {
-      let planned = 0;
-
-      // Check new fields first
-      if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
-        planned = (incomeAmount * bucket.plannedPercent) / 100;
-      } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
-        planned = bucket.plannedAmount;
-      }
-      // Fall back to legacy allocationValue
-      else if (bucket.allocationValue !== undefined) {
-        planned = bucket.allocationValue;
-      }
-
-      const funded = planned * fundingRatio;
-
-      if (funded > 0) {
-        distribution.push({
-          name: bucket.name,
-          color: bucket.color,
-          amount: funded,
-          percentage: (funded / incomeAmount) * 100,
-        });
-      }
-    }
-
-    return distribution;
+  const handleConfirmSource = (sourceId: string, amount: number, note?: string) => {
+    setLocalReceipts(prev => [...prev, {
+      _id: `local_${Date.now()}`,
+      sourceId,
+      amount,
+      month: formatMonth(selectedMonth),
+      note,
+      receivedAt: Date.now(),
+    }]);
   };
 
-  const distribution = calculateDistribution();
-  const totalDistributed = distribution.reduce((sum, d) => sum + d.amount, 0);
-  const isValid = amount && parseFloat(amount) > 0;
+  const handleUnconfirmSource = (sourceId: string) => {
+    setLocalReceipts(prev => prev.filter(r => r.sourceId !== sourceId || r.month !== formatMonth(selectedMonth)));
+  };
 
-  const handleSave = async () => {
-    if (!isValid || !currentUser) {
-      Alert.alert('Invalid Input', 'Please enter a valid amount');
-      return;
-    }
+  const handleAddAdHoc = () => {
+    const amt = parseFloat(adHocAmount);
+    if (!amt || amt <= 0) return;
+    setLocalReceipts(prev => [...prev, {
+      _id: `local_${Date.now()}`,
+      amount: amt,
+      month: formatMonth(selectedMonth),
+      note: adHocNote || undefined,
+      receivedAt: Date.now(),
+    }]);
+    setAdHocAmount('');
+    setAdHocNote('');
+    setShowAdHoc(false);
+  };
 
+  const handleAddSource = async () => {
+    const amt = parseFloat(newSourceAmount);
+    if (!amt || amt <= 0 || !currentUser) return;
     try {
       await addIncome({
         userId: currentUser._id,
-        amount: incomeAmount,
+        amount: amt,
         date: Date.now(),
-        note: note || undefined,
-        isRecurring,
+        note: newSourceNote || undefined,
+        isRecurring: true,
       });
-
-      Alert.alert(
-        'Income Added',
-        `Successfully added ${isRecurring ? 'recurring ' : ''}income of $${incomeAmount.toFixed(2)}!\n\nDistributed to ${distribution.length} buckets.`
-      );
-
-      // Clear the form
-      setAmount('');
-      setNote('');
-      setIsRecurring(true);
-    } catch (error: any) {
-      console.error('Failed to add income:', error);
-      Alert.alert('Error', error.message || 'Failed to add income. Please try again.');
+      setNewSourceAmount('');
+      setNewSourceNote('');
+      setShowAddSource(false);
+    } catch (err: any) {
+      console.error('Failed to add source:', err);
+      if (Platform.OS === 'web') alert(`Error: ${err.message}`);
     }
   };
 
-  const handleDelete = async (incomeId: string) => {
-    // Web-compatible confirmation
-    const confirmDelete = Platform.OS === 'web'
-      ? window.confirm('Are you sure you want to delete this income entry?')
-      : await new Promise((resolve) => {
-          Alert.alert(
-            'Delete Income',
-            'Are you sure you want to delete this income entry?',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
-            ]
-          );
-        });
-
-    if (!confirmDelete) return;
-
+  const handleDeleteSource = async (incomeId: string) => {
+    const confirm = Platform.OS === 'web'
+      ? window.confirm('Remove this income source?')
+      : true; // native would use Alert
+    if (!confirm) return;
     try {
-      await removeIncome({ incomeId: incomeId as any });
-
-      // Recalculate distribution after deleting
+      await removeIncome({incomeId: incomeId as any});
       if (currentUser) {
-        try {
-          await recalculateDistribution({ userId: currentUser._id });
-        } catch (distError) {
-          console.error('Failed to recalculate distribution:', distError);
-          // Continue anyway - income is deleted
-        }
+        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
       }
-
-      if (Platform.OS === 'web') {
-        alert('Income entry deleted successfully');
-      } else {
-        Alert.alert('Success', 'Income entry deleted successfully');
-      }
-    } catch (error: any) {
-      console.error('Failed to delete income:', error);
-      const errorMessage = error?.message || error?.toString() || 'Failed to delete income. Please try again.';
-      if (Platform.OS === 'web') {
-        alert(`Error: ${errorMessage}`);
-      } else {
-        Alert.alert('Error', errorMessage);
-      }
+    } catch (err: any) {
+      console.error('Failed to delete source:', err);
     }
   };
 
-  // Show loading state
-  if (currentUser === undefined || buckets === undefined || incomeEntries === undefined) {
+  const handleRemoveAdHoc = (receiptId: string) => {
+    setLocalReceipts(prev => prev.filter(r => r._id !== receiptId));
+  };
+
+  if (currentUser === undefined || incomeEntries === undefined) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading...</Text>
-        </View>
+        <PotteryLoader />
       </SafeAreaView>
     );
   }
@@ -225,180 +176,264 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
+
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose}>
-            <Text style={styles.cancelButton}>Cancel</Text>
+            <Text style={styles.closeButton}>Done</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>Add Income</Text>
-          <TouchableOpacity onPress={handleSave} disabled={!isValid}>
-            <Text style={[styles.saveButton, !isValid && styles.saveButtonDisabled]}>
-              Save
-            </Text>
+          <Text style={styles.title}>Income</Text>
+          <View style={{width: 40}} />
+        </View>
+
+        {/* Month Selector */}
+        <View style={styles.monthSelector}>
+          <TouchableOpacity
+            onPress={() => setSelectedMonth(subMonths(selectedMonth, 1))}
+            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            <ChevronLeft size={20} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+          <Text style={styles.monthLabel}>{format(selectedMonth, 'MMMM yyyy')}</Text>
+          <TouchableOpacity
+            onPress={() => setSelectedMonth(addMonths(selectedMonth, 1))}
+            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+            <ChevronRight size={20} color={theme.colors.textSecondary} />
           </TouchableOpacity>
         </View>
 
-        {/* Amount Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Amount</Text>
-          <View style={styles.amountContainer}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={theme.colors.textTertiary}
-            />
-          </View>
-        </View>
-
-        {/* Note Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Note (Optional)</Text>
-          <TextInput
-            style={styles.noteInput}
-            value={note}
-            onChangeText={setNote}
-            placeholder="e.g., Monthly salary"
-            placeholderTextColor={theme.colors.textTertiary}
-          />
-        </View>
-
-        {/* Recurring Toggle */}
-        <View style={styles.section}>
-          <View style={styles.switchRow}>
-            <View>
-              <Text style={styles.switchLabel}>Recurring Income</Text>
-              <Text style={styles.switchSubtext}>Monthly automatic entry</Text>
+        {/* Status Card */}
+        <View style={styles.statusCard}>
+          <View style={styles.statusAmounts}>
+            <View style={styles.statusCol}>
+              <Text style={styles.statusCaption}>received</Text>
+              <Text style={styles.statusValue}>${receivedTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
             </View>
-            <Switch
-              value={isRecurring}
-              onValueChange={setIsRecurring}
-              trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-              ios_backgroundColor={theme.colors.border}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-        </View>
-
-        {/* Distribution Preview */}
-        {incomeAmount > 0 && allBuckets.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Distribution Preview</Text>
-            <View style={styles.distributionContainer}>
-              {distribution.map((item, index) => (
-                <View key={index} style={styles.distributionRow}>
-                  <View style={styles.distributionLeft}>
-                    <View style={[styles.bucketDot, {backgroundColor: item.color}]} />
-                    <Text style={styles.distributionName}>{item.name}</Text>
-                  </View>
-                  <Text style={styles.distributionAmount}>
-                    ${item.amount.toFixed(2)}
-                  </Text>
-                </View>
-              ))}
-
-              <View style={styles.divider} />
-
-              <View style={styles.distributionRow}>
-                <Text style={styles.totalLabel}>Total Distributed</Text>
-                <Text style={styles.totalAmount}>${totalDistributed.toFixed(2)}</Text>
-              </View>
-
-              {totalDistributed < incomeAmount && (
-                <View style={styles.remainingBox}>
-                  <Text style={styles.remainingText}>
-                    ${(incomeAmount - totalDistributed).toFixed(2)} remaining (not allocated)
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
-        )}
-
-        {/* Empty State */}
-        {allBuckets.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <Text style={styles.emptyText}>No buckets yet!</Text>
-            <Text style={styles.emptySubtext}>
-              Create buckets first to see how income will be distributed.
-            </Text>
-          </View>
-        )}
-
-        {/* Income Entries List */}
-        {incomeEntries && incomeEntries.length > 0 && (
-          <View style={styles.section}>
-            <Text style={styles.label}>Your Income Sources</Text>
-            <View style={styles.incomeListContainer}>
-              {incomeEntries.map((income, index) => (
-                <View
-                  key={income._id}
-                  style={[
-                    styles.incomeRow,
-                    index === incomeEntries.length - 1 && styles.incomeRowLast
-                  ]}
-                >
-                  <View style={styles.incomeInfo}>
-                    <View style={styles.incomeHeader}>
-                      <Text style={styles.incomeAmount}>
-                        ${income.amount.toFixed(2)}
-                      </Text>
-                      {income.isRecurring && (
-                        <View style={styles.recurringBadge}>
-                          <Text style={styles.recurringBadgeText}>Recurring</Text>
-                        </View>
-                      )}
-                    </View>
-                    {income.note && (
-                      <Text style={styles.incomeNote}>{income.note}</Text>
-                    )}
-                    <Text style={styles.incomeDate}>
-                      Added {new Date(income.date).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    onPress={() => handleDelete(income._id)}
-                  >
-                    <Trash2 size={20} color={theme.colors.danger} strokeWidth={2} />
-                  </TouchableOpacity>
-                </View>
-              ))}
-            </View>
-            <View style={styles.totalIncomeContainer}>
-              <Text style={styles.totalIncomeLabel}>Total Monthly Income</Text>
-              <Text style={styles.totalIncomeAmount}>
-                ${incomeEntries
-                  .filter(i => i.isRecurring)
-                  .reduce((sum, i) => sum + i.amount, 0)
-                  .toFixed(2)}
+            <View style={styles.statusDivider} />
+            <View style={[styles.statusCol, {alignItems: 'flex-end'}]}>
+              <Text style={styles.statusCaption}>expected</Text>
+              <Text style={[styles.statusValue, {color: theme.colors.textSecondary}]}>
+                ${expectedTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
               </Text>
             </View>
           </View>
-        )}
 
-        <View style={{ height: 40 }} />
+          {/* Progress bar */}
+          <View style={styles.progressTrack}>
+            <View style={[
+              styles.progressFill,
+              {
+                width: `${progressPercent}%` as any,
+                backgroundColor: receivedTotal >= expectedTotal ? theme.colors.success : theme.colors.primary,
+              },
+            ]} />
+          </View>
+          {receivedTotal >= expectedTotal && expectedTotal > 0 && (
+            <Text style={styles.statusNote}>All income received</Text>
+          )}
+          {receivedTotal < expectedTotal && expectedTotal > 0 && (
+            <Text style={styles.statusNote}>
+              ${(expectedTotal - receivedTotal).toFixed(2)} remaining
+            </Text>
+          )}
+        </View>
+
+        {/* Income Sources */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.label}>Income Sources</Text>
+            <TouchableOpacity onPress={() => setShowAddSource(true)}>
+              <Plus size={18} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {recurringSources.length === 0 && (
+            <TouchableOpacity
+              style={styles.emptySourceCard}
+              onPress={() => setShowAddSource(true)}>
+              <Text style={styles.emptySourceText}>
+                Add your first income source
+              </Text>
+              <Text style={styles.emptySourceSubtext}>
+                e.g., Salary, Freelance, Side gig
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {recurringSources.map((source, index) => {
+            const isConfirmed = confirmedSourceIds.has(source._id);
+            const receipt = monthReceipts?.find(r => r.sourceId === source._id);
+            return (
+              <View
+                key={source._id}
+                style={[
+                  styles.sourceRow,
+                  index < recurringSources.length - 1 && styles.sourceRowBorder,
+                ]}>
+                <TouchableOpacity
+                  style={[styles.checkCircle, isConfirmed && styles.checkCircleActive]}
+                  onPress={() =>
+                    isConfirmed
+                      ? handleUnconfirmSource(source._id)
+                      : handleConfirmSource(source._id, source.amount, source.note)
+                  }>
+                  {isConfirmed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+                </TouchableOpacity>
+                <View style={styles.sourceInfo}>
+                  <Text style={[styles.sourceName, isConfirmed && styles.sourceNameConfirmed]}>
+                    {source.note || 'Income'}
+                  </Text>
+                  <Text style={styles.sourceAmount}>
+                    ${source.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                  </Text>
+                  {isConfirmed && receipt && (
+                    <Text style={styles.sourceConfirmedDate}>
+                      Received {new Date(receipt.receivedAt).toLocaleDateString()}
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={styles.deleteBtn}
+                  onPress={() => handleDeleteSource(source._id)}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <Trash2 size={16} color={theme.colors.textTertiary} />
+                </TouchableOpacity>
+              </View>
+            );
+          })}
+        </View>
+
+        {/* Ad-hoc / Extra Income */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.label}>Extra Income</Text>
+            <TouchableOpacity onPress={() => setShowAdHoc(true)}>
+              <Plus size={18} color={theme.colors.primary} />
+            </TouchableOpacity>
+          </View>
+
+          {adHocReceipts.length === 0 && !showAdHoc && (
+            <Text style={styles.adHocEmpty}>
+              Bonuses, side gigs, refunds — add them here
+            </Text>
+          )}
+
+          {adHocReceipts.map((receipt, index) => (
+            <View
+              key={receipt._id}
+              style={[
+                styles.adHocRow,
+                index < adHocReceipts.length - 1 && styles.sourceRowBorder,
+              ]}>
+              <View style={{flex: 1}}>
+                <Text style={styles.sourceName}>{receipt.note || 'Extra income'}</Text>
+                <Text style={styles.sourceAmount}>
+                  ${receipt.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => handleRemoveAdHoc(receipt._id)}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Trash2 size={16} color={theme.colors.textTertiary} />
+              </TouchableOpacity>
+            </View>
+          ))}
+
+          {showAdHoc && (
+            <View style={styles.inlineForm}>
+              <View style={styles.inlineFormRow}>
+                <View style={[styles.amountContainer, {flex: 1}]}>
+                  <Text style={styles.currencySymbol}>$</Text>
+                  <TextInput
+                    style={styles.amountInput}
+                    value={adHocAmount}
+                    onChangeText={setAdHocAmount}
+                    keyboardType="decimal-pad"
+                    placeholder="0.00"
+                    placeholderTextColor={theme.colors.textTertiary}
+                    autoFocus
+                  />
+                </View>
+              </View>
+              <TextInput
+                style={styles.noteInput}
+                value={adHocNote}
+                onChangeText={setAdHocNote}
+                placeholder="What's this from?"
+                placeholderTextColor={theme.colors.textTertiary}
+              />
+              <View style={styles.inlineFormActions}>
+                <TouchableOpacity onPress={() => {setShowAdHoc(false); setAdHocAmount(''); setAdHocNote('');}}>
+                  <Text style={styles.inlineCancel}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.inlineSaveBtn, (!adHocAmount || parseFloat(adHocAmount) <= 0) && {opacity: 0.4}]}
+                  onPress={handleAddAdHoc}>
+                  <Text style={styles.inlineSaveText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
+        <View style={{height: 40}} />
       </ScrollView>
+
+      {/* Add Source Modal */}
+      <Modal visible={showAddSource} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>New Income Source</Text>
+            <Text style={styles.modalSubtitle}>
+              This will be expected every month
+            </Text>
+
+            <View style={styles.amountContainer}>
+              <Text style={styles.currencySymbol}>$</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={newSourceAmount}
+                onChangeText={setNewSourceAmount}
+                keyboardType="decimal-pad"
+                placeholder="0.00"
+                placeholderTextColor={theme.colors.textTertiary}
+                autoFocus
+              />
+            </View>
+
+            <TextInput
+              style={[styles.noteInput, {marginTop: 10}]}
+              value={newSourceNote}
+              onChangeText={setNewSourceNote}
+              placeholder="e.g., Salary, Freelance"
+              placeholderTextColor={theme.colors.textTertiary}
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => {setShowAddSource(false); setNewSourceAmount(''); setNewSourceNote('');}}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalSaveBtn, (!newSourceAmount || parseFloat(newSourceAmount) <= 0) && {opacity: 0.4}]}
+                onPress={handleAddSource}>
+                <Text style={styles.modalSaveText}>Add Source</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 
-  // If visible prop is provided (web), wrap in Drawer
   if (onClose) {
     return (
-      <Drawer
-        visible={visible}
-        onClose={onClose}
-        fullScreen>
+      <Drawer visible={visible} onClose={onClose} fullScreen>
         {content}
       </Drawer>
     );
   }
 
-  // Otherwise return content directly (native navigation)
   return content;
 };
 
@@ -413,48 +448,235 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
   },
   title: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
-  cancelButton: {
-    fontSize: 14,
+  closeButton: {
+    fontSize: 16,
     color: theme.colors.primary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
   },
-  saveButton: {
+
+  // Month selector
+  monthSelector: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+  },
+  monthLabel: {
+    fontSize: 18,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+  },
+
+  // Status card
+  statusCard: {
+    marginHorizontal: 20,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+  },
+  statusAmounts: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  statusCol: {
+    flex: 1,
+  },
+  statusDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: theme.colors.border,
+    marginHorizontal: 16,
+  },
+  statusCaption: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
+  statusValue: {
+    fontSize: 24,
+    fontFamily: 'Merchant Copy',
+    color: theme.colors.text,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: theme.colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  statusNote: {
     fontSize: 14,
-    color: theme.colors.primary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
+    marginTop: 8,
   },
-  saveButtonDisabled: {
-    color: theme.colors.textTertiary,
-  },
+
+  // Sections
   section: {
     marginHorizontal: 20,
-    marginTop: 12,
     backgroundColor: theme.colors.backgroundLight,
     borderRadius: 20,
     padding: 18,
+    marginBottom: 12,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
   },
   label: {
-    fontSize: 13,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
-    marginBottom: 12,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+
+  // Source rows
+  sourceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  sourceRowBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
+  },
+  checkCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  checkCircleActive: {
+    backgroundColor: theme.colors.success,
+    borderColor: theme.colors.success,
+  },
+  sourceInfo: {
+    flex: 1,
+  },
+  sourceName: {
+    fontSize: 17,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  sourceNameConfirmed: {
+    color: theme.colors.textSecondary,
+  },
+  sourceAmount: {
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
+    color: theme.colors.text,
+  },
+  sourceConfirmedDate: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    color: theme.colors.success,
+    marginTop: 2,
+  },
+  deleteBtn: {
+    padding: 8,
+  },
+
+  // Empty source
+  emptySourceCard: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptySourceText: {
+    fontSize: 16,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+    marginBottom: 4,
+  },
+  emptySourceSubtext: {
+    fontSize: 14,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
+  },
+
+  // Ad-hoc
+  adHocEmpty: {
+    fontSize: 15,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
+  },
+  adHocRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+
+  // Inline form
+  inlineForm: {
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+  },
+  inlineFormRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  inlineFormActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 12,
+  },
+  inlineCancel: {
+    fontSize: 16,
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
+  },
+  inlineSaveBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  inlineSaveText: {
+    fontSize: 16,
+    fontFamily: 'Merchant',
+    color: '#FFFFFF',
+  },
+
+  // Shared form elements
   amountContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -463,210 +685,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 16,
-    fontWeight: '400',
+    fontSize: 18,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     marginRight: 8,
   },
   amountInput: {
     flex: 1,
-    fontSize: 16,
-    fontWeight: '400',
+    fontSize: 18,
     color: theme.colors.text,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     paddingVertical: 12,
-    minHeight: 24,
   },
   noteInput: {
     fontSize: 16,
     color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
     backgroundColor: theme.colors.cardBackground,
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: 12,
-    minHeight: 44,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  switchLabel: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
-    marginBottom: 4,
-  },
-  switchSubtext: {
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
-  },
-  distributionContainer: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    padding: 12,
-  },
-  distributionRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  distributionLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bucketDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  distributionName: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
-  },
-  distributionAmount: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: 'Merchant Copy, monospace',
-  },
-  divider: {
-    height: 1,
-    backgroundColor: theme.colors.border,
-    marginVertical: 8,
-  },
-  totalLabel: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('bold'),
-  },
-  totalAmount: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant Copy, monospace',
-  },
-  remainingBox: {
-    backgroundColor: theme.colors.purple100,
-    borderRadius: 8,
-    padding: 8,
     marginTop: 8,
   },
-  remainingText: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant Copy, monospace',
-    textAlign: 'center',
-  },
-  loadingContainer: {
+
+  // Modal
+  modalOverlay: {
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 16,
+    padding: 30,
   },
-  loadingText: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant, monospace',
+  modalContent: {
+    backgroundColor: theme.colors.background,
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 360,
   },
-  emptyContainer: {
-    padding: 40,
-    alignItems: 'center',
-    gap: 12,
-  },
-  emptyText: {
+  modalTitle: {
     fontSize: 18,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.text,
-  },
-  emptySubtext: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
-    textAlign: 'center',
-  },
-  incomeListContainer: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    padding: 12,
-  },
-  incomeRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-  },
-  incomeRowLast: {
-    borderBottomWidth: 0,
-  },
-  incomeInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  incomeHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 4,
   },
-  incomeAmount: {
-    fontSize: 18,
-    fontFamily: 'Merchant Copy, monospace',
-    color: theme.colors.text,
-    fontWeight: '600',
-    marginRight: 8,
-  },
-  recurringBadge: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  recurringBadgeText: {
-    fontSize: 10,
-    fontFamily: getFontFamily('bold'),
-    color: '#FFFFFF',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  incomeNote: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+  modalSubtitle: {
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
-    marginBottom: 2,
+    marginBottom: 18,
   },
-  incomeDate: {
-    fontSize: 12,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.textTertiary,
-  },
-  deleteButton: {
-    padding: 8,
-  },
-  totalIncomeContainer: {
+  modalActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    marginTop: 12,
-    borderTopWidth: 2,
-    borderTopColor: theme.colors.border,
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 18,
   },
-  totalIncomeLabel: {
+  modalCancelBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  modalCancelText: {
     fontSize: 16,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.text,
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
   },
-  totalIncomeAmount: {
-    fontSize: 20,
-    fontFamily: 'Merchant Copy, monospace',
-    color: theme.colors.primary,
-    fontWeight: '600',
+  modalSaveBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  modalSaveText: {
+    fontSize: 16,
+    fontFamily: 'Merchant',
+    color: '#FFFFFF',
   },
 });

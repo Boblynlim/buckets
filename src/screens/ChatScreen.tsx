@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useQuery, useAction } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
 
 interface Message {
@@ -28,7 +29,7 @@ export const ChatScreen: React.FC = () => {
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Get current user and buckets from Convex
-  const currentUser = useQuery(api.users.getCurrentUser);
+  const { user: currentUser } = useAuth();
   const buckets = useQuery(
     api.buckets.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
@@ -350,14 +351,14 @@ const styles = StyleSheet.create({
   headerName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#4747FF',
-    fontFamily: 'Merchant Copy, monospace',
+    color: '#5C8A7A',
+    fontFamily: 'Merchant Copy',
   },
   headerStatus: {
     fontSize: 12,
-    color: '#4747FF',
+    color: '#5C8A7A',
     opacity: 0.8,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     marginTop: 2,
   },
   // Messages
@@ -396,14 +397,14 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 2,
   },
   userBubble: {
-    backgroundColor: '#4747FF',
+    backgroundColor: '#5C8A7A',
     borderBottomRightRadius: 2,
   },
   messageText: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#2D2D2D',
-    fontFamily: 'Merchant Copy, monospace',
+    color: '#3D3229',
+    fontFamily: 'Merchant Copy',
   },
   userMessageText: {
     color: '#FFFFFF',
@@ -411,7 +412,7 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 14,
     color: '#8A8478',
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
   },
   // Suggested prompts as quick replies
   suggestedPromptsContainer: {
@@ -438,8 +439,8 @@ const styles = StyleSheet.create({
   },
   suggestedPromptText: {
     fontSize: 12,
-    color: '#2D2D2D',
-    fontFamily: 'Merchant Copy, monospace',
+    color: '#3D3229',
+    fontFamily: 'Merchant Copy',
     flexWrap: 'wrap',
   },
   // Input
@@ -449,7 +450,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
     paddingBottom: 24,
-    backgroundColor: '#F5F3F0',
+    backgroundColor: '#EAE3D5',
     borderTopWidth: 1,
     borderTopColor: '#E8E5E0',
   },
@@ -462,8 +463,8 @@ const styles = StyleSheet.create({
     fontSize: 16,
     maxHeight: 100,
     marginRight: 8,
-    color: '#2D2D2D',
-    fontFamily: 'Merchant Copy, monospace',
+    color: '#3D3229',
+    fontFamily: 'Merchant Copy',
     borderWidth: 1,
     borderColor: '#E8E5E0',
   },
@@ -471,7 +472,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#4747FF',
+    backgroundColor: '#5C8A7A',
     alignItems: 'center',
     justifyContent: 'center',
   },

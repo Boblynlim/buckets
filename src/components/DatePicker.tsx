@@ -199,7 +199,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pickerContainer: {
-    backgroundColor: '#FDFCFB',
+    backgroundColor: '#F5F0E7',
     borderRadius: 20,
     padding: 24,
     width: '90%',
@@ -219,11 +219,11 @@ const styles = StyleSheet.create({
   navIcon: {
     fontSize: 32,
     color: theme.colors.primary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
   },
   monthYearText: {
-    fontSize: 18,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 20,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   weekdayRow: {
@@ -235,8 +235,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   weekdayText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   calendarGrid: {
@@ -260,17 +260,17 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   dayText: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.text,
   },
   todayText: {
     color: theme.colors.primary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
   },
   selectedText: {
     color: theme.colors.textOnPrimary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
   },
   quickSelectRow: {
     flexDirection: 'row',
@@ -288,8 +288,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   quickButtonText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   actionButtons: {
@@ -304,8 +304,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   cancelButtonText: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   confirmButton: {
@@ -316,8 +316,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   confirmButtonText: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.textOnPrimary,
   },
 });

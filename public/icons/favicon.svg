@@ -1,30 +1,19 @@
 <svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="32" height="32" fill="#4747FF" rx="6.4"/>
+  <!-- Warm rounded background -->
+  <rect width="32" height="32" fill="#5C8A7A" rx="7"/>
 
-  <!-- Bucket shape in white -->
-  <g transform="translate(6.4, 8)">
-    <!-- Top rim -->
-    <rect x="0" y="0" width="19.2" height="2.56" fill="#F5F3F0" rx="0.64"/>
+  <!-- Cup body -->
+  <path d="M 7 11 L 7 23 Q 7 26, 10 26 L 19 26 Q 22 26, 22 23 L 22 11 Z"
+        fill="#F5EDD8"/>
 
-    <!-- Bucket body (trapezoid shape) -->
-    <path d="M 1.6 2.56
-             L 17.6 2.56
-             L 16 17.6
-             L 3.2 17.6 Z"
-          fill="#F5F3F0"/>
+  <!-- Cup rim -->
+  <rect x="6" y="9.5" width="17" height="2.5" rx="1.2" fill="#F5EDD8"/>
 
-    <!-- Handle -->
-    <path d="M 4.8 0.64
-             Q 9.6 -2.56, 14.4 0.64"
-          stroke="#F5F3F0" stroke-width="1.28" fill="none" stroke-linecap="round"/>
+  <!-- Handle -->
+  <path d="M 22 14 Q 27 14, 27 18.5 Q 27 23, 22 23"
+        stroke="#F5EDD8" stroke-width="2.2" fill="none" stroke-linecap="round"/>
 
-    <!-- $ Symbol in bucket -->
-    <text x="9.6" y="12.16"
-          font-family="Space Mono, monospace"
-          font-size="6.4"
-          font-weight="bold"
-          fill="#4747FF"
-          text-anchor="middle">$</text>
-  </g>
+  <!-- Steam wisps -->
+  <path d="M 12 7 Q 13 4, 12 2" stroke="rgba(245,237,216,0.6)" stroke-width="1" fill="none" stroke-linecap="round"/>
+  <path d="M 16 8 Q 17 5, 16 3" stroke="rgba(245,237,216,0.4)" stroke-width="1" fill="none" stroke-linecap="round"/>
 </svg>

@@ -119,6 +119,21 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
 
                 <Text style={styles.expenseNote}>{expense.note}</Text>
 
+                {/* Tags */}
+                <View style={styles.tagsRow}>
+                  {expense.isNecessary ? (
+                    <View style={styles.necessaryTag}>
+                      <Text style={styles.necessaryTagText}>NECESSARY</Text>
+                    </View>
+                  ) : (
+                    <View style={expense.worthIt ? styles.worthItTag : styles.notWorthItTag}>
+                      <Text style={expense.worthIt ? styles.worthItTagText : styles.notWorthItTagText}>
+                        {expense.worthIt ? 'WORTH IT' : 'NOT WORTH IT'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+
                 {/* Bucket Selector */}
                 <View style={styles.bucketSelector}>
                   <Text style={styles.bucketLabel}>Bucket:</Text>
@@ -188,7 +203,7 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F3F0',
+    backgroundColor: '#EAE3D5',
     height: '100vh' as any,
     display: 'flex' as any,
     flexDirection: 'column',
@@ -210,10 +225,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 17,
+    fontSize: 19,
     fontWeight: '500',
-    color: '#0A0A0A',
-    fontFamily: 'Merchant, monospace',
+    color: '#3D3229',
+    fontFamily: 'Merchant',
   },
   statusBanner: {
     flexDirection: 'row',
@@ -231,8 +246,8 @@ const styles = StyleSheet.create({
   },
   statusText: {
     flex: 1,
-    fontSize: 15,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 17,
+    fontFamily: 'Merchant',
     color: '#2D2D2D',
     lineHeight: 21,
   },
@@ -250,7 +265,7 @@ const styles = StyleSheet.create({
     overflow: 'visible' as any,
   },
   expenseRow: {
-    backgroundColor: '#FDFCFB',
+    backgroundColor: '#F5F0E7',
     borderRadius: 20,
     padding: 18,
     marginBottom: 12,
@@ -265,23 +280,73 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   expenseDate: {
-    fontSize: 14,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: '#8A8478',
   },
   expenseAmount: {
-    fontSize: 20,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 22,
+    fontFamily: 'Merchant Copy',
     color: '#2D2D2D',
     fontWeight: '500',
     letterSpacing: 0,
   },
   expenseNote: {
-    fontSize: 16,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: '#2D2D2D',
     marginBottom: 12,
     lineHeight: 22,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  worthItTag: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: '#a0d0c0',
+    borderWidth: 1,
+    borderColor: '#8ac4b2',
+  },
+  worthItTagText: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: '#245045',
+  },
+  notWorthItTag: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(212,184,154,0.3)',
+    borderWidth: 1,
+    borderColor: '#c9a882',
+  },
+  notWorthItTagText: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: '#a08060',
+  },
+  necessaryTag: {
+    paddingVertical: 3,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    backgroundColor: 'rgba(61,50,41,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(61,50,41,0.15)',
+  },
+  necessaryTagText: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    fontWeight: '600',
+    letterSpacing: 0.6,
+    color: 'rgba(61,50,41,0.4)',
   },
   bucketSelector: {
     flexDirection: 'row',
@@ -289,8 +354,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   bucketLabel: {
-    fontSize: 15,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 17,
+    fontFamily: 'Merchant',
     color: '#8A8478',
   },
   bucketPill: {
@@ -309,16 +374,16 @@ const styles = StyleSheet.create({
     borderColor: '#DC2626',
   },
   bucketText: {
-    fontSize: 15,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 17,
+    fontFamily: 'Merchant',
     color: '#2D2D2D',
   },
   bucketTextError: {
     color: '#DC2626',
   },
   errorText: {
-    fontSize: 14,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: '#DC2626',
     marginTop: 10,
     fontStyle: 'italic',
@@ -346,8 +411,8 @@ const styles = StyleSheet.create({
     borderRadius: 10,
   },
   dropdownItemText: {
-    fontSize: 16,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: '#2D2D2D',
   },
   footer: {
@@ -357,7 +422,7 @@ const styles = StyleSheet.create({
     gap: 12,
     borderTopWidth: 1,
     borderTopColor: '#F3F4F6',
-    backgroundColor: '#F5F3F0',
+    backgroundColor: '#EAE3D5',
     flexShrink: 0,
   },
   cancelButton: {
@@ -368,8 +433,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8E6E3',
   },
   cancelButtonText: {
-    fontSize: 16,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant',
     fontWeight: '500',
     color: '#8A8478',
   },
@@ -378,14 +443,14 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 16,
     alignItems: 'center',
-    backgroundColor: '#4747FF',
+    backgroundColor: '#5C8A7A',
   },
   importButtonDisabled: {
     opacity: 0.5,
   },
   importButtonText: {
-    fontSize: 16,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant',
     fontWeight: '500',
     color: '#FFFFFF',
   },

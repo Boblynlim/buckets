@@ -10,11 +10,14 @@ export interface CSVExpense {
   bucket: string;
   amount: number;
   note: string;
-  worthRating: number;     // 1-5: "Was this worth it?"
-  alignmentRating: number; // 1-5: "Does this align with your priorities?"
+  worthIt: boolean;
+  isNecessary: boolean;
   category?: string;
   merchant?: string;
   needsVsWants?: 'need' | 'want';
+  // Legacy fields — kept for backward-compat parsing only
+  worthRating?: number;
+  alignmentRating?: number;
 }
 
 /**
@@ -33,8 +36,8 @@ export const exportExpensesToCSV = (
     'Bucket',
     'Amount',
     'Note',
-    'Worth Rating',
-    'Alignment Rating',
+    'Worth It',
+    'Necessary',
     'Category',
     'Merchant',
     'Needs vs Wants',
@@ -46,9 +49,8 @@ export const exportExpensesToCSV = (
     const bucket = bucketMap.get(expense.bucketId) || 'Unknown';
     const amount = expense.amount.toFixed(2);
     const note = `"${expense.note.replace(/"/g, '""')}"`; // Escape quotes
-    // Fall back to happinessRating for old records that predate the dual rating system
-    const worthRating = expense.worthRating ?? expense.happinessRating ?? '';
-    const alignmentRating = expense.alignmentRating ?? expense.happinessRating ?? '';
+    const worthIt = expense.worthIt ? 'yes' : 'no';
+    const isNecessary = expense.isNecessary ? 'yes' : 'no';
     const category = expense.category || '';
     const merchant = expense.merchant || '';
     const needsVsWants = expense.needsVsWants || '';
@@ -58,8 +60,8 @@ export const exportExpensesToCSV = (
       bucket,
       amount,
       note,
-      worthRating,
-      alignmentRating,
+      worthIt,
+      isNecessary,
       category,
       merchant,
       needsVsWants,
@@ -78,8 +80,8 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
     'Bucket',
     'Amount',
     'Note',
-    'Worth Rating',
-    'Alignment Rating',
+    'Worth It',
+    'Necessary',
     'Category',
     'Merchant',
     'Needs vs Wants',
@@ -93,8 +95,8 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
     `# - Available Buckets: ${buckets.map(b => b.name).join(', ')}`,
     '# - Amount: Number without currency symbol (e.g., 45.50)',
     '# - Note: Description in quotes if it contains commas',
-    '# - Worth Rating: 1-5 (Was this worth the money? 1=not at all, 5=absolutely)',
-    '# - Alignment Rating: 1-5 (Does this align with your priorities? 1=not at all, 5=perfectly)',
+    '# - Worth It: "yes" or "no" (was this purchase worth it?)',
+    '# - Necessary: "yes" or "no" (is this a necessary/essential expense?)',
     '# - Category: Optional (e.g., Food & Dining, Transportation)',
     '# - Merchant: Optional (e.g., Whole Foods, Uber)',
     '# - Needs vs Wants: Optional - either "need" or "want"',
@@ -114,8 +116,8 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
       firstBucket,
       '45.50',
       '"Weekly groceries"',
-      '4',
-      '4',
+      'yes',
+      'yes',
       'Food & Dining',
       'Whole Foods',
       'need',
@@ -125,8 +127,8 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
       secondBucket,
       '12.99',
       '"Subscription"',
-      '5',
-      '3',
+      'yes',
+      'no',
       'Entertainment',
       'Netflix',
       'want',
@@ -136,8 +138,8 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
       thirdBucket,
       '25.00',
       '"Ride to work"',
-      '3',
-      '5',
+      'no',
+      'no',
       'Transportation',
       'Uber',
       'need',
@@ -148,75 +150,84 @@ export const generateCSVTemplate = (buckets: Bucket[]): string => {
 };
 
 /**
+ * Detect CSV format from header line
+ */
+function detectFormat(headerLine: string): 'new' | 'legacy-dual' | 'legacy-single' {
+  const lower = headerLine.toLowerCase();
+  if (lower.includes('worth it') && lower.includes('necessary')) return 'new';
+  if (lower.includes('worth rating') || lower.includes('alignment rating')) return 'legacy-dual';
+  return 'legacy-single';
+}
+
+/**
  * Parse CSV string to expense data.
- * Supports both the new 9-column format (with Worth Rating + Alignment Rating)
- * and the legacy 8-column format (with a single Happiness Rating).
+ * Supports:
+ *  - New format: Date, Bucket, Amount, Note, Worth It, Necessary, Category, Merchant, Needs vs Wants
+ *  - Legacy 9-col: Date, Bucket, Amount, Note, Worth Rating, Alignment Rating, Category, Merchant, Needs vs Wants
+ *  - Legacy 8-col: Date, Bucket, Amount, Note, Happiness Rating, Category, Merchant, Needs vs Wants
  */
 export const parseCSVToExpenses = (
   csvString: string,
   buckets: Bucket[]
 ): CSVExpense[] => {
-  console.log('parseCSVToExpenses called');
-  console.log('Raw CSV text:', csvString.substring(0, 500));
-
   const lines = csvString.trim().split('\n');
-  console.log(`Total lines in CSV: ${lines.length}`);
 
   if (lines.length < 2) {
     throw new Error('CSV file is empty or invalid - need at least header and one data row');
   }
 
-  console.log('Header line:', lines[0]);
+  const format = detectFormat(lines[0]);
 
   // Skip header
   const dataLines = lines.slice(1);
-  console.log(`Data lines to process: ${dataLines.length}`);
-
   const expenses: CSVExpense[] = [];
 
   for (let i = 0; i < dataLines.length; i++) {
     const line = dataLines[i].trim();
-    if (!line) {
-      console.log(`Line ${i + 2}: Empty, skipping`);
-      continue;
-    }
-    if (line.startsWith('#')) {
-      console.log(`Line ${i + 2}: Comment, skipping`);
-      continue;
-    }
+    if (!line || line.startsWith('#')) continue;
 
     try {
       const fields = parseCSVLine(line);
-      console.log(`Line ${i + 2}: Parsed ${fields.length} fields:`, fields);
 
       if (fields.length < 5) {
         console.warn(`Line ${i + 2}: Not enough fields (need at least 5, got ${fields.length}), skipping`);
         continue;
       }
 
-      // Detect format by column count:
-      // Legacy (8 cols): Date, Bucket, Amount, Note, HappinessRating, Category, Merchant, NeedsVsWants
-      // New    (9 cols): Date, Bucket, Amount, Note, WorthRating, AlignmentRating, Category, Merchant, NeedsVsWants
-      const isLegacyFormat = fields.length === 8 ||
-        (fields.length >= 5 && !isNewFormatHeader(lines[0]));
-
       let dateStr: string,
           bucketName: string,
           amountStr: string,
           note: string,
-          worthRatingStr: string,
-          alignmentRatingStr: string,
-          category: string,
-          merchant: string,
-          needsVsWants: string;
+          worthIt = false,
+          isNecessary = false,
+          category = '',
+          merchant = '',
+          needsVsWants = '';
 
-      if (isLegacyFormat) {
-        [dateStr, bucketName, amountStr, note, worthRatingStr,
+      if (format === 'new') {
+        // New format: Date, Bucket, Amount, Note, Worth It, Necessary, Category, Merchant, Needs vs Wants
+        let worthItStr: string, necessaryStr: string;
+        [dateStr, bucketName, amountStr, note, worthItStr, necessaryStr,
          category = '', merchant = '', needsVsWants = ''] = fields;
-        alignmentRatingStr = worthRatingStr; // mirror the single rating into both
+
+        worthIt = worthItStr?.toLowerCase().trim() === 'yes';
+        isNecessary = necessaryStr?.toLowerCase().trim() === 'yes';
+      } else if (format === 'legacy-dual') {
+        // Legacy 9-col: Date, Bucket, Amount, Note, Worth Rating, Alignment Rating, ...
+        let worthRatingStr: string;
+        [dateStr, bucketName, amountStr, note, worthRatingStr, ,
+         category = '', merchant = '', needsVsWants = ''] = fields;
+
+        const wr = parseInt(worthRatingStr, 10);
+        worthIt = !isNaN(wr) && wr >= 4; // 4-5 = worth it
       } else {
-        [dateStr, bucketName, amountStr, note, worthRatingStr, alignmentRatingStr,
+        // Legacy 8-col: Date, Bucket, Amount, Note, Happiness Rating, Category, Merchant, Needs vs Wants
+        let happinessStr: string;
+        [dateStr, bucketName, amountStr, note, happinessStr,
          category = '', merchant = '', needsVsWants = ''] = fields;
+
+        const hr = parseInt(happinessStr, 10);
+        worthIt = !isNaN(hr) && hr >= 4;
       }
 
       // Validate date
@@ -231,43 +242,26 @@ export const parseCSVToExpenses = (
         throw new Error(`Invalid amount: ${amountStr}`);
       }
 
-      // Validate worth rating
-      const worthRating = parseInt(worthRatingStr, 10);
-      if (isNaN(worthRating) || worthRating < 1 || worthRating > 5) {
-        throw new Error(`Worth Rating must be 1-5, got: ${worthRatingStr}`);
-      }
-
-      // Validate alignment rating
-      const alignmentRating = parseInt(alignmentRatingStr, 10);
-      if (isNaN(alignmentRating) || alignmentRating < 1 || alignmentRating > 5) {
-        throw new Error(`Alignment Rating must be 1-5, got: ${alignmentRatingStr}`);
-      }
-
       // Validate needsVsWants if provided
       let validNeedsVsWants: 'need' | 'want' | undefined = undefined;
       if (needsVsWants) {
-        const normalized = needsVsWants.toLowerCase();
+        const normalized = needsVsWants.toLowerCase().trim();
         if (normalized === 'need' || normalized === 'want') {
           validNeedsVsWants = normalized;
-        } else {
-          console.warn(`Line ${i + 2}: Invalid needsVsWants value "${needsVsWants}", ignoring`);
         }
       }
 
-      const expense: CSVExpense = {
+      expenses.push({
         date: dateStr,
         bucket: bucketName.trim(),
         amount,
         note: note.trim(),
-        worthRating,
-        alignmentRating,
+        worthIt,
+        isNecessary,
         category: category.trim() || undefined,
         merchant: merchant.trim() || undefined,
         needsVsWants: validNeedsVsWants,
-      };
-
-      console.log(`Line ${i + 2}: Successfully parsed expense:`, expense);
-      expenses.push(expense);
+      });
     } catch (error) {
       const errorMsg = `Line ${i + 2}: ${(error as Error).message}`;
       console.error(errorMsg);
@@ -275,17 +269,8 @@ export const parseCSVToExpenses = (
     }
   }
 
-  console.log(`Total expenses parsed: ${expenses.length}`);
   return expenses;
 };
-
-/**
- * Check whether the header row belongs to the new 9-column format.
- */
-function isNewFormatHeader(headerLine: string): boolean {
-  const lower = headerLine.toLowerCase();
-  return lower.includes('worth rating') || lower.includes('alignment rating');
-}
 
 /**
  * Helper to parse a CSV line with quoted fields
@@ -353,8 +338,8 @@ export const generateGoogleSheetsTemplate = (buckets: Bucket[]): string => {
     '- Fill in your expenses below the header row',
     `- For Bucket column, use dropdown or type exactly: ${bucketNames}`,
     '- Date format: YYYY-MM-DD (e.g., 2024-01-15)',
-    '- Worth Rating: 1-5 (Was this worth the money? 1=not at all, 5=absolutely)',
-    '- Alignment Rating: 1-5 (Does this align with your priorities? 1=not at all, 5=perfectly)',
+    '- Worth It: "yes" or "no" (was this purchase worth the money?)',
+    '- Necessary: "yes" or "no" (is this an essential/necessary expense?)',
     '- Needs vs Wants: either "need" or "want"',
     '- Download as CSV when done: File > Download > CSV',
     '',

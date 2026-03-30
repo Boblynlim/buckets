@@ -10,15 +10,17 @@ import {
 } from 'react-native';
 import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import { TrendingUp, PiggyBank, Smile } from 'lucide-react-native';
+import { PotteryLoader } from '../components/PotteryLoader';
 
 export const Insights: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'recommendations' | 'emergency' | 'happiness'>('recommendations');
 
   // Get current user
-  const currentUser = useQuery(api.users.getCurrentUser);
+  const { user: currentUser } = useAuth();
 
   // Get recommendations
   const spendingRecs = useQuery(
@@ -44,31 +46,23 @@ export const Insights: React.FC = () => {
   if (!currentUser || !spendingRecs || !emergencyRecs || !happinessROI || !needsVsWants) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading insights...</Text>
-        </View>
+        <PotteryLoader message="Loading insights..." />
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>Insights</Text>
-          <View style={styles.headerSpacer} />
-        </View>
+      <View style={styles.pageHeader}>
+        <Text style={styles.pageTitle}>Insights</Text>
       </View>
-
       {/* Tabs */}
       <View style={styles.tabsContainer}>
         <TouchableOpacity
           style={[styles.tab, activeTab === 'recommendations' && styles.tabActive]}
           onPress={() => setActiveTab('recommendations')}
         >
-          <TrendingUp size={18} color={activeTab === 'recommendations' ? theme.colors.primary : theme.colors.textSecondary} strokeWidth={2} />
+          <TrendingUp size={18} color={activeTab === 'recommendations' ? '#245045' : theme.colors.textSecondary} strokeWidth={2} />
           <Text style={[styles.tabText, activeTab === 'recommendations' && styles.tabTextActive]}>
             Recommendations
           </Text>
@@ -78,7 +72,7 @@ export const Insights: React.FC = () => {
           style={[styles.tab, activeTab === 'emergency' && styles.tabActive]}
           onPress={() => setActiveTab('emergency')}
         >
-          <PiggyBank size={18} color={activeTab === 'emergency' ? theme.colors.primary : theme.colors.textSecondary} strokeWidth={2} />
+          <PiggyBank size={18} color={activeTab === 'emergency' ? '#245045' : theme.colors.textSecondary} strokeWidth={2} />
           <Text style={[styles.tabText, activeTab === 'emergency' && styles.tabTextActive]}>
             Emergency Fund
           </Text>
@@ -88,7 +82,7 @@ export const Insights: React.FC = () => {
           style={[styles.tab, activeTab === 'happiness' && styles.tabActive]}
           onPress={() => setActiveTab('happiness')}
         >
-          <Smile size={18} color={activeTab === 'happiness' ? theme.colors.primary : theme.colors.textSecondary} strokeWidth={2} />
+          <Smile size={18} color={activeTab === 'happiness' ? '#245045' : theme.colors.textSecondary} strokeWidth={2} />
           <Text style={[styles.tabText, activeTab === 'happiness' && styles.tabTextActive]}>
             Happiness ROI
           </Text>
@@ -261,8 +255,19 @@ export const Insights: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: 'transparent',
     maxHeight: '100vh' as any,
+  },
+  pageHeader: {
+    paddingTop: 40,
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+    fontWeight: '500',
   },
   header: {
     paddingHorizontal: 20,
@@ -284,12 +289,13 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant, monospace',
+    fontFamily: 'Merchant',
     letterSpacing: -1.2,
   },
   tabsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 20,
+    paddingTop: 16,
     gap: 12,
     marginBottom: 20,
   },
@@ -303,17 +309,17 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   tabActive: {
-    backgroundColor: theme.colors.purple100,
+    backgroundColor: 'rgba(160,208,192,0.25)',
   },
   tabText: {
-    fontSize: 15,
-    fontFamily: 'Merchant, monospace',
+    fontSize: 17,
+    fontFamily: 'Merchant',
     fontWeight: '400',
     color: theme.colors.textSecondary,
   },
   tabTextActive: {
     fontWeight: '500',
-    color: theme.colors.primary,
+    color: '#245045',
   },
   scrollView: {
     flex: 1,
@@ -326,13 +332,13 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 24,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 8,
   },
   sectionDescription: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     marginBottom: 20,
   },
@@ -345,8 +351,8 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   cardTitle: {
-    fontSize: 18,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 20,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 12,
   },
@@ -356,23 +362,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statLabel: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   statValue: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.text,
   },
   statLabelBold: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   statValueBold: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.primary,
   },
   recommendedRow: {
@@ -382,21 +388,21 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.border,
   },
   hint: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     marginTop: 4,
     fontStyle: 'italic',
   },
   emergencyAmount: {
-    fontSize: 36,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 28,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.primary,
     marginBottom: 8,
   },
   emergencyDescription: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   infoCard: {
@@ -406,13 +412,13 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   infoText: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 4,
   },
   infoValueText: {
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.primary,
   },
   needsWantsCard: {
@@ -432,8 +438,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   needsWantsLabel: {
-    fontSize: 13,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -441,13 +447,13 @@ const styles = StyleSheet.create({
   },
   needsWantsValue: {
     fontSize: 24,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     color: theme.colors.text,
     marginBottom: 4,
   },
   needsWantsPercent: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.primary,
   },
   roiCard: {
@@ -465,13 +471,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   roiCategory: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   roiScore: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.primary,
   },
   roiStats: {
@@ -479,8 +485,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   roiStat: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   emptyState: {
@@ -488,8 +494,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 18,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 20,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     textAlign: 'center',
   },
@@ -500,8 +506,8 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   loadingText: {
-    fontSize: 16,
+    fontSize: 18,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant, monospace',
+    fontFamily: 'Merchant',
   },
 });

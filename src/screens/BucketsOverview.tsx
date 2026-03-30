@@ -14,13 +14,15 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { DollarSign, Plus, Droplets, Search } from 'lucide-react-native';
-import { useQuery, useMutation } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { useAuth } from '../lib/AuthContext';
 import { BucketCard } from '../components/BucketCard';
 import { AddBucket } from './AddBucket';
 import type { Bucket } from '../types';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
+import { PotteryLoader } from '../components/PotteryLoader';
 
 type FilterTab = 'all' | 'low';
 
@@ -45,24 +47,13 @@ export const BucketsOverview: React.FC = () => {
   const currentMonthStart = new Date(_now.getFullYear(), _now.getMonth(), 1).getTime();
   const currentMonthEnd = new Date(_now.getFullYear(), _now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
 
-  const currentUser = useQuery(api.users.getCurrentUser);
-  const initDemoUser = useMutation(api.users.initDemoUser);
+  const { user: currentUser } = useAuth();
   const buckets = useQuery(
     api.buckets.getByUser,
     currentUser
       ? { userId: currentUser._id, monthStart: currentMonthStart, monthEnd: currentMonthEnd }
       : 'skip',
   );
-
-  // Initialize demo user if needed
-  React.useEffect(() => {
-    if (currentUser === null) {
-      console.log('No user found, initializing demo user...');
-      initDemoUser().catch(err => {
-        console.error('Error initializing demo user:', err);
-      });
-    }
-  }, [currentUser, initDemoUser]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -77,10 +68,7 @@ export const BucketsOverview: React.FC = () => {
   if (currentUser === undefined || buckets === undefined) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={theme.colors.primary} />
-          <Text style={styles.loadingText}>Loading buckets...</Text>
-        </View>
+        <PotteryLoader message="Loading buckets..." />
       </SafeAreaView>
     );
   }
@@ -281,7 +269,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 48,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.primary,
     letterSpacing: -1.2,
   },
@@ -303,7 +291,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: '#1A1A1A',
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
   },
   tabsContainer: {
     flexDirection: 'row',
@@ -312,16 +300,16 @@ const styles = StyleSheet.create({
   },
   tabText: {
     fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   tabTextActive: {
     color: theme.colors.primary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
   },
   tabCount: {
     fontSize: 12,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   scrollView: {
@@ -338,7 +326,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 20,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 6,
     letterSpacing: -0.4,
@@ -346,7 +334,7 @@ const styles = StyleSheet.create({
   emptyStateSubtext: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
     textAlign: 'center',
   },
   actionButtonsContainer: {
@@ -376,6 +364,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant, monospace',
+    fontFamily: 'Merchant',
   },
 });

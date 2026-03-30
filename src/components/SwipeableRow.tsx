@@ -13,6 +13,7 @@ interface SwipeableRowProps {
   children: React.ReactNode;
   onDelete: () => void;
   deleteText?: string;
+  containerStyle?: any;
 }
 
 const SWIPE_THRESHOLD = -80;
@@ -22,6 +23,7 @@ export const SwipeableRow: React.FC<SwipeableRowProps> = ({
   children,
   onDelete,
   deleteText = 'Delete',
+  containerStyle,
 }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const swipeGestureActive = useRef(false);
@@ -91,7 +93,7 @@ export const SwipeableRow: React.FC<SwipeableRowProps> = ({
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, containerStyle]}>
       {/* Delete button (hidden behind) */}
       <View style={styles.deleteContainer}>
         <TouchableOpacity
@@ -149,11 +151,11 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: '600',
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
   },
   content: {
-    backgroundColor: '#FDFCFB',
+    backgroundColor: '#F5F0E7',
   },
 });

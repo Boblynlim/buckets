@@ -1,11 +1,11 @@
 {
-  "name": "Buckets - Personal Budgeting",
-  "short_name": "Buckets",
+  "name": "Kamidana - Personal Budgeting",
+  "short_name": "Kamidana",
   "description": "A personal budgeting app to track expenses and manage your finances",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#F5F3F0",
-  "theme_color": "#4747FF",
+  "background_color": "#5C3D2E",
+  "theme_color": "#5C3D2E",
   "orientation": "portrait",
   "scope": "/",
   "icons": [

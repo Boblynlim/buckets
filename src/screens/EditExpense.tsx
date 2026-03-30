@@ -1,24 +1,108 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TextInput,
   TouchableOpacity,
   ScrollView,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
-// Navigation imports handled conditionally below
+import { motion } from 'framer-motion';
 import type { RouteProp } from '@react-navigation/native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
+import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
-import { getFontFamily } from '../theme/fonts';
+import { getCupForBucketId } from '../constants/bucketIcons';
 import type { Expense, Bucket } from '../types';
 import { DatePicker } from '../components/DatePicker';
 import { Drawer } from '../components/Drawer';
+
+// ── Sound (same pentatonic chime as BucketDetail) ────────────────────────
+const CHIME_NOTES = [
+  987.77, 1108.73, 1174.66, 1318.51, 1479.98,
+  1567.98, 1760.00, 1975.53, 2217.46, 2349.32,
+];
+
+const playWorthItSound = () => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const t = ctx.currentTime;
+    const chime = (freq: number, start: number, dur: number, vol: number) => {
+      const osc = ctx.createOscillator();
+      const harmonic = ctx.createOscillator();
+      const g = ctx.createGain();
+      const hg = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      harmonic.type = 'sine';
+      harmonic.frequency.value = freq * 2.02;
+      g.gain.setValueAtTime(vol, t + start);
+      g.gain.exponentialRampToValueAtTime(vol * 0.3, t + start + dur * 0.3);
+      g.gain.exponentialRampToValueAtTime(0.001, t + start + dur);
+      hg.gain.setValueAtTime(vol * 0.12, t + start);
+      hg.gain.exponentialRampToValueAtTime(0.001, t + start + dur * 0.6);
+      osc.connect(g).connect(ctx.destination);
+      harmonic.connect(hg).connect(ctx.destination);
+      osc.start(t + start);
+      osc.stop(t + start + dur);
+      harmonic.start(t + start);
+      harmonic.stop(t + start + dur);
+    };
+    const shuffled = [...CHIME_NOTES].sort(() => Math.random() - 0.5);
+    chime(shuffled[0], 0, 0.4 + Math.random() * 0.2, 0.09);
+    chime(shuffled[1], 0.05 + Math.random() * 0.06, 0.35 + Math.random() * 0.15, 0.06);
+  } catch (_) {}
+};
+
+// ── Confetti ─────────────────────────────────────────────────────────────
+const CONFETTI_COLORS = ['#c4d4bc', '#b5c9ad', '#a8bca0', '#d0d8c6', '#B8986A', '#C2BDB0'];
+interface ConfettiState { id: number; x: number; y: number; }
+
+const ConfettiParticle: React.FC<{
+  cx: number; cy: number; delay: number; color: string; size: number; dx: number; dy: number;
+}> = ({ cx, cy, delay, color, size, dx, dy }) => (
+  <motion.div
+    style={{
+      position: 'fixed', width: size, height: size,
+      borderRadius: Math.random() > 0.5 ? '50%' : 2,
+      backgroundColor: color, left: cx, top: cy,
+      pointerEvents: 'none' as any, zIndex: 9999,
+    }}
+    initial={{ x: 0, y: 0, opacity: 1, scale: 1, rotate: 0 }}
+    animate={{ x: dx, y: dy, opacity: 0, scale: 0.2, rotate: Math.random() * 540 - 270 }}
+    transition={{ duration: 0.55 + Math.random() * 0.25, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
+  />
+);
+
+const ButtonConfetti: React.FC<{ bursts: ConfettiState[] }> = ({ bursts }) => {
+  if (bursts.length === 0) return null;
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, width: 0, height: 0, pointerEvents: 'none' as any, zIndex: 9999 }}>
+      {bursts.map(burst =>
+        Array.from({ length: 10 }, (_, i) => {
+          const angle = (Math.PI * 2 * i) / 10 + (Math.random() - 0.5) * 0.6;
+          const dist = 30 + Math.random() * 40;
+          return (
+            <ConfettiParticle
+              key={`${burst.id}-${i}`}
+              cx={burst.x} cy={burst.y}
+              dx={Math.cos(angle) * dist} dy={Math.sin(angle) * dist - 20}
+              delay={Math.random() * 0.06}
+              color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
+              size={4 + Math.random() * 3}
+            />
+          );
+        })
+      )}
+    </div>
+  );
+};
+
+// ─────────────────────────────────────────────────────────────────────────
 
 type EditExpenseRouteProp = RouteProp<{ EditExpense: { expense: Expense; bucket: Bucket } }, 'EditExpense'>;
 
@@ -30,40 +114,34 @@ interface EditExpenseProps {
 }
 
 export const EditExpense: React.FC<EditExpenseProps> = (props) => {
-  // Safely get navigation (will be null on web)
   let route: any = null;
   let navigation: any = null;
-
   try {
     const { useRoute, useNavigation } = require('@react-navigation/native');
     route = useRoute() as EditExpenseRouteProp;
     navigation = useNavigation();
-  } catch (error) {
-    // Not in navigation context (web) - use props instead
-  }
+  } catch (error) {}
 
-  // Support both prop-based (web/modal) and route-based (mobile navigation) usage
   const expense = props.expense || route?.params?.expense;
   const bucket = props.bucket || route?.params?.bucket;
   const visible = props.visible !== undefined ? props.visible : true;
   const onClose = props.onClose || (() => navigation?.goBack());
 
-  if (!expense || !bucket) {
-    return null;
-  }
+  if (!expense || !bucket) return null;
 
   const [amount, setAmount] = useState((expense._id as any) === 'new' ? '' : expense.amount.toString());
   const [note, setNote] = useState(expense.note);
-  const [worthRating, setWorthRating] = useState(expense.worthRating ?? 3);
-  const [alignmentRating, setAlignmentRating] = useState(expense.alignmentRating ?? 3);
+  const [worthIt, setWorthIt] = useState(expense.worthIt ?? false);
+  const [isNecessary, setIsNecessary] = useState(expense.isNecessary ?? false);
   const [date, setDate] = useState(new Date(expense.date));
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showBucketPicker, setShowBucketPicker] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [confettiBursts, setConfettiBursts] = useState<ConfettiState[]>([]);
+  const burstIdRef = useRef(0);
 
-  // Get current user and buckets
-  const currentUser = useQuery(api.users.getCurrentUser);
+  const { user: currentUser } = useAuth();
   const buckets = useQuery(
     api.buckets.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
@@ -76,76 +154,46 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   const allBuckets = buckets || [];
   const [selectedBucket, setSelectedBucket] = useState(bucket);
 
-  // Helper function to calculate available balance based on bucket mode
-  const getAvailableBalance = (bucket: any) => {
-    if (!bucket) return 0;
-
-    if (bucket.bucketMode === 'spend') {
-      // For spend buckets: (funded + carryover) - spent
-      const funded = bucket.fundedAmount || 0;
-      const carryover = bucket.carryoverBalance || 0;
-      const spent = bucket.spentAmount || 0;
-      return (funded + carryover) - spent; // Can be negative if overspent
-    } else {
-      // For save buckets: current balance
-      return bucket.currentBalance || 0;
+  const getAvailableBalance = (b: any) => {
+    if (!b) return 0;
+    if (b.bucketMode === 'spend') {
+      return (b.fundedAmount || 0) + (b.carryoverBalance || 0) - (b.spentAmount || 0);
     }
+    return b.currentBalance || 0;
   };
 
+  const handleWorthItPress = useCallback((e: any) => {
+    if (worthIt) { setWorthIt(false); return; }
+    setWorthIt(true);
+    setIsNecessary(false);
+    playWorthItSound();
+    const rect = e?.currentTarget?.getBoundingClientRect?.();
+    if (rect) {
+      const id = ++burstIdRef.current;
+      setConfettiBursts(prev => [...prev, { id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }]);
+      setTimeout(() => setConfettiBursts(prev => prev.filter(b => b.id !== id)), 1000);
+    }
+  }, [worthIt]);
+
   const isValid = amount && parseFloat(amount) > 0;
-  const worthEmojis = ['💸', '😕', '😐', '👍', '💎'];
-  const worthLabels = ['Waste', 'Regret', 'Okay', 'Good', 'Worth It'];
-  const alignmentEmojis = ['❌', '🤔', '😐', '✓', '🎯'];
-  const alignmentLabels = ['Not at all', 'Somewhat', 'Neutral', 'Mostly', 'Perfectly'];
 
   const handleSave = async () => {
-    // Prevent duplicate submissions
-    if (isSaving) {
-      return;
-    }
-
-    if (!isValid || !currentUser) {
-      alert('Please enter a valid amount');
-      return;
-    }
-
-    const newAmount = parseFloat(amount);
-    const amountDiff = newAmount - expense.amount;
-
-    // Check if new bucket has sufficient balance (if changing buckets or increasing amount)
-    // Skip for new expenses — overspending is allowed (debt rolls over)
-    if (!isNewExpense && (selectedBucket._id !== bucket._id || amountDiff > 0)) {
-      const targetBucket = selectedBucket._id !== bucket._id ? selectedBucket : bucket;
-      const requiredBalance = selectedBucket._id !== bucket._id ? newAmount : amountDiff;
-      const availableBalance = getAvailableBalance(targetBucket);
-
-      if (availableBalance < requiredBalance) {
-        alert(
-          `Insufficient balance in ${targetBucket.name}.\nAvailable: $${availableBalance.toFixed(2)}\nRequired: $${requiredBalance.toFixed(2)}`
-        );
-        return;
-      }
-    }
+    if (isSaving) return;
+    if (!isValid || !currentUser) { alert('Please enter a valid amount'); return; }
 
     try {
       setIsSaving(true);
+      const newAmount = parseFloat(amount);
 
       if (isNewExpense) {
-        if (!currentUser) {
-          alert('Please try again');
-          setIsSaving(false);
-          return;
-        }
         await createExpense({
           userId: currentUser._id,
           bucketId: selectedBucket._id as any,
           amount: newAmount,
           date: date.getTime(),
           note: note.trim(),
-          worthRating,
-          alignmentRating,
+          worthIt: isNecessary ? false : worthIt,
         });
-        alert('Expense added successfully!');
       } else {
         await updateExpense({
           expenseId: expense._id as any,
@@ -153,249 +201,180 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
           amount: newAmount,
           date: date.getTime(),
           note: note.trim(),
-          worthRating,
-          alignmentRating,
+          worthIt: isNecessary ? false : worthIt,
+          isNecessary,
         });
-        alert('Expense updated successfully!');
       }
       setIsSaving(false);
-
-      // Close modal or navigate back
-      if (onClose) {
-        onClose();
-      }
+      if (onClose) onClose();
     } catch (error: any) {
-      console.error('Failed to update expense:', error);
-      alert(error.message || 'Failed to update expense. Please try again.');
+      console.error('Failed to save expense:', error);
+      alert(error.message || 'Failed to save expense.');
       setIsSaving(false);
     }
-  };
-
-  const handleDelete = () => {
-    setShowDeleteConfirm(true);
   };
 
   const confirmDelete = async () => {
     setShowDeleteConfirm(false);
-
     try {
       await removeExpense({ expenseId: expense._id as any });
-
-      alert('Expense deleted successfully!\nBalance refunded to bucket.');
-
-      // Close modal or navigate back
-      if (onClose) {
-        onClose();
-      }
+      if (onClose) onClose();
     } catch (error: any) {
       console.error('Failed to delete expense:', error);
-      alert(error.message || 'Failed to delete expense. Please try again.');
+      alert(error.message || 'Failed to delete expense.');
     }
   };
 
-  const formatDate = (timestamp: number) => {
-    const date = new Date(timestamp);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-  };
-
   const content = (
-    <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        showsVerticalScrollIndicator={false}>
+    <View style={styles.container}>
+      <ButtonConfetti bursts={confettiBursts} />
+
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity onPress={onClose}>
             <Text style={styles.cancelButton}>Cancel</Text>
           </TouchableOpacity>
           <Text style={styles.title}>{isNewExpense ? 'Add Expense' : 'Edit Expense'}</Text>
-          <TouchableOpacity
-            onPress={handleSave}
-            disabled={!isValid || isSaving}
-          >
-            <Text
-              style={[
-                styles.saveButton,
-                (!isValid || isSaving) && styles.saveButtonDisabled,
-              ]}>
+          <TouchableOpacity onPress={handleSave} disabled={!isValid || isSaving}>
+            <Text style={[styles.saveButton, (!isValid || isSaving) && styles.saveButtonDisabled]}>
               {isSaving ? 'Saving...' : 'Save'}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* Amount Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Amount</Text>
-          <View style={styles.amountContainer}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor={theme.colors.textTertiary}
-            />
-          </View>
+        {/* Date chip */}
+        <View style={styles.dateChipRow}>
+          <Pressable style={styles.dateChip} onPress={() => setShowDatePicker(true)}>
+            <Text style={styles.dateChipText}>
+              {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </Text>
+          </Pressable>
         </View>
 
-        {/* Bucket Selector */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Bucket</Text>
-          <Pressable
-            style={styles.bucketSelector}
-            onPress={() => setShowBucketPicker(!showBucketPicker)}>
-            <View style={styles.bucketSelectorContent}>
-              <View
-                style={[
-                  styles.bucketColorDot,
-                  { backgroundColor: selectedBucket.color },
-                ]}
-              />
-              <Text style={styles.bucketSelectorText}>
-                {selectedBucket.name}
-              </Text>
-            </View>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
+        {/* Hero Amount */}
+        <View style={styles.amountHero}>
+          <Text style={styles.amountCurrency}>$</Text>
+          <TextInput
+            style={styles.amountInput}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor="rgba(61,50,41,0.15)"
+            textAlign="center"
+          />
+        </View>
 
-          {/* Bucket Picker */}
-          {showBucketPicker && (
-            <View style={styles.bucketPicker}>
-              {allBuckets.map(b => (
+        {/* Bucket Selector — tap to open grid */}
+        <Pressable
+          style={styles.bucketSelector}
+          onPress={() => setShowBucketPicker(!showBucketPicker)}
+        >
+          {selectedBucket ? (
+            <>
+              <Image
+                source={getCupForBucketId(selectedBucket._id, selectedBucket.icon)}
+                style={styles.bucketSelectorImage}
+                resizeMode="contain"
+              />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bucketSelectorName}>{selectedBucket.name}</Text>
+                <Text style={styles.bucketSelectorBalance}>
+                  ${getAvailableBalance(selectedBucket).toFixed(2)} available
+                </Text>
+              </View>
+            </>
+          ) : (
+            <Text style={styles.bucketSelectorPlaceholder}>Select a bucket</Text>
+          )}
+        </Pressable>
+
+        {/* Bucket Grid Picker */}
+        {showBucketPicker && (
+          <View style={styles.bucketGrid}>
+            {allBuckets.map((b: any) => {
+              const isSelected = selectedBucket?._id === b._id;
+              return (
                 <TouchableOpacity
                   key={b._id}
-                  style={[
-                    styles.bucketOption,
-                    selectedBucket._id === b._id &&
-                      styles.bucketOptionSelected,
-                  ]}
-                  onPress={() => {
-                    setSelectedBucket(b);
-                    setShowBucketPicker(false);
-                  }}>
-                  <View
-                    style={[
-                      styles.bucketColorDot,
-                      { backgroundColor: b.color },
-                    ]}
+                  style={[styles.bucketGridItem, isSelected && styles.bucketGridItemSelected]}
+                  onPress={() => { setSelectedBucket(b); setShowBucketPicker(false); }}
+                  activeOpacity={0.7}
+                >
+                  <Image
+                    source={getCupForBucketId(b._id, b.icon)}
+                    style={styles.bucketGridImage}
+                    resizeMode="contain"
                   />
-                  <Text style={styles.bucketOptionText}>{b.name}</Text>
-                  <Text style={styles.bucketBalance}>
-                    ${(b.currentBalance || 0).toFixed(2)}
+                  <Text style={[styles.bucketGridName, isSelected && styles.bucketGridNameSelected]} numberOfLines={1}>
+                    {b.name}
                   </Text>
-                  {selectedBucket._id === b._id && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
+                  <Text style={styles.bucketGridBalance}>
+                    ${getAvailableBalance(b).toFixed(0)}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
+              );
+            })}
+          </View>
+        )}
 
-        {/* Note Input */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Note</Text>
+        {/* Note */}
+        <View style={styles.noteSection}>
           <TextInput
             style={styles.noteInput}
             value={note}
             onChangeText={setNote}
-            placeholder="What did you buy?"
-            placeholderTextColor={theme.colors.textTertiary}
-            multiline
+            placeholder="what did you buy?"
+            placeholderTextColor="rgba(61,50,41,0.25)"
           />
         </View>
 
-        {/* Worth Rating */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Was this worth the money?
-          </Text>
-          <View style={styles.ratingContainer}>
-            {[1, 2, 3, 4, 5].map(rating => (
-              <TouchableOpacity
-                key={rating}
-                style={[
-                  styles.ratingButton,
-                  worthRating === rating && styles.ratingButtonSelected,
-                ]}
-                onPress={() => setWorthRating(rating)}>
-                <Text style={styles.ratingEmoji}>
-                  {worthEmojis[rating - 1]}
-                </Text>
-                <Text
-                  style={[
-                    styles.ratingLabel,
-                    worthRating === rating && styles.ratingLabelSelected,
-                  ]}>
-                  {worthLabels[rating - 1]}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+        {/* Worth It / Necessary — with sound + confetti */}
+        <View style={styles.worthItSection}>
+          <View style={styles.worthItRow}>
+            <TouchableOpacity
+              style={[styles.worthItBtn, !worthIt && !isNecessary && styles.worthItBtnNotWorth]}
+              onPress={() => { setWorthIt(false); setIsNecessary(false); }}
+            >
+              <Text style={[styles.worthItBtnText, !worthIt && !isNecessary && styles.worthItBtnTextNotWorth]}>
+                NOT WORTH IT
+              </Text>
+            </TouchableOpacity>
 
-        {/* Alignment Rating */}
-        <View style={styles.section}>
-          <Text style={styles.label}>
-            Does this align with your priorities?
-          </Text>
-          <View style={styles.ratingContainer}>
-            {[1, 2, 3, 4, 5].map(rating => (
-              <TouchableOpacity
-                key={rating}
-                style={[
-                  styles.ratingButton,
-                  alignmentRating === rating && styles.ratingButtonSelected,
-                ]}
-                onPress={() => setAlignmentRating(rating)}>
-                <Text style={styles.ratingEmoji}>
-                  {alignmentEmojis[rating - 1]}
-                </Text>
-                <Text
-                  style={[
-                    styles.ratingLabel,
-                    alignmentRating === rating && styles.ratingLabelSelected,
-                  ]}>
-                  {alignmentLabels[rating - 1]}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+            <TouchableOpacity
+              style={[styles.worthItBtn, worthIt && styles.worthItBtnWorth]}
+              onPress={handleWorthItPress}
+            >
+              <Text style={[styles.worthItBtnText, worthIt && styles.worthItBtnTextWorth]}>
+                WORTH IT
+              </Text>
+            </TouchableOpacity>
 
-        {/* Date Section */}
-        <View style={styles.section}>
-          <Text style={styles.label}>Date</Text>
-          <Pressable
-            style={styles.dateDisplay}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Text style={styles.dateText}>{date.toLocaleDateString()}</Text>
-            <Text style={styles.chevron}>›</Text>
-          </Pressable>
+            <TouchableOpacity
+              style={[styles.worthItBtn, isNecessary && styles.worthItBtnNecessary]}
+              onPress={() => { setIsNecessary(true); setWorthIt(false); }}
+            >
+              <Text style={[styles.worthItBtnText, isNecessary && styles.worthItBtnTextNecessary]}>
+                NECESSARY
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Delete Button */}
         {!isNewExpense && (
           <View style={styles.deleteSection}>
-            <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+            <TouchableOpacity style={styles.deleteButton} onPress={() => setShowDeleteConfirm(true)}>
               <Text style={styles.deleteButtonText}>Delete Expense</Text>
             </TouchableOpacity>
-            <Text style={styles.deleteHint}>
-              Balance will be refunded to bucket
-            </Text>
           </View>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 60 }} />
       </ScrollView>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation */}
       <Modal
         visible={showDeleteConfirm}
         animationType="fade"
@@ -423,36 +402,29 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
         </View>
       </Modal>
 
-      {/* Date Picker */}
       <DatePicker
         visible={showDatePicker}
         selectedDate={date}
         onSelectDate={setDate}
         onClose={() => setShowDatePicker(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 
-  // If visible prop is provided (web), wrap in Drawer
   if (onClose) {
     return (
-      <Drawer
-        visible={visible}
-        onClose={onClose}
-        fullScreen>
+      <Drawer visible={visible} onClose={onClose} fullScreen>
         {content}
       </Drawer>
     );
   }
-
-  // Otherwise return content directly (native navigation)
   return content;
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: '#EAE3D5',
   },
   scrollView: {
     flex: 1,
@@ -461,197 +433,209 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
   },
   title: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.text,
+    fontSize: 20,
+    fontFamily: 'Merchant',
+    fontWeight: '500',
+    color: '#1A1A1A',
+    letterSpacing: -0.3,
   },
   cancelButton: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.primary,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
   },
   saveButton: {
-    fontSize: 14,
+    fontSize: 16,
     color: theme.colors.primary,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
+    fontWeight: '500',
   },
   saveButtonDisabled: {
-    color: theme.colors.textTertiary,
+    color: '#B5AFA5',
   },
-  section: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    backgroundColor: theme.colors.backgroundLight,
+
+  // Date chip
+  dateChipRow: {
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  dateChip: {
+    backgroundColor: 'rgba(61,50,41,0.06)',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     borderRadius: 20,
-    padding: 18,
   },
-  label: {
-    fontSize: 13,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.textSecondary,
-    marginBottom: 12,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  dateChipText: {
+    fontSize: 15,
+    fontFamily: 'Merchant Copy',
+    color: '#877E6F',
   },
-  amountContainer: {
+
+  // Hero amount
+  amountHero: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    paddingHorizontal: 12,
+    justifyContent: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 40,
   },
-  currencySymbol: {
-    fontSize: 16,
-    fontWeight: '400',
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy, monospace',
-    marginRight: 8,
+  amountCurrency: {
+    fontSize: 32,
+    fontFamily: 'Merchant Copy',
+    color: 'rgba(61,50,41,0.3)',
+    marginRight: 4,
   },
   amountInput: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '400',
-    color: theme.colors.text,
-    fontFamily: 'Merchant Copy, monospace',
-    paddingVertical: 12,
-    minHeight: 24,
+    fontSize: 48,
+    fontFamily: 'Merchant Copy',
+    color: '#1A1A1A',
+    letterSpacing: -2,
+    minWidth: 120,
+    paddingVertical: 0,
   },
+
+  // Bucket selector
   bucketSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: theme.colors.cardBackground,
+    marginHorizontal: 24,
+    marginBottom: 8,
     paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
+    gap: 12,
   },
-  bucketSelectorContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  bucketSelectorImage: {
+    width: 44,
+    height: 44,
   },
-  bucketColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 10,
-  },
-  bucketSelectorText: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
-  },
-  chevron: {
+  bucketSelectorName: {
     fontSize: 20,
-    color: theme.colors.textTertiary,
+    fontFamily: 'Merchant',
+    color: '#1A1A1A',
   },
-  bucketPicker: {
-    marginTop: 8,
-    borderRadius: 12,
-    overflow: 'hidden',
-    backgroundColor: theme.colors.cardBackground,
+  bucketSelectorBalance: {
+    fontSize: 16,
+    fontFamily: 'Merchant Copy',
+    color: '#8ac0ae',
+    marginTop: 2,
   },
-  bucketOption: {
+  bucketSelectorPlaceholder: {
+    fontSize: 20,
+    fontFamily: 'Merchant',
+    color: 'rgba(61,50,41,0.25)',
+  },
+
+  // Bucket grid picker
+  bucketGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    marginBottom: 16,
+    gap: 8,
+  },
+  bucketGridItem: {
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    width: '23%' as any,
+    opacity: 0.6,
   },
-  bucketOptionSelected: {
-    backgroundColor: theme.colors.purple100,
+  bucketGridItemSelected: {
+    opacity: 1,
+    backgroundColor: 'rgba(160,208,192,0.15)',
   },
-  bucketOptionText: {
-    flex: 1,
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
+  bucketGridImage: {
+    width: 32,
+    height: 32,
+    marginBottom: 4,
   },
-  bucketBalance: {
-    fontSize: 16,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy, monospace',
-    marginRight: 8,
+  bucketGridName: {
+    fontSize: 12,
+    fontFamily: 'Merchant',
+    color: '#877E6F',
+    textAlign: 'center',
   },
-  checkmark: {
-    fontSize: 18,
-    color: theme.colors.primary,
+  bucketGridNameSelected: {
+    color: '#245045',
     fontWeight: '500',
+  },
+  bucketGridBalance: {
+    fontSize: 12,
+    fontFamily: 'Merchant Copy',
+    color: '#8ac0ae',
+    marginTop: 1,
+  },
+
+  // Note
+  noteSection: {
+    paddingHorizontal: 24,
+    marginBottom: 24,
   },
   noteInput: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: getFontFamily('regular'),
-    backgroundColor: theme.colors.cardBackground,
+    fontSize: 20,
+    fontFamily: 'Merchant',
+    color: '#1A1A1A',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(61,50,41,0.1)',
     paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    minHeight: 80,
-    textAlignVertical: 'top',
+    textAlign: 'center',
   },
-  ratingContainer: {
+
+  // Worth it
+  worthItSection: {
+    paddingHorizontal: 24,
+  },
+  worthItRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
+    gap: 8,
   },
-  ratingButton: {
+  worthItBtn: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    backgroundColor: theme.colors.cardBackground,
-    minHeight: 80,
-  },
-  ratingButtonSelected: {
-    backgroundColor: theme.colors.primary,
-  },
-  ratingEmoji: {
-    fontSize: 28,
-    marginBottom: 4,
-    lineHeight: 32,
-    textAlign: 'center',
-  },
-  ratingLabel: {
-    fontSize: 11,
-    color: theme.colors.textSecondary,
-    fontWeight: '500',
-    fontFamily: getFontFamily('regular'),
-    textAlign: 'center',
-  },
-  ratingLabelSelected: {
-    color: theme.colors.textOnPrimary,
-  },
-  infoSection: {
-    marginHorizontal: 20,
-    marginTop: 12,
-    backgroundColor: theme.colors.purple100,
-    borderRadius: 20,
-    padding: 18,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: 'rgba(61,50,41,0.1)',
     alignItems: 'center',
   },
-  infoLabel: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
-    color: theme.colors.text,
+  worthItBtnNotWorth: {
+    backgroundColor: 'rgba(212,184,154,0.3)',
+    borderColor: '#c9a882',
   },
-  infoValue: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.primary,
+  worthItBtnWorth: {
+    backgroundColor: '#a0d0c0',
+    borderColor: '#8ac4b2',
   },
+  worthItBtnNecessary: {
+    backgroundColor: 'rgba(61,50,41,0.06)',
+    borderColor: 'rgba(61,50,41,0.15)',
+  },
+  worthItBtnText: {
+    fontSize: 12,
+    fontFamily: 'Merchant',
+    color: 'rgba(61,50,41,0.3)',
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  worthItBtnTextNotWorth: {
+    color: '#a08060',
+  },
+  worthItBtnTextWorth: {
+    color: '#245045',
+  },
+  worthItBtnTextNecessary: {
+    color: 'rgba(61,50,41,0.4)',
+  },
+
+  // Delete
   deleteSection: {
-    marginHorizontal: 20,
-    marginTop: 24,
     alignItems: 'center',
+    marginTop: 32,
   },
   deleteButton: {
     paddingVertical: 14,
@@ -660,16 +644,12 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.danger,
   },
   deleteButtonText: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.textOnPrimary,
   },
-  deleteHint: {
-    fontSize: 12,
-    color: theme.colors.textSecondary,
-    fontFamily: getFontFamily('regular'),
-    marginTop: 8,
-  },
+
+  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -684,15 +664,15 @@ const styles = StyleSheet.create({
     maxWidth: 340,
   },
   modalTitle: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 12,
     textAlign: 'center',
   },
   modalMessage: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
@@ -715,27 +695,13 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.danger,
   },
   modalButtonTextCancel: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   modalButtonTextDelete: {
-    fontSize: 14,
-    fontFamily: getFontFamily('bold'),
-    color: theme.colors.textOnPrimary,
-  },
-  dateDisplay: {
-    backgroundColor: '#FFFFFF',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dateText: {
     fontSize: 16,
-    color: '#2D2D2D',
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant',
+    color: theme.colors.textOnPrimary,
   },
 });

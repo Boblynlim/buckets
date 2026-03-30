@@ -17,54 +17,38 @@ export const create = mutation({
     amount: v.number(),
     date: v.number(),
     note: v.string(),
-    // New dual rating system
+    // Binary worth-it rating (default: false)
+    worthIt: v.optional(v.boolean()),
+    // Legacy fields
     worthRating: v.optional(v.number()),
     alignmentRating: v.optional(v.number()),
-    // Legacy field for backward compatibility
     happinessRating: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    // Check if bucket exists and has sufficient balance
     const bucket = await ctx.db.get(args.bucketId);
     if (!bucket) {
       throw new Error("Bucket not found");
     }
 
-    // Allow overspending - the bucket will show negative balance
-    // This is intentionally commented out to allow debt tracking
-    // Users can overspend and the debt will roll over to next month
-    /*
-    if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
-      const fundedAmount = bucket.fundedAmount || 0;
-      const carryover = bucket.carryoverBalance || 0;
-      const totalAvailable = fundedAmount + carryover;
+    // Check if this note is remembered as necessary
+    const normalizedNote = args.note.toLowerCase().trim();
+    const necessaryNotes = await ctx.db
+      .query("necessaryNotes")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+    const isAutoNecessary = necessaryNotes.some((n) => n.note === normalizedNote);
 
-      const existingExpenses = await ctx.db
-        .query("expenses")
-        .withIndex("by_bucket", (q) => q.eq("bucketId", args.bucketId))
-        .collect();
-      const alreadySpent = existingExpenses.reduce((sum, e) => sum + e.amount, 0);
-
-      const available = totalAvailable - alreadySpent;
-
-      if (available < args.amount) {
-        throw new Error(
-          `Insufficient balance in ${bucket.name}. Available: $${available.toFixed(2)}, Required: $${args.amount.toFixed(2)}. Add income to your buckets first!`
-        );
-      }
-    }
-    */
-
-    // Create expense
     const expenseId = await ctx.db.insert("expenses", {
       userId: args.userId,
       bucketId: args.bucketId,
       amount: args.amount,
       date: args.date,
       note: args.note,
+      worthIt: args.worthIt ?? false,
+      isNecessary: isAutoNecessary || undefined,
       worthRating: args.worthRating,
       alignmentRating: args.alignmentRating,
-      happinessRating: args.happinessRating, // Keep for backward compatibility
+      happinessRating: args.happinessRating,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -134,6 +118,8 @@ export const update = mutation({
     bucketId: v.optional(v.id("buckets")),
     date: v.optional(v.number()),
     note: v.optional(v.string()),
+    worthIt: v.optional(v.boolean()),
+    isNecessary: v.optional(v.boolean()),
     worthRating: v.optional(v.number()),
     alignmentRating: v.optional(v.number()),
     happinessRating: v.optional(v.number()),
@@ -233,6 +219,7 @@ export const bulkImport = mutation({
       amount: v.number(),
       date: v.number(), // timestamp
       note: v.string(),
+      worthIt: v.optional(v.boolean()),
       worthRating: v.optional(v.number()),
       alignmentRating: v.optional(v.number()),
       happinessRating: v.optional(v.number()),
@@ -287,6 +274,7 @@ export const bulkImport = mutation({
           amount: expense.amount,
           date: expense.date,
           note: expense.note,
+          worthIt: expense.worthIt ?? false,
           worthRating: expense.worthRating,
           alignmentRating: expense.alignmentRating,
           happinessRating: expense.happinessRating,
@@ -305,5 +293,139 @@ export const bulkImport = mutation({
     }
 
     return results;
+  },
+});
+
+// Mark a single expense as necessary
+export const markNecessary = mutation({
+  args: {
+    expenseId: v.id("expenses"),
+    isNecessary: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const expense = await ctx.db.get(args.expenseId);
+    if (!expense) throw new Error("Expense not found");
+    await ctx.db.patch(args.expenseId, {
+      isNecessary: args.isNecessary,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Mark all expenses with a matching note as necessary + remember the note
+export const markNoteAsNecessary = mutation({
+  args: {
+    userId: v.id("users"),
+    note: v.string(),
+    isNecessary: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const normalizedNote = args.note.toLowerCase().trim();
+
+    // Find all expenses with this note
+    const allExpenses = await ctx.db
+      .query("expenses")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    const matching = allExpenses.filter(
+      (e) => e.note.toLowerCase().trim() === normalizedNote
+    );
+
+    // Update all matching expenses
+    for (const expense of matching) {
+      await ctx.db.patch(expense._id, {
+        isNecessary: args.isNecessary,
+        updatedAt: Date.now(),
+      });
+    }
+
+    if (args.isNecessary) {
+      // Remember this note for auto-suggest on future expenses
+      const existing = await ctx.db
+        .query("necessaryNotes")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect();
+
+      const alreadySaved = existing.find(
+        (n) => n.note === normalizedNote
+      );
+
+      if (!alreadySaved) {
+        await ctx.db.insert("necessaryNotes", {
+          userId: args.userId,
+          note: normalizedNote,
+          createdAt: Date.now(),
+        });
+      }
+    } else {
+      // Remove from remembered notes
+      const existing = await ctx.db
+        .query("necessaryNotes")
+        .withIndex("by_user", (q) => q.eq("userId", args.userId))
+        .collect();
+
+      const saved = existing.find((n) => n.note === normalizedNote);
+      if (saved) {
+        await ctx.db.delete(saved._id);
+      }
+    }
+
+    return { updated: matching.length };
+  },
+});
+
+// Get all remembered necessary notes for a user
+export const getNecessaryNotes = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("necessaryNotes")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+  },
+});
+
+// Count expenses matching a note
+export const countByNote = query({
+  args: {
+    userId: v.id("users"),
+    note: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const normalizedNote = args.note.toLowerCase().trim();
+    const allExpenses = await ctx.db
+      .query("expenses")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    return allExpenses.filter(
+      (e) => e.note.toLowerCase().trim() === normalizedNote
+    ).length;
+  },
+});
+
+// Toggle the worthIt flag on an expense
+export const toggleWorthIt = mutation({
+  args: { expenseId: v.id("expenses") },
+  handler: async (ctx, args) => {
+    console.log("toggleWorthIt called with:", args.expenseId);
+    try {
+      const expense = await ctx.db.get(args.expenseId);
+      console.log("Found expense:", expense?._id, "current worthIt:", expense?.worthIt);
+      if (!expense) {
+        throw new Error("Expense not found");
+      }
+      const newValue = !(expense.worthIt ?? false);
+      console.log("Setting worthIt to:", newValue);
+      await ctx.db.patch(args.expenseId, {
+        worthIt: newValue,
+        updatedAt: Date.now(),
+      });
+      console.log("toggleWorthIt success");
+    } catch (error) {
+      console.error("toggleWorthIt error:", error);
+      throw error;
+    }
   },
 });

@@ -9,6 +9,8 @@
  */
 
 import type * as analytics from "../analytics.js";
+import type * as auth from "../auth.js";
+import type * as authHelpers from "../authHelpers.js";
 import type * as buckets from "../buckets.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
@@ -16,8 +18,13 @@ import type * as dailyPrompts from "../dailyPrompts.js";
 import type * as deleteReports from "../deleteReports.js";
 import type * as distribution from "../distribution.js";
 import type * as expenses from "../expenses.js";
+import type * as groups from "../groups.js";
+import type * as growthLetters from "../growthLetters.js";
 import type * as income from "../income.js";
+import type * as incomeReceipts from "../incomeReceipts.js";
 import type * as memories from "../memories.js";
+import type * as pushNotificationActions from "../pushNotificationActions.js";
+import type * as pushNotifications from "../pushNotifications.js";
 import type * as recommendations from "../recommendations.js";
 import type * as recurringExpenses from "../recurringExpenses.js";
 import type * as reports from "../reports.js";
@@ -35,6 +42,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
+  auth: typeof auth;
+  authHelpers: typeof authHelpers;
   buckets: typeof buckets;
   chat: typeof chat;
   crons: typeof crons;
@@ -42,8 +51,13 @@ declare const fullApi: ApiFromModules<{
   deleteReports: typeof deleteReports;
   distribution: typeof distribution;
   expenses: typeof expenses;
+  groups: typeof groups;
+  growthLetters: typeof growthLetters;
   income: typeof income;
+  incomeReceipts: typeof incomeReceipts;
   memories: typeof memories;
+  pushNotificationActions: typeof pushNotificationActions;
+  pushNotifications: typeof pushNotifications;
   recommendations: typeof recommendations;
   recurringExpenses: typeof recurringExpenses;
   reports: typeof reports;

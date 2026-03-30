@@ -4,7 +4,7 @@ import { ChevronRight } from 'lucide-react-native';
 import type { Bucket } from '../types';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
-import { BUCKET_ICON_IMAGES, type BucketIcon } from '../constants/bucketIcons';
+import { getCupForBucketId } from '../constants/bucketIcons';
 
 interface BucketCardProps {
   bucket: Bucket;
@@ -43,9 +43,6 @@ export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
 
   const isLowBalance = percentUsed >= bucket.alertThreshold;
 
-  // Default to 'octopus' if icon is not set (for backward compatibility)
-  const iconName = (bucket.icon || 'octopus') as BucketIcon;
-
   return (
     <Pressable
       style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
@@ -53,14 +50,12 @@ export const BucketCard: React.FC<BucketCardProps> = ({ bucket, onPress }) => {
     >
       <View style={styles.cardContainer}>
         <View style={styles.cardContent}>
-          {/* Icon */}
-          <View style={styles.iconContainer}>
-            <Image
-              source={BUCKET_ICON_IMAGES[iconName]}
-              style={styles.iconImage}
-              resizeMode="contain"
-            />
-          </View>
+          {/* Cup image */}
+          <Image
+            source={getCupForBucketId(bucket._id, bucket.icon)}
+            style={styles.cupImage}
+            resizeMode="contain"
+          />
 
           {/* Bucket Info */}
           <View style={styles.info}>
@@ -184,23 +179,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  iconContainer: {
+  cupImage: {
     width: 64,
     height: 64,
-    justifyContent: 'center',
-    alignItems: 'center',
     marginRight: 16,
-  },
-  iconImage: {
-    width: 64,
-    height: 64,
   },
   info: {
     flex: 1,
   },
   bucketName: {
-    fontSize: 16,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 4,
     letterSpacing: -0.4,
@@ -210,26 +199,26 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   currentAmount: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.primary,
     letterSpacing: 0,
     fontWeight: '500',
   },
   amountLabel: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   totalAmount: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontSize: 18,
+    fontFamily: 'Merchant Copy',
     color: theme.colors.textSecondary,
     letterSpacing: 0,
   },
   carryoverHint: {
-    fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 16,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     fontStyle: 'italic',
   },

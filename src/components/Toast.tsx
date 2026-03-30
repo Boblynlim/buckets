@@ -74,7 +74,7 @@ export const Toast: React.FC<ToastProps> = ({
       case 'error':
         return <XCircle size={20} color="#EF4444" strokeWidth={2} />;
       case 'loading':
-        return <Loader size={20} color="#4747FF" strokeWidth={2} />;
+        return <Loader size={20} color="#5C8A7A" strokeWidth={2} />;
     }
   };
 
@@ -96,7 +96,7 @@ export const Toast: React.FC<ToastProps> = ({
       case 'error':
         return '#EF4444';
       case 'loading':
-        return '#4747FF';
+        return '#5C8A7A';
     }
   };
 
@@ -142,9 +142,9 @@ const styles = StyleSheet.create({
   },
   message: {
     flex: 1,
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: '500',
-    color: '#0A0A0A',
-    fontFamily: 'Merchant, monospace',
+    color: '#3D3229',
+    fontFamily: 'Merchant',
   },
 });

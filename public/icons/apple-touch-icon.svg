@@ -1,30 +1,8 @@
 <svg width="180" height="180" viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background -->
-  <rect width="180" height="180" fill="#4747FF" rx="36"/>
-
-  <!-- Bucket shape in white -->
-  <g transform="translate(36, 45)">
-    <!-- Top rim -->
-    <rect x="0" y="0" width="108" height="14.4" fill="#F5F3F0" rx="3.6"/>
-
-    <!-- Bucket body (trapezoid shape) -->
-    <path d="M 9 14.4
-             L 99.00000000000001 14.4
-             L 90 99.00000000000001
-             L 18 99.00000000000001 Z"
-          fill="#F5F3F0"/>
-
-    <!-- Handle -->
-    <path d="M 27 3.6
-             Q 54 -14.4, 81 3.6"
-          stroke="#F5F3F0" stroke-width="7.2" fill="none" stroke-linecap="round"/>
-
-    <!-- $ Symbol in bucket -->
-    <text x="54" y="68.4"
-          font-family="Space Mono, monospace"
-          font-size="36"
-          font-weight="bold"
-          fill="#4747FF"
-          text-anchor="middle">$</text>
-  </g>
+  <rect width="180" height="180" fill="#5C8A7A" rx="40"/>
+  <path d="M 39 62 L 39 130 Q 39 146, 56 146 L 107 146 Q 124 146, 124 130 L 124 62 Z" fill="#F5EDD8"/>
+  <rect x="34" y="53" width="96" height="14" rx="6.5" fill="#F5EDD8"/>
+  <path d="M 124 79 Q 152 79, 152 104 Q 152 130, 124 130" stroke="#F5EDD8" stroke-width="12" fill="none" stroke-linecap="round"/>
+  <path d="M 67 39 Q 73 22, 67 11" stroke="rgba(245,237,216,0.6)" stroke-width="5.5" fill="none" stroke-linecap="round"/>
+  <path d="M 90 45 Q 96 28, 90 17" stroke="rgba(245,237,216,0.4)" stroke-width="5.5" fill="none" stroke-linecap="round"/>
 </svg>

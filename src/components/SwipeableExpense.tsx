@@ -20,16 +20,17 @@ interface SwipeableExpenseProps {
   expense: Expense;
   onPress: () => void;
   onDelete: () => void;
+  onToggleWorthIt?: () => void;
   formatDate: (timestamp: number) => string;
-  happinessEmojis: string[];
+  happinessEmojis?: string[];
 }
 
 export const SwipeableExpense: React.FC<SwipeableExpenseProps> = ({
   expense,
   onPress,
   onDelete,
+  onToggleWorthIt,
   formatDate,
-  happinessEmojis,
 }) => {
   const translateX = useRef(new Animated.Value(0)).current;
   const lastOffset = useRef(0);
@@ -125,9 +126,23 @@ export const SwipeableExpense: React.FC<SwipeableExpenseProps> = ({
             </View>
             <View style={styles.expenseRight}>
               <Text style={styles.expenseAmount}>-${expense.amount.toFixed(2)}</Text>
-              <Text style={styles.expenseHappiness}>
-                {happinessEmojis[expense.happinessRating - 1]}
-              </Text>
+              <Pressable
+                style={[
+                  styles.worthItPill,
+                  (expense.worthIt) && styles.worthItPillActive,
+                ]}
+                onPress={(e) => {
+                  e.stopPropagation?.();
+                  onToggleWorthIt?.();
+                }}
+              >
+                <Text style={[
+                  styles.worthItPillText,
+                  (expense.worthIt) && styles.worthItPillTextActive,
+                ]}>
+                  {expense.worthIt ? 'WORTH IT' : 'WORTH IT?'}
+                </Text>
+              </Pressable>
             </View>
           </View>
         </Pressable>
@@ -161,8 +176,8 @@ const styles = StyleSheet.create({
   },
   deleteText: {
     color: '#FFF',
-    fontSize: 12,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 14,
+    fontFamily: 'Merchant',
   },
   expenseCard: {
     backgroundColor: theme.colors.cardBackground,
@@ -183,8 +198,8 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   expenseNote: {
-    fontSize: 16,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 18,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 4,
   },
@@ -194,29 +209,48 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   expenseDate: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   metadataSeparator: {
-    fontSize: 13,
+    fontSize: 15,
     color: theme.colors.textSecondary,
   },
   expenseCategory: {
-    fontSize: 13,
-    fontFamily: getFontFamily('regular'),
+    fontSize: 15,
+    fontFamily: 'Merchant',
     color: theme.colors.primary,
   },
   expenseRight: {
     alignItems: 'flex-end',
   },
   expenseAmount: {
-    fontSize: 18,
-    fontFamily: getFontFamily('bold'),
+    fontSize: 20,
+    fontFamily: 'Merchant',
     color: theme.colors.text,
-    marginBottom: 4,
+    marginBottom: 6,
   },
-  expenseHappiness: {
-    fontSize: 18,
+  worthItPill: {
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: theme.colors.sageMuted,
+  },
+  worthItPillActive: {
+    backgroundColor: '#b5c9ad',
+    borderColor: '#b5c9ad',
+  },
+  worthItPillText: {
+    fontSize: 12,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+  },
+  worthItPillTextActive: {
+    color: '#3a5434',
   },
 });

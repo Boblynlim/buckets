@@ -4,8 +4,19 @@ import { v } from "convex/values";
 export default defineSchema({
   users: defineTable({
     name: v.string(),
+    email: v.optional(v.string()),
+    passwordHash: v.optional(v.string()),
+    passcodeHash: v.optional(v.string()),
     createdAt: v.number(),
-  }),
+  }).index("by_email", ["email"]),
+
+  sessions: defineTable({
+    userId: v.id("users"),
+    token: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+  }).index("by_token", ["token"])
+    .index("by_user", ["userId"]),
 
   buckets: defineTable({
     userId: v.id("users"),
@@ -42,6 +53,7 @@ export default defineSchema({
     alertThreshold: v.number(), // percentage (e.g., 20 = alert at 20%)
     color: v.string(), // hex color for UI
     icon: v.optional(v.string()), // icon name (e.g., "octopus", "frog")
+    groupId: v.optional(v.id("groups")),
     createdAt: v.number(),
     isActive: v.boolean(),
 
@@ -59,6 +71,17 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  incomeReceipts: defineTable({
+    userId: v.id("users"),
+    sourceId: v.optional(v.id("income")), // links to recurring source, null for ad-hoc
+    amount: v.number(),
+    month: v.string(), // "2026-03" format
+    note: v.optional(v.string()),
+    receivedAt: v.number(),
+  })
+    .index("by_user_month", ["userId", "month"])
+    .index("by_user", ["userId"]),
+
   expenses: defineTable({
     userId: v.id("users"),
     bucketId: v.id("buckets"),
@@ -66,12 +89,15 @@ export default defineSchema({
     date: v.number(), // timestamp - user can edit this
     note: v.string(),
 
-    // New dual rating system (replacing single happiness rating)
-    worthRating: v.optional(v.number()), // 1-5: Was this worth the money?
-    alignmentRating: v.optional(v.number()), // 1-5: Does this align with your priorities?
+    // Binary worth-it rating (default: false = not worth it)
+    worthIt: v.optional(v.boolean()),
+    // Necessary expense — excluded from worth-it tug-of-war
+    isNecessary: v.optional(v.boolean()),
 
-    // Legacy field for backward compatibility
-    happinessRating: v.optional(v.number()), // 1-5 scale (deprecated, use worthRating/alignmentRating)
+    // Legacy fields for backward compatibility
+    worthRating: v.optional(v.number()),
+    alignmentRating: v.optional(v.number()),
+    happinessRating: v.optional(v.number()),
 
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -157,21 +183,7 @@ export default defineSchema({
     // New template structure
     vibeCheck: v.optional(v.string()),
 
-    goalPulse: v.optional(v.object({
-      renovationFund: v.optional(v.object({
-        target: v.number(),
-        currentProgress: v.number(),
-        rentalIncome: v.number(),
-        gap: v.number(),
-        onTrack: v.string(), // "Yes" / "Getting there" / "Needs attention"
-      })),
-      emergencyFund: v.optional(v.object({
-        target: v.number(),
-        currentProgress: v.number(),
-        percentComplete: v.number(),
-      })),
-      quickTake: v.string(),
-    })),
+    goalPulse: v.optional(v.any()), // Flexible: stores either legacy goal data or worth-it intelligence from AI reports
 
     fundStatus: v.optional(v.array(v.object({
       bucketName: v.string(),
@@ -274,4 +286,47 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_and_answered", ["userId", "isAnswered"])
     .index("by_user_and_date", ["userId", "createdAt"]),
+
+  // Push notification subscriptions
+  pushSubscriptions: defineTable({
+    userId: v.id("users"),
+    endpoint: v.string(),
+    keys: v.object({
+      p256dh: v.string(),
+      auth: v.string(),
+    }),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
+
+  // Remembered note patterns that are auto-marked as necessary
+  necessaryNotes: defineTable({
+    userId: v.id("users"),
+    note: v.string(), // normalized lowercase note text
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  groups: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    order: v.number(), // for custom ordering later
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  growthLetters: defineTable({
+    userId: v.id("users"),
+    content: v.string(),           // The full letter text
+    seasons: v.array(v.object({
+      name: v.string(),            // AI-generated season name
+      summary: v.string(),         // Brief description of this phase
+      startMonth: v.string(),      // e.g. "2026-01"
+      endMonth: v.optional(v.string()), // null if current season
+    })),
+    promptsUsed: v.number(),       // How many prompt answers went into this
+    isRead: v.boolean(),           // Has the user opened the letter
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_and_read", ["userId", "isRead"]),
 });

@@ -38,6 +38,7 @@ export interface Bucket {
   alertThreshold: number;
   color: string;
   icon?: string;
+  groupId?: string;
   createdAt: number;
   isActive: boolean;
 
@@ -62,7 +63,17 @@ export interface Expense {
   amount: number;
   date: number;
   note: string;
-  happinessRating: number;
+
+  // Binary worth-it rating (default: false = not worth it)
+  worthIt?: boolean;
+  // Necessary expense — excluded from worth-it tug-of-war
+  isNecessary?: boolean;
+
+  // Legacy fields for backward compatibility
+  worthRating?: number;
+  alignmentRating?: number;
+  happinessRating?: number;
+
   createdAt: number;
   updatedAt: number;
 
@@ -131,8 +142,45 @@ export interface Report {
   reportType: ReportType;
   periodStart: number;
   periodEnd: number;
-  summary: string;
-  spendingAnalysis: {
+
+  // New format fields
+  vibeCheck?: string;
+  goalPulse?: any;
+  fundStatus?: Array<{
+    bucketName: string;
+    monthlyAllocation: number | string;
+    bankedSoFar: number;
+    spentThisWeek: number;
+    remaining: number;
+    runway: string;
+  }>;
+  fundsRunningLow?: string[];
+  fundsHealthy?: string[];
+  valuesAlignment?: {
+    narrative: string;
+    aligned: string[];
+    worthALook: string[];
+  };
+  patternsAndFlags?: {
+    trends: string[];
+    repeats: string[];
+    joyEfficiency: string[];
+  };
+  sgNudges?: {
+    thisWeek: string[];
+    generalReminders: string[];
+  };
+  reflectionPrompts?: string[];
+  fixedCosts?: Array<{
+    category: string;
+    thisWeek: number;
+    monthlyBudget: number;
+  }>;
+  fixedCostsTotal?: number;
+
+  // Legacy format fields (optional for backward compatibility)
+  summary?: string;
+  spendingAnalysis?: {
     totalSpent: number;
     topCategories: Array<{
       category: string;
@@ -144,7 +192,7 @@ export interface Report {
       percentChange: number;
     };
   };
-  happinessAnalysis: {
+  happinessAnalysis?: {
     averageHappiness: number;
     topHappyCategories: Array<{
       category: string;
@@ -157,16 +205,17 @@ export interface Report {
       reason: string;
     }>;
   };
-  bucketPerformance: Array<{
+  bucketPerformance?: Array<{
     bucketName: string;
     planned: number;
     funded: number;
     spent: number;
     status: string;
   }>;
-  insights: string[];
-  recommendations: string[];
-  wins: string[];
-  concerns: string[];
+  insights?: string[];
+  recommendations?: string[];
+  wins?: string[];
+  concerns?: string[];
+
   createdAt: number;
 }

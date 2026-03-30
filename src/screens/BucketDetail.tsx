@@ -18,6 +18,7 @@ import type {Bucket, Expense} from '../types';
 import {theme} from '../theme';
 import {getFontFamily} from '../theme/fonts';
 import {SwipeableExpense} from '../components/SwipeableExpense';
+import {PotteryLoader} from '../components/PotteryLoader';
 
 type BucketsStackParamList = {
   BucketsOverview: undefined;
@@ -61,6 +62,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
   // Get expenses for this bucket from Convex
   const expenses = useQuery(api.expenses.getByBucket, bucket ? { bucketId: bucket._id as any } : 'skip');
   const deleteExpense = useMutation(api.expenses.remove);
+  const toggleWorthIt = useMutation(api.expenses.toggleWorthIt);
 
   // Calculate values based on bucket mode
   const isSaveBucket = bucket.bucketMode === 'save';
@@ -81,7 +83,13 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
     percentUsed = targetAmount > 0 ? (currentBalance / targetAmount) * 100 : 0;
   } else {
     // For spend buckets: show spent vs funded
-    spent = bucket.spentAmount || 0;
+    // Derive spent from the reactive expenses query, filtered to current month
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+    spent = (expenses || [])
+      .filter(e => e.date >= monthStart && e.date <= monthEnd)
+      .reduce((sum, e) => sum + e.amount, 0);
     funded = bucket.fundedAmount || bucket.allocationValue || 0;
     carryover = bucket.carryoverBalance || 0;
     totalFunded = funded + carryover;
@@ -148,9 +156,24 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
     setTimeout(() => setRefreshing(false), 1000);
   };
 
+  const handleToggleWorthIt = async (expenseId: string) => {
+    try {
+      await toggleWorthIt({ expenseId: expenseId as any });
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update expense');
+    }
+  };
+
   // Show loading state while expenses are loading
   const isLoading = expenses === undefined;
   const expensesList = expenses || [];
+
+  // Tug-of-war stats
+  const worthItCount = expensesList.filter(e => e.worthIt).length;
+  const notWorthItCount = expensesList.length - worthItCount;
+  const totalExpenses = expensesList.length;
+  const worthItPct = totalExpenses > 0 ? Math.round((worthItCount / totalExpenses) * 100) : 0;
+  const notWorthItPct = totalExpenses > 0 ? 100 - worthItPct : 0;
 
   // Guard against missing bucket
   if (!bucket) {
@@ -286,16 +309,44 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
             tintColor={theme.colors.primary}
           />
         }>
+        {/* Tug-of-War Bar */}
+        {expensesList.length > 0 && (
+          <View style={styles.tugOfWarSection}>
+            <View style={styles.tugOfWarHeader}>
+              <Text style={styles.tugOfWarLabel}>Not worth it</Text>
+              <Text style={styles.tugOfWarTitle}>worth it?</Text>
+              <Text style={[styles.tugOfWarLabel, { color: '#b5c9ad' }]}>Worth it</Text>
+            </View>
+            <View style={styles.tugOfWarBar}>
+              <View style={[
+                styles.tugOfWarNotWorth,
+                { flex: Math.max(notWorthItCount, 0.1) },
+              ]} />
+              <View style={[
+                styles.tugOfWarWorth,
+                { flex: Math.max(worthItCount, 0.1) },
+              ]} />
+            </View>
+            <View style={styles.tugOfWarCounts}>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                <Text style={styles.tugOfWarPct}>{notWorthItPct}%</Text>
+                <Text style={styles.tugOfWarCount}>({notWorthItCount})</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 4 }}>
+                <Text style={[styles.tugOfWarCount, { color: '#a8bca0' }]}>({worthItCount})</Text>
+                <Text style={[styles.tugOfWarPct, { color: '#b5c9ad' }]}>{worthItPct}%</Text>
+              </View>
+            </View>
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
             Recent Expenses ({expensesList.length})
           </Text>
 
           {isLoading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={theme.colors.primary} />
-              <Text style={styles.loadingText}>Loading expenses...</Text>
-            </View>
+            <PotteryLoader message="Loading expenses..." />
           ) : expensesList.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateEmoji}>📭</Text>
@@ -311,6 +362,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = (props) => {
                 expense={expense}
                 onPress={() => handleEditExpense(expense)}
                 onDelete={() => handleDeleteExpense(expense._id, expense.note)}
+                onToggleWorthIt={() => handleToggleWorthIt(expense._id)}
                 formatDate={formatDate}
                 happinessEmojis={happinessEmojis}
               />
@@ -352,7 +404,7 @@ const styles = StyleSheet.create({
   },
   backIcon: {
     fontSize: 32,
-    color: '#4747FF',
+    color: '#5C8A7A',
     fontWeight: '400',
   },
   headerContent: {
@@ -366,7 +418,7 @@ const styles = StyleSheet.create({
   subtitle: {
     fontSize: 16,
     color: '#8E8E93',
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     marginTop: 2,
   },
   progressSection: {
@@ -449,7 +501,7 @@ const styles = StyleSheet.create({
   expenseAmount: {
     fontSize: 16,
     fontWeight: '700',
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     color: '#FF3B30',
     marginBottom: 4,
   },
@@ -484,7 +536,7 @@ const styles = StyleSheet.create({
   },
   fundingTitle: {
     fontSize: 15,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 12,
     textTransform: 'uppercase',
@@ -504,27 +556,85 @@ const styles = StyleSheet.create({
   },
   fundingLabel: {
     fontSize: 14,
-    fontFamily: getFontFamily('regular'),
+    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
   fundingLabelBold: {
     fontSize: 14,
-    fontFamily: getFontFamily('bold'),
+    fontFamily: 'Merchant',
     color: theme.colors.text,
   },
   fundingValue: {
     fontSize: 15,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     color: theme.colors.text,
   },
   fundingValueBold: {
     fontSize: 16,
-    fontFamily: 'Merchant Copy, monospace',
+    fontFamily: 'Merchant Copy',
     fontWeight: '600',
     color: theme.colors.primary,
   },
   fundingValueNegative: {
     color: theme.colors.danger,
+  },
+  tugOfWarSection: {
+    marginHorizontal: 20,
+    marginBottom: 8,
+    backgroundColor: theme.colors.backgroundLight,
+    borderRadius: 16,
+    padding: 18,
+  },
+  tugOfWarHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tugOfWarTitle: {
+    fontSize: 10,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+  },
+  tugOfWarLabel: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
+  },
+  tugOfWarBar: {
+    flexDirection: 'row',
+    height: 14,
+    borderRadius: 7,
+    overflow: 'hidden',
+    backgroundColor: theme.colors.border,
+  },
+  tugOfWarNotWorth: {
+    backgroundColor: theme.colors.sageMuted,
+    borderTopLeftRadius: 7,
+    borderBottomLeftRadius: 7,
+  },
+  tugOfWarWorth: {
+    backgroundColor: '#b5c9ad',
+    borderTopRightRadius: 7,
+    borderBottomRightRadius: 7,
+  },
+  tugOfWarCounts: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  tugOfWarPct: {
+    fontSize: 16,
+    fontFamily: 'Merchant Copy',
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  tugOfWarCount: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
   },
   loadingContainer: {
     paddingVertical: 60,
@@ -534,6 +644,6 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant, monospace',
+    fontFamily: 'Merchant',
   },
 });

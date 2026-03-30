@@ -64,7 +64,7 @@ export const generateDailyPrompt = mutation({
       .first();
 
     if (existingPrompt) {
-      return existingPrompt._id; // Already have a prompt for today
+      return existingPrompt._id; // Already have a prompt for today (answered or not)
     }
 
     // Dismiss any unanswered prompts from previous days so they don't pile up
@@ -117,7 +117,7 @@ export const generateDailyPrompt = mutation({
   },
 });
 
-// Get today's unanswered prompt for a user
+// Get today's prompt for a user (answered or not)
 export const getTodayPrompt = query({
   args: {
     userId: v.id('users'),
@@ -125,13 +125,11 @@ export const getTodayPrompt = query({
   handler: async (ctx, args) => {
     const todayStart = new Date().setHours(0, 0, 0, 0);
 
-    // Only return today's unanswered prompt — never surface prompts from previous days
     const prompt = await ctx.db
       .query('dailyPrompts')
       .withIndex('by_user_and_date', (q) =>
         q.eq('userId', args.userId).gte('createdAt', todayStart)
       )
-      .filter((q) => q.eq(q.field('isAnswered'), false))
       .first();
 
     return prompt;
