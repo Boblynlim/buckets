@@ -69,6 +69,8 @@ export default defineSchema({
     note: v.optional(v.string()),
     isRecurring: v.boolean(), // true for monthly salary, false for one-time
     createdAt: v.number(),
+    startMonth: v.optional(v.string()), // "2026-01" — month this source begins (defaults to creation month)
+    endMonth: v.optional(v.string()), // "2026-03" — last month this source applies (undefined = still active)
   }).index("by_user", ["userId"]),
 
   incomeReceipts: defineTable({

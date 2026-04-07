@@ -13,12 +13,23 @@ export const calculateDistribution = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
-    // Get total monthly income
-    const incomeRecords = await ctx.db
+    // Get total monthly income (only currently active sources)
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const allIncomeRecords = await ctx.db
       .query('income')
       .withIndex('by_user', q => q.eq('userId', args.userId))
       .filter(q => q.eq(q.field('isRecurring'), true))
       .collect();
+
+    const incomeRecords = allIncomeRecords.filter(income => {
+      const start = income.startMonth || '0000-00';
+      const end = income.endMonth;
+      if (currentMonth < start) return false;
+      if (end && currentMonth > end) return false;
+      return true;
+    });
 
     const totalIncome = incomeRecords.reduce((sum, income) => sum + income.amount, 0);
 
@@ -81,9 +92,9 @@ export const calculateDistribution = mutation({
     }
 
     // Process save bucket contributions (only if not done this month)
-    const now = Date.now();
-    const currentMonth = new Date(now).getMonth();
-    const currentYear = new Date(now).getFullYear();
+    const nowTs = Date.now();
+    const saveMonth = new Date(nowTs).getMonth();
+    const saveYear = new Date(nowTs).getFullYear();
 
     for (const bucket of buckets) {
       if (bucket.bucketMode === 'save' && bucket.contributionType !== 'none') {
@@ -93,7 +104,7 @@ export const calculateDistribution = mutation({
         const lastYear = new Date(lastContribution).getFullYear();
 
         const alreadyContributedThisMonth =
-          lastYear === currentYear && lastMonth === currentMonth;
+          lastYear === saveYear && lastMonth === saveMonth;
 
         if (!alreadyContributedThisMonth) {
           let contribution = 0;
@@ -108,7 +119,7 @@ export const calculateDistribution = mutation({
           const newBalance = (bucket.currentBalance || 0) + contribution;
           await ctx.db.patch(bucket._id, {
             currentBalance: newBalance,
-            lastContributionDate: now,
+            lastContributionDate: nowTs,
           });
         }
       }
@@ -138,12 +149,23 @@ export const calculateDistribution = mutation({
 export const getDistributionStatus = query({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
-    // Get total monthly income
-    const incomeRecords = await ctx.db
+    // Get total monthly income (only currently active sources)
+    const now = new Date();
+    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const allIncomeRecords = await ctx.db
       .query('income')
       .withIndex('by_user', q => q.eq('userId', args.userId))
       .filter(q => q.eq(q.field('isRecurring'), true))
       .collect();
+
+    const incomeRecords = allIncomeRecords.filter(income => {
+      const start = income.startMonth || '0000-00';
+      const end = income.endMonth;
+      if (currentMonth < start) return false;
+      if (end && currentMonth > end) return false;
+      return true;
+    });
 
     const totalIncome = incomeRecords.reduce((sum, income) => sum + income.amount, 0);
 

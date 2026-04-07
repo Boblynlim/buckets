@@ -11,7 +11,7 @@ import {
   Modal,
   Platform,
 } from 'react-native';
-import {Check, Plus, Trash2, ChevronLeft, ChevronRight} from 'lucide-react-native';
+import {Check, Plus, Trash2, ChevronLeft, ChevronRight, ArrowDownToLine} from 'lucide-react-native';
 import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
@@ -44,28 +44,34 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
     api.income.getByUser,
     currentUser ? {userId: currentUser._id} : 'skip',
   );
-  // Track receipts in local state until incomeReceipts table is available
-  // TODO: Replace with useQuery(api.incomeReceipts.getAll) after dev server restart
-  const [localReceipts, setLocalReceipts] = useState<Array<{
-    _id: string;
-    sourceId?: string;
-    amount: number;
-    month: string;
-    note?: string;
-    receivedAt: number;
-  }>>([]);
-  const monthReceipts = React.useMemo(() => {
-    const m = formatMonth(selectedMonth);
-    return localReceipts.filter(r => r.month === m);
-  }, [localReceipts, selectedMonth]);
+  // Fetch receipts from database, persisted per-month
+  const monthReceipts = useQuery(
+    api.incomeReceipts.getByMonth,
+    currentUser ? {userId: currentUser._id, month: formatMonth(selectedMonth)} : 'skip',
+  );
   const addIncome = useMutation(api.income.add);
   const removeIncome = useMutation(api.income.remove);
+  const logReceipt = useMutation(api.incomeReceipts.log);
+  const removeReceipt = useMutation(api.incomeReceipts.remove);
   const recalculateDistribution = useMutation(api.distribution.calculateDistribution);
+  const distributionStatus = useQuery(
+    api.distribution.getDistributionStatus,
+    currentUser ? {userId: currentUser._id} : 'skip',
+  );
 
   const recurringSources = useMemo(() => {
     if (!incomeEntries) return [];
-    return incomeEntries.filter(i => i.isRecurring);
-  }, [incomeEntries]);
+    const month = formatMonth(selectedMonth);
+    return incomeEntries.filter(i => {
+      if (!i.isRecurring) return false;
+      // Filter by month range: show if startMonth <= selectedMonth and (no endMonth or endMonth >= selectedMonth)
+      const start = i.startMonth || '0000-00';
+      const end = i.endMonth;
+      if (month < start) return false;
+      if (end && month > end) return false;
+      return true;
+    });
+  }, [incomeEntries, selectedMonth]);
 
   const expectedTotal = useMemo(() => {
     return recurringSources.reduce((sum, s) => sum + s.amount, 0);
@@ -81,6 +87,13 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
     return monthReceipts.filter(r => !r.sourceId);
   }, [monthReceipts]);
 
+  // Receipts linked to sources that no longer exist
+  const orphanedReceipts = useMemo(() => {
+    if (!monthReceipts || !incomeEntries) return [];
+    const sourceIds = new Set(incomeEntries.map(i => i._id));
+    return monthReceipts.filter(r => r.sourceId && !sourceIds.has(r.sourceId));
+  }, [monthReceipts, incomeEntries]);
+
   // Check which sources have been confirmed this month
   const confirmedSourceIds = useMemo(() => {
     if (!monthReceipts) return new Set<string>();
@@ -93,34 +106,48 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
 
   const isCurrentMonth = isSameMonth(selectedMonth, new Date());
 
-  const handleConfirmSource = (sourceId: string, amount: number, note?: string) => {
-    setLocalReceipts(prev => [...prev, {
-      _id: `local_${Date.now()}`,
-      sourceId,
-      amount,
-      month: formatMonth(selectedMonth),
-      note,
-      receivedAt: Date.now(),
-    }]);
+  const handleConfirmSource = async (sourceId: string, amount: number, note?: string) => {
+    if (!currentUser) return;
+    try {
+      await logReceipt({
+        userId: currentUser._id,
+        sourceId: sourceId as any,
+        amount,
+        month: formatMonth(selectedMonth),
+        note,
+      });
+    } catch (err: any) {
+      console.error('Failed to confirm income:', err);
+    }
   };
 
-  const handleUnconfirmSource = (sourceId: string) => {
-    setLocalReceipts(prev => prev.filter(r => r.sourceId !== sourceId || r.month !== formatMonth(selectedMonth)));
+  const handleUnconfirmSource = async (sourceId: string) => {
+    if (!monthReceipts) return;
+    const receipt = monthReceipts.find(r => r.sourceId === sourceId);
+    if (!receipt) return;
+    try {
+      await removeReceipt({receiptId: receipt._id});
+    } catch (err: any) {
+      console.error('Failed to unconfirm income:', err);
+    }
   };
 
-  const handleAddAdHoc = () => {
+  const handleAddAdHoc = async () => {
     const amt = parseFloat(adHocAmount);
-    if (!amt || amt <= 0) return;
-    setLocalReceipts(prev => [...prev, {
-      _id: `local_${Date.now()}`,
-      amount: amt,
-      month: formatMonth(selectedMonth),
-      note: adHocNote || undefined,
-      receivedAt: Date.now(),
-    }]);
-    setAdHocAmount('');
-    setAdHocNote('');
-    setShowAdHoc(false);
+    if (!amt || amt <= 0 || !currentUser) return;
+    try {
+      await logReceipt({
+        userId: currentUser._id,
+        amount: amt,
+        month: formatMonth(selectedMonth),
+        note: adHocNote || undefined,
+      });
+      setAdHocAmount('');
+      setAdHocNote('');
+      setShowAdHoc(false);
+    } catch (err: any) {
+      console.error('Failed to add extra income:', err);
+    }
   };
 
   const handleAddSource = async () => {
@@ -133,6 +160,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
         date: Date.now(),
         note: newSourceNote || undefined,
         isRecurring: true,
+        startMonth: formatMonth(selectedMonth),
       });
       setNewSourceAmount('');
       setNewSourceNote('');
@@ -144,22 +172,30 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   };
 
   const handleDeleteSource = async (incomeId: string) => {
+    // End the source as of the month *before* the selected month
+    // So if viewing March and you delete, it ends after February (last active = Feb)
+    const prevMonth = formatMonth(subMonths(selectedMonth, 1));
+    const msg = `End this income source? It will stop showing from ${format(selectedMonth, 'MMMM yyyy')} onwards but remain in earlier months.`;
     const confirm = Platform.OS === 'web'
-      ? window.confirm('Remove this income source?')
+      ? window.confirm(msg)
       : true; // native would use Alert
     if (!confirm) return;
     try {
-      await removeIncome({incomeId: incomeId as any});
+      await removeIncome({incomeId: incomeId as any, endMonth: prevMonth});
       if (currentUser) {
         await recalculateDistribution({userId: currentUser._id}).catch(() => {});
       }
     } catch (err: any) {
-      console.error('Failed to delete source:', err);
+      console.error('Failed to end source:', err);
     }
   };
 
-  const handleRemoveAdHoc = (receiptId: string) => {
-    setLocalReceipts(prev => prev.filter(r => r._id !== receiptId));
+  const handleRemoveAdHoc = async (receiptId: string) => {
+    try {
+      await removeReceipt({receiptId: receiptId as any});
+    } catch (err: any) {
+      console.error('Failed to remove receipt:', err);
+    }
   };
 
   if (currentUser === undefined || incomeEntries === undefined) {
@@ -236,6 +272,93 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
             </Text>
           )}
         </View>
+
+        {/* Received this month breakdown */}
+        {monthReceipts && monthReceipts.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={styles.label}>Received this month</Text>
+              <Text style={[styles.label, {textTransform: 'none', letterSpacing: 0}]}>
+                ${receivedTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}
+              </Text>
+            </View>
+
+            {monthReceipts.map((receipt, index) => {
+              // Figure out the label
+              const linkedSource = receipt.sourceId
+                ? incomeEntries?.find(i => i._id === receipt.sourceId)
+                : null;
+              const label = receipt.note
+                || (linkedSource ? linkedSource.note || 'Income' : null)
+                || 'Unknown source (deleted)';
+              const isOrphaned = receipt.sourceId && !linkedSource;
+
+              return (
+                <View
+                  key={receipt._id}
+                  style={[
+                    styles.receiptRow,
+                    index < monthReceipts.length - 1 && styles.sourceRowBorder,
+                  ]}>
+                  <View style={{flex: 1}}>
+                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
+                      <Text style={[styles.receiptName, isOrphaned && {color: theme.colors.textTertiary}]}>
+                        {label}
+                      </Text>
+                      {isOrphaned && (
+                        <View style={styles.orphanBadge}>
+                          <Text style={styles.orphanBadgeText}>deleted source</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.sourceAmount}>
+                      ${receipt.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                    </Text>
+                    <Text style={styles.receiptDate}>
+                      {new Date(receipt.receivedAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveAdHoc(receipt._id)}
+                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <Trash2 size={16} color={theme.colors.textTertiary} />
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Allocation Status Badge */}
+        {distributionStatus && distributionStatus.totalIncome > 0 && (
+          <View style={styles.allocationBadge}>
+            <View style={[
+              styles.allocationIcon,
+              {backgroundColor: distributionStatus.totalFunded > 0 ? theme.colors.success : theme.colors.textTertiary},
+            ]}>
+              <ArrowDownToLine size={14} color="#FFFFFF" strokeWidth={2.5} />
+            </View>
+            <View style={{flex: 1}}>
+              <Text style={styles.allocationTitle}>
+                {distributionStatus.totalFunded > 0 ? 'Income allocated to cups' : 'Not yet allocated'}
+              </Text>
+              <Text style={styles.allocationDetail}>
+                ${distributionStatus.totalFunded.toFixed(2)} distributed
+                {distributionStatus.unallocated > 0
+                  ? ` · $${distributionStatus.unallocated.toFixed(2)} unallocated`
+                  : ''}
+                {distributionStatus.isOverPlanned
+                  ? ` · over-planned by $${distributionStatus.overPlannedBy.toFixed(2)}`
+                  : ''}
+              </Text>
+            </View>
+            {distributionStatus.totalFunded > 0 && (
+              <View style={styles.allocationCheck}>
+                <Check size={14} color={theme.colors.success} strokeWidth={3} />
+              </View>
+            )}
+          </View>
+        )}
 
         {/* Income Sources */}
         <View style={styles.section}>
@@ -535,6 +658,69 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
     marginTop: 8,
+  },
+
+  // Receipt breakdown
+  receiptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  receiptName: {
+    fontSize: 15,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+    marginBottom: 1,
+  },
+  receiptDate: {
+    fontSize: 12,
+    fontFamily: 'Merchant',
+    color: theme.colors.textTertiary,
+    marginTop: 2,
+  },
+  orphanBadge: {
+    backgroundColor: theme.colors.danger + '20',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  orphanBadgeText: {
+    fontSize: 11,
+    fontFamily: 'Merchant',
+    color: theme.colors.danger,
+  },
+
+  // Allocation badge
+  allocationBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 20,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 12,
+    gap: 12,
+  },
+  allocationIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  allocationTitle: {
+    fontSize: 15,
+    fontFamily: 'Merchant',
+    color: theme.colors.text,
+    marginBottom: 2,
+  },
+  allocationDetail: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    color: theme.colors.textSecondary,
+  },
+  allocationCheck: {
+    marginLeft: 4,
   },
 
   // Sections

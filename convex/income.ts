@@ -11,8 +11,12 @@ export const add = mutation({
     date: v.number(),
     note: v.optional(v.string()),
     isRecurring: v.boolean(),
+    startMonth: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const now = new Date();
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
     // Create income record
     const incomeId = await ctx.db.insert('income', {
       userId: args.userId,
@@ -21,6 +25,7 @@ export const add = mutation({
       note: args.note,
       isRecurring: args.isRecurring,
       createdAt: Date.now(),
+      startMonth: args.startMonth || defaultMonth,
     });
 
     // Recalculate distribution for all buckets
@@ -58,13 +63,28 @@ export const getRecurring = query({
   },
 });
 
-// Delete income entry
+// Soft-delete income entry by setting endMonth
 export const remove = mutation({
+  args: {
+    incomeId: v.id('income'),
+    endMonth: v.optional(v.string()), // "2026-03" — last month it applies; defaults to current month
+  },
+  handler: async (ctx, args) => {
+    const now = new Date();
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const endMonth = args.endMonth || defaultMonth;
+
+    await ctx.db.patch(args.incomeId, { endMonth });
+
+    return { success: true };
+  },
+});
+
+// Permanently delete an income entry (for cleanup)
+export const hardRemove = mutation({
   args: { incomeId: v.id('income') },
   handler: async (ctx, args) => {
-    // Delete the income record directly
     await ctx.db.delete(args.incomeId);
-
     return { success: true };
   },
 });
