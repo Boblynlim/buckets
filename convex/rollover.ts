@@ -36,14 +36,18 @@ export const performMonthlyRollover = mutation({
       .filter(q => q.eq(q.field('isActive'), true))
       .collect();
 
-    // Get total recurring income for funding calculations
-    const incomeRecords = await ctx.db
-      .query('income')
-      .withIndex('by_user', q => q.eq('userId', args.userId))
-      .filter(q => q.eq(q.field('isRecurring'), true))
+    // Get total income from per-month entries for the current month
+    const nowDate = new Date();
+    const currentMonth = `${nowDate.getFullYear()}-${String(nowDate.getMonth() + 1).padStart(2, '0')}`;
+
+    const monthlyEntries = await ctx.db
+      .query('monthlyIncome')
+      .withIndex('by_user_month', q =>
+        q.eq('userId', args.userId).eq('month', currentMonth)
+      )
       .collect();
 
-    const totalIncome = incomeRecords.reduce((sum, income) => sum + income.amount, 0);
+    const totalIncome = monthlyEntries.reduce((sum, entry) => sum + entry.amount, 0);
 
     const rolloverResults = [];
 
@@ -352,13 +356,15 @@ export const replayAndFixCarryovers = mutation({
     currentMonthDate.setHours(0, 0, 0, 0);
     const currentMonthStart = currentMonthDate.getTime();
 
-    // Get recurring income
-    const incomeRecords = await ctx.db
-      .query('income')
-      .withIndex('by_user', q => q.eq('userId', args.userId))
-      .filter(q => q.eq(q.field('isRecurring'), true))
+    // Get income from per-month entries
+    const rolloverMonth = `${currentMonthDate.getFullYear()}-${String(currentMonthDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyIncomeEntries = await ctx.db
+      .query('monthlyIncome')
+      .withIndex('by_user_month', q =>
+        q.eq('userId', args.userId).eq('month', rolloverMonth)
+      )
       .collect();
-    const totalIncome = incomeRecords.reduce((sum, i) => sum + i.amount, 0);
+    const totalIncome = monthlyIncomeEntries.reduce((sum, e) => sum + e.amount, 0);
 
     // Get all active spend buckets
     const allBuckets = await ctx.db

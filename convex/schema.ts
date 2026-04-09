@@ -84,6 +84,17 @@ export default defineSchema({
     .index("by_user_month", ["userId", "month"])
     .index("by_user", ["userId"]),
 
+  // Per-month income entries — each month is independent
+  monthlyIncome: defineTable({
+    userId: v.id("users"),
+    month: v.string(), // "2026-04"
+    amount: v.number(),
+    note: v.optional(v.string()), // e.g. "Salary", "Freelance"
+    isConfirmed: v.boolean(), // true = received this month
+    confirmedAt: v.optional(v.number()),
+  })
+    .index("by_user_month", ["userId", "month"]),
+
   expenses: defineTable({
     userId: v.id("users"),
     bucketId: v.id("buckets"),

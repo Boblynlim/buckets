@@ -23,6 +23,7 @@ import type * as growthLetters from "../growthLetters.js";
 import type * as income from "../income.js";
 import type * as incomeReceipts from "../incomeReceipts.js";
 import type * as memories from "../memories.js";
+import type * as monthlyIncome from "../monthlyIncome.js";
 import type * as pushNotificationActions from "../pushNotificationActions.js";
 import type * as pushNotifications from "../pushNotifications.js";
 import type * as recommendations from "../recommendations.js";
@@ -56,6 +57,7 @@ declare const fullApi: ApiFromModules<{
   income: typeof income;
   incomeReceipts: typeof incomeReceipts;
   memories: typeof memories;
+  monthlyIncome: typeof monthlyIncome;
   pushNotificationActions: typeof pushNotificationActions;
   pushNotifications: typeof pushNotifications;
   recommendations: typeof recommendations;

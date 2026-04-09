@@ -13,25 +13,18 @@ export const calculateDistribution = mutation({
     userId: v.id('users'),
   },
   handler: async (ctx, args) => {
-    // Get total monthly income (only currently active sources)
+    // Get total monthly income from per-month entries
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const allIncomeRecords = await ctx.db
-      .query('income')
-      .withIndex('by_user', q => q.eq('userId', args.userId))
-      .filter(q => q.eq(q.field('isRecurring'), true))
+    const monthlyEntries = await ctx.db
+      .query('monthlyIncome')
+      .withIndex('by_user_month', q =>
+        q.eq('userId', args.userId).eq('month', currentMonth)
+      )
       .collect();
 
-    const incomeRecords = allIncomeRecords.filter(income => {
-      const start = income.startMonth || '0000-00';
-      const end = income.endMonth;
-      if (currentMonth < start) return false;
-      if (end && currentMonth > end) return false;
-      return true;
-    });
-
-    const totalIncome = incomeRecords.reduce((sum, income) => sum + income.amount, 0);
+    const totalIncome = monthlyEntries.reduce((sum, entry) => sum + entry.amount, 0);
 
     // Get all active buckets
     const buckets = await ctx.db
@@ -149,25 +142,18 @@ export const calculateDistribution = mutation({
 export const getDistributionStatus = query({
   args: { userId: v.id('users') },
   handler: async (ctx, args) => {
-    // Get total monthly income (only currently active sources)
+    // Get total monthly income from per-month entries
     const now = new Date();
     const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const allIncomeRecords = await ctx.db
-      .query('income')
-      .withIndex('by_user', q => q.eq('userId', args.userId))
-      .filter(q => q.eq(q.field('isRecurring'), true))
+    const monthlyEntries = await ctx.db
+      .query('monthlyIncome')
+      .withIndex('by_user_month', q =>
+        q.eq('userId', args.userId).eq('month', currentMonth)
+      )
       .collect();
 
-    const incomeRecords = allIncomeRecords.filter(income => {
-      const start = income.startMonth || '0000-00';
-      const end = income.endMonth;
-      if (currentMonth < start) return false;
-      if (end && currentMonth > end) return false;
-      return true;
-    });
-
-    const totalIncome = incomeRecords.reduce((sum, income) => sum + income.amount, 0);
+    const totalIncome = monthlyEntries.reduce((sum, entry) => sum + entry.amount, 0);
 
     // Get all active spend buckets
     const buckets = await ctx.db

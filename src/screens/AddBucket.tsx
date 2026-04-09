@@ -129,9 +129,13 @@ export const AddBucket: React.FC<AddBucketProps> = ({ visible, onClose }) => {
   const { user: currentUser } = useAuth();
   const createBucket = useMutation(api.buckets.create);
 
+  const currentMonthStr = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  }, []);
   const userIncome = useQuery(
-    api.income.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
+    api.monthlyIncome.getByMonth,
+    currentUser ? { userId: currentUser._id, month: currentMonthStr } : 'skip',
   );
   const existingBuckets = useQuery(
     api.buckets.getByUser,
@@ -141,9 +145,7 @@ export const AddBucket: React.FC<AddBucketProps> = ({ visible, onClose }) => {
   // Calculate budget context
   const monthlyIncome = useMemo(() => {
     if (!userIncome) return 0;
-    return userIncome
-      .filter((i: any) => i.isRecurring)
-      .reduce((sum: number, i: any) => sum + i.amount, 0);
+    return userIncome.reduce((sum: number, i: any) => sum + i.amount, 0);
   }, [userIncome]);
 
   const allocatedAmount = useMemo(() => {

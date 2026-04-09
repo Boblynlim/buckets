@@ -22,7 +22,7 @@ export const deleteAllUserData = mutation({
       await ctx.db.delete(bucket._id);
     }
 
-    // Delete all income
+    // Delete all income (legacy)
     const income = await ctx.db
       .query('income')
       .withIndex('by_user', q => q.eq('userId', userId))
@@ -30,6 +30,16 @@ export const deleteAllUserData = mutation({
 
     for (const inc of income) {
       await ctx.db.delete(inc._id);
+    }
+
+    // Delete all monthly income
+    const monthlyIncome = await ctx.db
+      .query('monthlyIncome')
+      .withIndex('by_user_month', q => q.eq('userId', userId))
+      .collect();
+
+    for (const mi of monthlyIncome) {
+      await ctx.db.delete(mi._id);
     }
 
     // Delete all expenses

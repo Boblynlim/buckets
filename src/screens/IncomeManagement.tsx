@@ -1,17 +1,15 @@
-import React, {useState, useMemo} from 'react';
+import React, {useState, useMemo, useEffect, useRef} from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TextInput,
   TouchableOpacity,
   ScrollView,
-  ActivityIndicator,
   Modal,
   Platform,
 } from 'react-native';
-import {Check, Plus, Trash2, ChevronLeft, ChevronRight, ArrowDownToLine} from 'lucide-react-native';
+import {Check, Plus, Trash2, ChevronLeft, ChevronRight, Pencil, ArrowDownToLine} from 'lucide-react-native';
 import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
@@ -32,73 +30,61 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   onClose,
 }) => {
   const [selectedMonth, setSelectedMonth] = useState(startOfMonth(new Date()));
-  const [showAddSource, setShowAddSource] = useState(false);
-  const [showAdHoc, setShowAdHoc] = useState(false);
-  const [newSourceAmount, setNewSourceAmount] = useState('');
-  const [newSourceNote, setNewSourceNote] = useState('');
-  const [adHocAmount, setAdHocAmount] = useState('');
-  const [adHocNote, setAdHocNote] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newAmount, setNewAmount] = useState('');
+  const [newNote, setNewNote] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editNote, setEditNote] = useState('');
 
   const { user: currentUser } = useAuth();
-  const incomeEntries = useQuery(
-    api.income.getByUser,
-    currentUser ? {userId: currentUser._id} : 'skip',
+  const month = formatMonth(selectedMonth);
+
+  // Per-month income entries
+  const entries = useQuery(
+    api.monthlyIncome.getByMonth,
+    currentUser ? {userId: currentUser._id, month} : 'skip',
   );
-  // Fetch receipts from database, persisted per-month
-  const monthReceipts = useQuery(
-    api.incomeReceipts.getByMonth,
-    currentUser ? {userId: currentUser._id, month: formatMonth(selectedMonth)} : 'skip',
-  );
-  const addIncome = useMutation(api.income.add);
-  const removeIncome = useMutation(api.income.remove);
-  const logReceipt = useMutation(api.incomeReceipts.log);
-  const removeReceipt = useMutation(api.incomeReceipts.remove);
+  const seedMonth = useMutation(api.monthlyIncome.seedMonth);
+  const addEntry = useMutation(api.monthlyIncome.add);
+  const updateEntry = useMutation(api.monthlyIncome.update);
+  const removeEntry = useMutation(api.monthlyIncome.remove);
+  const toggleConfirm = useMutation(api.monthlyIncome.toggleConfirm);
+  const migrateFromLegacy = useMutation(api.monthlyIncome.migrateFromLegacy);
   const recalculateDistribution = useMutation(api.distribution.calculateDistribution);
+
   const distributionStatus = useQuery(
     api.distribution.getDistributionStatus,
     currentUser ? {userId: currentUser._id} : 'skip',
   );
 
-  const recurringSources = useMemo(() => {
-    if (!incomeEntries) return [];
-    const month = formatMonth(selectedMonth);
-    return incomeEntries.filter(i => {
-      if (!i.isRecurring) return false;
-      // Filter by month range: show if startMonth <= selectedMonth and (no endMonth or endMonth >= selectedMonth)
-      const start = i.startMonth || '0000-00';
-      const end = i.endMonth;
-      if (month < start) return false;
-      if (end && month > end) return false;
-      return true;
-    });
-  }, [incomeEntries, selectedMonth]);
+  // One-time migration from old global income table
+  const hasMigrated = useRef(false);
+  useEffect(() => {
+    if (currentUser && !hasMigrated.current) {
+      hasMigrated.current = true;
+      migrateFromLegacy({userId: currentUser._id}).catch(() => {});
+    }
+  }, [currentUser]);
+
+  // Auto-seed month from previous month if empty (only once per month)
+  const seededMonths = useRef(new Set<string>());
+  useEffect(() => {
+    if (entries && entries.length === 0 && currentUser && !seededMonths.current.has(month)) {
+      seededMonths.current.add(month);
+      seedMonth({userId: currentUser._id, month});
+    }
+  }, [entries, currentUser, month]);
 
   const expectedTotal = useMemo(() => {
-    return recurringSources.reduce((sum, s) => sum + s.amount, 0);
-  }, [recurringSources]);
+    if (!entries) return 0;
+    return entries.reduce((sum, e) => sum + e.amount, 0);
+  }, [entries]);
 
   const receivedTotal = useMemo(() => {
-    if (!monthReceipts) return 0;
-    return monthReceipts.reduce((sum, r) => sum + r.amount, 0);
-  }, [monthReceipts]);
-
-  const adHocReceipts = useMemo(() => {
-    if (!monthReceipts) return [];
-    return monthReceipts.filter(r => !r.sourceId);
-  }, [monthReceipts]);
-
-  // Receipts linked to sources that no longer exist
-  const orphanedReceipts = useMemo(() => {
-    if (!monthReceipts || !incomeEntries) return [];
-    const sourceIds = new Set(incomeEntries.map(i => i._id));
-    return monthReceipts.filter(r => r.sourceId && !sourceIds.has(r.sourceId));
-  }, [monthReceipts, incomeEntries]);
-
-  // Check which sources have been confirmed this month
-  const confirmedSourceIds = useMemo(() => {
-    if (!monthReceipts) return new Set<string>();
-    return new Set(monthReceipts.filter(r => r.sourceId).map(r => r.sourceId!));
-  }, [monthReceipts]);
+    if (!entries) return 0;
+    return entries.filter(e => e.isConfirmed).reduce((sum, e) => sum + e.amount, 0);
+  }, [entries]);
 
   const progressPercent = expectedTotal > 0
     ? Math.min(100, (receivedTotal / expectedTotal) * 100)
@@ -106,108 +92,103 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
 
   const isCurrentMonth = isSameMonth(selectedMonth, new Date());
 
-  const handleConfirmSource = async (sourceId: string, amount: number, note?: string) => {
-    if (!currentUser) return;
-    try {
-      await logReceipt({
-        userId: currentUser._id,
-        sourceId: sourceId as any,
-        amount,
-        month: formatMonth(selectedMonth),
-        note,
-      });
-    } catch (err: any) {
-      console.error('Failed to confirm income:', err);
-    }
-  };
-
-  const handleUnconfirmSource = async (sourceId: string) => {
-    if (!monthReceipts) return;
-    const receipt = monthReceipts.find(r => r.sourceId === sourceId);
-    if (!receipt) return;
-    try {
-      await removeReceipt({receiptId: receipt._id});
-    } catch (err: any) {
-      console.error('Failed to unconfirm income:', err);
-    }
-  };
-
-  const handleAddAdHoc = async () => {
-    const amt = parseFloat(adHocAmount);
+  const handleAdd = async () => {
+    const amt = parseFloat(newAmount);
     if (!amt || amt <= 0 || !currentUser) return;
     try {
-      await logReceipt({
+      await addEntry({
         userId: currentUser._id,
+        month,
         amount: amt,
-        month: formatMonth(selectedMonth),
-        note: adHocNote || undefined,
+        note: newNote || undefined,
       });
-      setAdHocAmount('');
-      setAdHocNote('');
-      setShowAdHoc(false);
+      // Recalculate if current month
+      if (isCurrentMonth) {
+        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
+      }
+      setNewAmount('');
+      setNewNote('');
+      setShowAddForm(false);
     } catch (err: any) {
-      console.error('Failed to add extra income:', err);
+      console.error('Failed to add income:', err);
     }
   };
 
-  const handleAddSource = async () => {
-    const amt = parseFloat(newSourceAmount);
-    if (!amt || amt <= 0 || !currentUser) return;
-    try {
-      await addIncome({
-        userId: currentUser._id,
-        amount: amt,
-        date: Date.now(),
-        note: newSourceNote || undefined,
-        isRecurring: true,
-        startMonth: formatMonth(selectedMonth),
-      });
-      setNewSourceAmount('');
-      setNewSourceNote('');
-      setShowAddSource(false);
-    } catch (err: any) {
-      console.error('Failed to add source:', err);
-      if (Platform.OS === 'web') alert(`Error: ${err.message}`);
-    }
-  };
-
-  const handleDeleteSource = async (incomeId: string) => {
-    // End the source as of the month *before* the selected month
-    // So if viewing March and you delete, it ends after February (last active = Feb)
-    const prevMonth = formatMonth(subMonths(selectedMonth, 1));
-    const msg = `End this income source? It will stop showing from ${format(selectedMonth, 'MMMM yyyy')} onwards but remain in earlier months.`;
+  const handleDelete = async (entryId: string) => {
     const confirm = Platform.OS === 'web'
-      ? window.confirm(msg)
-      : true; // native would use Alert
+      ? window.confirm('Remove this income for this month?')
+      : true;
     if (!confirm) return;
     try {
-      await removeIncome({incomeId: incomeId as any, endMonth: prevMonth});
-      if (currentUser) {
+      await removeEntry({entryId: entryId as any});
+      if (isCurrentMonth && currentUser) {
         await recalculateDistribution({userId: currentUser._id}).catch(() => {});
       }
     } catch (err: any) {
-      console.error('Failed to end source:', err);
+      console.error('Failed to remove income:', err);
     }
   };
 
-  const handleRemoveAdHoc = async (receiptId: string) => {
+  const handleToggleConfirm = async (entryId: string) => {
     try {
-      await removeReceipt({receiptId: receiptId as any});
+      await toggleConfirm({entryId: entryId as any});
+      // Recalculate distribution when confirming income for current month
+      if (isCurrentMonth && currentUser) {
+        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
+      }
     } catch (err: any) {
-      console.error('Failed to remove receipt:', err);
+      console.error('Failed to toggle confirm:', err);
     }
   };
 
-  if (currentUser === undefined || incomeEntries === undefined) {
+  const handleRecalculate = async () => {
+    if (!currentUser) return;
+    try {
+      await recalculateDistribution({userId: currentUser._id});
+    } catch (err: any) {
+      console.error('Failed to recalculate:', err);
+    }
+  };
+
+  const startEdit = (entry: any) => {
+    setEditingId(entry._id);
+    setEditAmount(String(entry.amount));
+    setEditNote(entry.note || '');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingId) return;
+    const amt = parseFloat(editAmount);
+    if (!amt || amt <= 0) return;
+    try {
+      await updateEntry({
+        entryId: editingId as any,
+        amount: amt,
+        note: editNote || undefined,
+      });
+      if (isCurrentMonth && currentUser) {
+        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
+      }
+      setEditingId(null);
+    } catch (err: any) {
+      console.error('Failed to update income:', err);
+    }
+  };
+
+  // Only show full-page loader on initial auth load, not when switching months
+  if (currentUser === undefined) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={styles.container}>
         <PotteryLoader />
-      </SafeAreaView>
+      </View>
     );
   }
 
+  // Use empty array while loading a new month's data (prevents drawer re-layout)
+  const displayEntries = entries ?? [];
+
   const content = (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -259,7 +240,8 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
               styles.progressFill,
               {
                 width: `${progressPercent}%` as any,
-                backgroundColor: receivedTotal >= expectedTotal ? theme.colors.success : theme.colors.primary,
+                backgroundColor: receivedTotal >= expectedTotal && expectedTotal > 0
+                  ? theme.colors.success : theme.colors.primary,
               },
             ]} />
           </View>
@@ -273,203 +255,134 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
           )}
         </View>
 
-        {/* Received this month breakdown */}
-        {monthReceipts && monthReceipts.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.label}>Received this month</Text>
-              <Text style={[styles.label, {textTransform: 'none', letterSpacing: 0}]}>
-                ${receivedTotal.toLocaleString('en-US', {minimumFractionDigits: 2})}
-              </Text>
-            </View>
-
-            {monthReceipts.map((receipt, index) => {
-              // Figure out the label
-              const linkedSource = receipt.sourceId
-                ? incomeEntries?.find(i => i._id === receipt.sourceId)
-                : null;
-              const label = receipt.note
-                || (linkedSource ? linkedSource.note || 'Income' : null)
-                || 'Unknown source (deleted)';
-              const isOrphaned = receipt.sourceId && !linkedSource;
-
-              return (
-                <View
-                  key={receipt._id}
-                  style={[
-                    styles.receiptRow,
-                    index < monthReceipts.length - 1 && styles.sourceRowBorder,
-                  ]}>
-                  <View style={{flex: 1}}>
-                    <View style={{flexDirection: 'row', alignItems: 'center', gap: 6}}>
-                      <Text style={[styles.receiptName, isOrphaned && {color: theme.colors.textTertiary}]}>
-                        {label}
-                      </Text>
-                      {isOrphaned && (
-                        <View style={styles.orphanBadge}>
-                          <Text style={styles.orphanBadgeText}>deleted source</Text>
-                        </View>
-                      )}
-                    </View>
-                    <Text style={styles.sourceAmount}>
-                      ${receipt.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                    </Text>
-                    <Text style={styles.receiptDate}>
-                      {new Date(receipt.receivedAt).toLocaleDateString()}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    onPress={() => handleRemoveAdHoc(receipt._id)}
-                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                    <Trash2 size={16} color={theme.colors.textTertiary} />
-                  </TouchableOpacity>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Allocation Status Badge */}
-        {distributionStatus && distributionStatus.totalIncome > 0 && (
-          <View style={styles.allocationBadge}>
+        {/* Allocation Status — only show for current month */}
+        {isCurrentMonth && distributionStatus && (
+          <TouchableOpacity
+            style={styles.allocationBadge}
+            onPress={handleRecalculate}
+            activeOpacity={0.7}>
             <View style={[
               styles.allocationIcon,
-              {backgroundColor: distributionStatus.totalFunded > 0 ? theme.colors.success : theme.colors.textTertiary},
+              {backgroundColor: distributionStatus.totalFunded > 0 ? theme.colors.success : theme.colors.primary},
             ]}>
               <ArrowDownToLine size={14} color="#FFFFFF" strokeWidth={2.5} />
             </View>
             <View style={{flex: 1}}>
-              <Text style={styles.allocationTitle}>
-                {distributionStatus.totalFunded > 0 ? 'Income allocated to cups' : 'Not yet allocated'}
-              </Text>
-              <Text style={styles.allocationDetail}>
-                ${distributionStatus.totalFunded.toFixed(2)} distributed
-                {distributionStatus.unallocated > 0
-                  ? ` · $${distributionStatus.unallocated.toFixed(2)} unallocated`
-                  : ''}
-                {distributionStatus.isOverPlanned
-                  ? ` · over-planned by $${distributionStatus.overPlannedBy.toFixed(2)}`
-                  : ''}
-              </Text>
+              {distributionStatus.totalFunded > 0 ? (
+                <>
+                  <Text style={styles.allocationTitle}>Allocated to cups</Text>
+                  <Text style={styles.allocationDetail}>
+                    ${distributionStatus.totalFunded.toFixed(2)} distributed across your cups
+                    {distributionStatus.unallocated > 0
+                      ? ` · $${distributionStatus.unallocated.toFixed(2)} unallocated`
+                      : ''}
+                    {distributionStatus.isOverPlanned
+                      ? ` · over-planned by $${distributionStatus.overPlannedBy.toFixed(2)}`
+                      : ''}
+                  </Text>
+                  <Text style={styles.allocationHint}>Tap to recalculate</Text>
+                </>
+              ) : expectedTotal > 0 ? (
+                <>
+                  <Text style={styles.allocationTitle}>Not yet allocated</Text>
+                  <Text style={styles.allocationDetail}>
+                    ${expectedTotal.toFixed(2)} ready to distribute
+                  </Text>
+                  <Text style={styles.allocationHint}>Tap to allocate to cups</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.allocationTitle}>No income to allocate</Text>
+                  <Text style={styles.allocationDetail}>Add income above first</Text>
+                </>
+              )}
             </View>
             {distributionStatus.totalFunded > 0 && (
               <View style={styles.allocationCheck}>
-                <Check size={14} color={theme.colors.success} strokeWidth={3} />
+                <Check size={16} color={theme.colors.success} strokeWidth={3} />
               </View>
             )}
-          </View>
+          </TouchableOpacity>
         )}
 
-        {/* Income Sources */}
+        {/* Income Entries for this month */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.label}>Income Sources</Text>
-            <TouchableOpacity onPress={() => setShowAddSource(true)}>
+            <Text style={styles.label}>{format(selectedMonth, 'MMMM')} Income</Text>
+            <TouchableOpacity onPress={() => setShowAddForm(true)}>
               <Plus size={18} color={theme.colors.primary} />
             </TouchableOpacity>
           </View>
 
-          {recurringSources.length === 0 && (
+          {displayEntries.length === 0 && !showAddForm && (
             <TouchableOpacity
-              style={styles.emptySourceCard}
-              onPress={() => setShowAddSource(true)}>
-              <Text style={styles.emptySourceText}>
-                Add your first income source
+              style={styles.emptyCard}
+              onPress={() => setShowAddForm(true)}>
+              <Text style={styles.emptyText}>
+                Add your income for this month
               </Text>
-              <Text style={styles.emptySourceSubtext}>
+              <Text style={styles.emptySubtext}>
                 e.g., Salary, Freelance, Side gig
               </Text>
             </TouchableOpacity>
           )}
 
-          {recurringSources.map((source, index) => {
-            const isConfirmed = confirmedSourceIds.has(source._id);
-            const receipt = monthReceipts?.find(r => r.sourceId === source._id);
-            return (
-              <View
-                key={source._id}
-                style={[
-                  styles.sourceRow,
-                  index < recurringSources.length - 1 && styles.sourceRowBorder,
-                ]}>
-                <TouchableOpacity
-                  style={[styles.checkCircle, isConfirmed && styles.checkCircleActive]}
-                  onPress={() =>
-                    isConfirmed
-                      ? handleUnconfirmSource(source._id)
-                      : handleConfirmSource(source._id, source.amount, source.note)
-                  }>
-                  {isConfirmed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-                </TouchableOpacity>
-                <View style={styles.sourceInfo}>
-                  <Text style={[styles.sourceName, isConfirmed && styles.sourceNameConfirmed]}>
-                    {source.note || 'Income'}
-                  </Text>
-                  <Text style={styles.sourceAmount}>
-                    ${source.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                  </Text>
-                  {isConfirmed && receipt && (
-                    <Text style={styles.sourceConfirmedDate}>
-                      Received {new Date(receipt.receivedAt).toLocaleDateString()}
-                    </Text>
-                  )}
-                </View>
-                <TouchableOpacity
-                  style={styles.deleteBtn}
-                  onPress={() => handleDeleteSource(source._id)}
-                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                  <Trash2 size={16} color={theme.colors.textTertiary} />
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-
-        {/* Ad-hoc / Extra Income */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.label}>Extra Income</Text>
-            <TouchableOpacity onPress={() => setShowAdHoc(true)}>
-              <Plus size={18} color={theme.colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {adHocReceipts.length === 0 && !showAdHoc && (
-            <Text style={styles.adHocEmpty}>
-              Bonuses, side gigs, refunds — add them here
-            </Text>
-          )}
-
-          {adHocReceipts.map((receipt, index) => (
+          {displayEntries.map((entry, index) => (
             <View
-              key={receipt._id}
+              key={entry._id}
               style={[
-                styles.adHocRow,
-                index < adHocReceipts.length - 1 && styles.sourceRowBorder,
+                styles.entryRow,
+                index < displayEntries.length - 1 && styles.entryRowBorder,
               ]}>
-              <View style={{flex: 1}}>
-                <Text style={styles.sourceName}>{receipt.note || 'Extra income'}</Text>
-                <Text style={styles.sourceAmount}>
-                  ${receipt.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                </Text>
-              </View>
+              {/* Confirm checkbox */}
               <TouchableOpacity
-                onPress={() => handleRemoveAdHoc(receipt._id)}
+                style={[styles.checkCircle, entry.isConfirmed && styles.checkCircleActive]}
+                onPress={() => handleToggleConfirm(entry._id)}>
+                {entry.isConfirmed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
+              </TouchableOpacity>
+
+              <View style={styles.entryInfo}>
+                <Text style={[styles.entryName, entry.isConfirmed && styles.entryNameConfirmed]}>
+                  {entry.note || 'Income'}
+                </Text>
+                <Text style={styles.entryAmount}>
+                  ${entry.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
+                </Text>
+                {entry.isConfirmed && entry.confirmedAt && (
+                  <Text style={styles.confirmedDate}>
+                    Received {new Date(entry.confirmedAt).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+
+              {/* Edit button */}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => startEdit(entry)}
                 hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                <Trash2 size={16} color={theme.colors.textTertiary} />
+                <Pencil size={15} color={theme.colors.textTertiary} />
+              </TouchableOpacity>
+
+              {/* Delete button */}
+              <TouchableOpacity
+                style={styles.actionBtn}
+                onPress={() => handleDelete(entry._id)}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Trash2 size={15} color={theme.colors.textTertiary} />
               </TouchableOpacity>
             </View>
           ))}
 
-          {showAdHoc && (
+          {/* Inline add form */}
+          {showAddForm && (
             <View style={styles.inlineForm}>
               <View style={styles.inlineFormRow}>
                 <View style={[styles.amountContainer, {flex: 1}]}>
                   <Text style={styles.currencySymbol}>$</Text>
                   <TextInput
                     style={styles.amountInput}
-                    value={adHocAmount}
-                    onChangeText={setAdHocAmount}
+                    value={newAmount}
+                    onChangeText={setNewAmount}
                     keyboardType="decimal-pad"
                     placeholder="0.00"
                     placeholderTextColor={theme.colors.textTertiary}
@@ -479,18 +392,18 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
               </View>
               <TextInput
                 style={styles.noteInput}
-                value={adHocNote}
-                onChangeText={setAdHocNote}
-                placeholder="What's this from?"
+                value={newNote}
+                onChangeText={setNewNote}
+                placeholder="e.g., Salary, Freelance"
                 placeholderTextColor={theme.colors.textTertiary}
               />
               <View style={styles.inlineFormActions}>
-                <TouchableOpacity onPress={() => {setShowAdHoc(false); setAdHocAmount(''); setAdHocNote('');}}>
+                <TouchableOpacity onPress={() => {setShowAddForm(false); setNewAmount(''); setNewNote('');}}>
                   <Text style={styles.inlineCancel}>Cancel</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.inlineSaveBtn, (!adHocAmount || parseFloat(adHocAmount) <= 0) && {opacity: 0.4}]}
-                  onPress={handleAddAdHoc}>
+                  style={[styles.inlineSaveBtn, (!newAmount || parseFloat(newAmount) <= 0) && {opacity: 0.4}]}
+                  onPress={handleAdd}>
                   <Text style={styles.inlineSaveText}>Add</Text>
                 </TouchableOpacity>
               </View>
@@ -501,21 +414,18 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
         <View style={{height: 40}} />
       </ScrollView>
 
-      {/* Add Source Modal */}
-      <Modal visible={showAddSource} transparent animationType="fade">
+      {/* Edit Modal */}
+      <Modal visible={!!editingId} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>New Income Source</Text>
-            <Text style={styles.modalSubtitle}>
-              This will be expected every month
-            </Text>
+            <Text style={styles.modalTitle}>Edit Income</Text>
 
             <View style={styles.amountContainer}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput
                 style={styles.amountInput}
-                value={newSourceAmount}
-                onChangeText={setNewSourceAmount}
+                value={editAmount}
+                onChangeText={setEditAmount}
                 keyboardType="decimal-pad"
                 placeholder="0.00"
                 placeholderTextColor={theme.colors.textTertiary}
@@ -525,8 +435,8 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
 
             <TextInput
               style={[styles.noteInput, {marginTop: 10}]}
-              value={newSourceNote}
-              onChangeText={setNewSourceNote}
+              value={editNote}
+              onChangeText={setEditNote}
               placeholder="e.g., Salary, Freelance"
               placeholderTextColor={theme.colors.textTertiary}
             />
@@ -534,19 +444,19 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
             <View style={styles.modalActions}>
               <TouchableOpacity
                 style={styles.modalCancelBtn}
-                onPress={() => {setShowAddSource(false); setNewSourceAmount(''); setNewSourceNote('');}}>
+                onPress={() => setEditingId(null)}>
                 <Text style={styles.modalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalSaveBtn, (!newSourceAmount || parseFloat(newSourceAmount) <= 0) && {opacity: 0.4}]}
-                onPress={handleAddSource}>
-                <Text style={styles.modalSaveText}>Add Source</Text>
+                style={[styles.modalSaveBtn, (!editAmount || parseFloat(editAmount) <= 0) && {opacity: 0.4}]}
+                onPress={handleSaveEdit}>
+                <Text style={styles.modalSaveText}>Save</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 
   if (onClose) {
@@ -571,16 +481,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 40,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 24,
     paddingVertical: 16,
   },
   title: {
@@ -660,36 +565,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
 
-  // Receipt breakdown
-  receiptRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  receiptName: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 1,
-  },
-  receiptDate: {
-    fontSize: 12,
-    fontFamily: 'Merchant',
-    color: theme.colors.textTertiary,
-    marginTop: 2,
-  },
-  orphanBadge: {
-    backgroundColor: theme.colors.danger + '20',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  orphanBadgeText: {
-    fontSize: 11,
-    fontFamily: 'Merchant',
-    color: theme.colors.danger,
-  },
-
   // Allocation badge
   allocationBadge: {
     flexDirection: 'row',
@@ -719,6 +594,12 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
   },
+  allocationHint: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    color: theme.colors.primary,
+    marginTop: 4,
+  },
   allocationCheck: {
     marginLeft: 4,
   },
@@ -745,13 +626,13 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Source rows
-  sourceRow: {
+  // Entry rows
+  entryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 12,
   },
-  sourceRowBorder: {
+  entryRowBorder: {
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: theme.colors.border,
   },
@@ -769,62 +650,50 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.success,
     borderColor: theme.colors.success,
   },
-  sourceInfo: {
+  entryInfo: {
     flex: 1,
   },
-  sourceName: {
+  entryName: {
     fontSize: 17,
     fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 2,
   },
-  sourceNameConfirmed: {
+  entryNameConfirmed: {
     color: theme.colors.textSecondary,
   },
-  sourceAmount: {
+  entryAmount: {
     fontSize: 18,
     fontFamily: 'Merchant Copy',
     color: theme.colors.text,
   },
-  sourceConfirmedDate: {
+  confirmedDate: {
     fontSize: 13,
     fontFamily: 'Merchant',
     color: theme.colors.success,
     marginTop: 2,
   },
-  deleteBtn: {
+  actionBtn: {
     padding: 8,
   },
 
-  // Empty source
-  emptySourceCard: {
+  // Empty state
+  emptyCard: {
     backgroundColor: theme.colors.cardBackground,
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
   },
-  emptySourceText: {
+  emptyText: {
     fontSize: 16,
     fontFamily: 'Merchant',
     color: theme.colors.text,
     marginBottom: 4,
   },
-  emptySourceSubtext: {
+  emptySubtext: {
     fontSize: 14,
     fontFamily: 'Merchant',
     color: theme.colors.textTertiary,
-  },
-
-  // Ad-hoc
-  adHocEmpty: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.textTertiary,
-  },
-  adHocRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
   },
 
   // Inline form
@@ -913,13 +782,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Merchant',
     color: theme.colors.text,
-    marginBottom: 4,
-  },
-  modalSubtitle: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-    marginBottom: 18,
+    marginBottom: 14,
   },
   modalActions: {
     flexDirection: 'row',

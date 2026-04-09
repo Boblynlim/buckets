@@ -108,9 +108,13 @@ export const Settings: React.FC<SettingsProps> = ({
     api.expenses.getByUser,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
+  const currentMonthStr = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  })();
   const incomeEntries = useQuery(
-    api.income.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
+    api.monthlyIncome.getByMonth,
+    currentUser ? { userId: currentUser._id, month: currentMonthStr } : 'skip',
   );
   const groups = useQuery(
     api.groups.getByUser,
@@ -160,9 +164,8 @@ export const Settings: React.FC<SettingsProps> = ({
 
   registerCupAssignments(allBuckets.map(b => b._id));
 
-  // Calculate total monthly income (sum of recurring income)
+  // Calculate total monthly income from per-month entries
   const monthlyIncome = allIncomeEntries
-    .filter(income => income.isRecurring)
     .reduce((sum, income) => sum + income.amount, 0);
 
   const handleExportCSV = () => {
