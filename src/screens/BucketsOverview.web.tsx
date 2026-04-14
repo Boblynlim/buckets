@@ -512,6 +512,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           onRequestClose={() => setShowMonthlyTransactions(false)}
         >
           <View style={styles.container}>
+            <div style={{ paddingTop: 'env(safe-area-inset-top, 0px)' } as any}>
             <View style={styles.monthlyHeader}>
               <TouchableOpacity
                 style={styles.backButton}
@@ -524,6 +525,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               </Text>
               <View style={{ width: 40 }} />
             </View>
+            </div>
 
             <View style={styles.monthlyTotalCard}>
               <Text style={styles.monthlyTotalLabel}>TOTAL SPENT</Text>
