@@ -16,7 +16,7 @@ import { useAuth } from '../lib/AuthContext';
 import {theme} from '../theme';
 import {Drawer} from '../components/Drawer';
 import {PotteryLoader} from '../components/PotteryLoader';
-import {format, addMonths, subMonths, startOfMonth, isSameMonth} from 'date-fns';
+import {format, addMonths, subMonths, startOfMonth, isSameMonth, isBefore} from 'date-fns';
 
 interface IncomeManagementProps {
   visible?: boolean;
@@ -255,7 +255,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
           )}
         </View>
 
-        {/* Allocation Status — only show for current month */}
+        {/* Allocation Status */}
         {isCurrentMonth && distributionStatus && (
           <TouchableOpacity
             style={styles.allocationBadge}
@@ -303,6 +303,40 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
               </View>
             )}
           </TouchableOpacity>
+        )}
+        {!isCurrentMonth && (
+          <View style={styles.allocationBadge}>
+            <View style={[
+              styles.allocationIcon,
+              {backgroundColor: isBefore(selectedMonth, startOfMonth(new Date()))
+                ? theme.colors.success
+                : theme.colors.textTertiary},
+            ]}>
+              <ArrowDownToLine size={14} color="#FFFFFF" strokeWidth={2.5} />
+            </View>
+            <View style={{flex: 1}}>
+              {isBefore(selectedMonth, startOfMonth(new Date())) ? (
+                <>
+                  <Text style={styles.allocationTitle}>Allocated</Text>
+                  <Text style={styles.allocationDetail}>
+                    This month's income was allocated to cups
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.allocationTitle}>Not yet allocated</Text>
+                  <Text style={styles.allocationDetail}>
+                    Income will be allocated when this month begins
+                  </Text>
+                </>
+              )}
+            </View>
+            {isBefore(selectedMonth, startOfMonth(new Date())) && (
+              <View style={styles.allocationCheck}>
+                <Check size={16} color={theme.colors.success} strokeWidth={3} />
+              </View>
+            )}
+          </View>
         )}
 
         {/* Income Entries for this month */}
