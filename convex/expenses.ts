@@ -429,3 +429,55 @@ export const toggleWorthIt = mutation({
     }
   },
 });
+
+/**
+ * Fix timestamps on CSV-imported expenses that were parsed as UTC midnight.
+ *
+ * The CSV import used `new Date("YYYY-MM-DD")` which JavaScript interprets as
+ * UTC midnight. This causes month-boundary mismatches with the local-time
+ * filters used in bucket spent calculations and rollover.
+ *
+ * This mutation detects expenses whose timestamps land exactly on UTC midnight
+ * (the hallmark of the bug) and shifts them to noon local time on the same
+ * calendar date, matching how manually-created expenses behave.
+ */
+export const fixUTCImportedDates = mutation({
+  args: {
+    userId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const allExpenses = await ctx.db
+      .query("expenses")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .collect();
+
+    let fixed = 0;
+
+    for (const expense of allExpenses) {
+      const d = new Date(expense.date);
+      // UTC midnight = hours/minutes/seconds/ms are all 0 in UTC
+      if (
+        d.getUTCHours() === 0 &&
+        d.getUTCMinutes() === 0 &&
+        d.getUTCSeconds() === 0 &&
+        d.getUTCMilliseconds() === 0
+      ) {
+        // Reconstruct as local noon on the same calendar date (UTC date)
+        const localNoon = new Date(
+          d.getUTCFullYear(),
+          d.getUTCMonth(),
+          d.getUTCDate(),
+          12, 0, 0,
+        ).getTime();
+
+        await ctx.db.patch(expense._id, {
+          date: localNoon,
+          updatedAt: Date.now(),
+        });
+        fixed++;
+      }
+    }
+
+    return { fixed, total: allExpenses.length };
+  },
+});

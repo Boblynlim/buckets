@@ -177,6 +177,7 @@ interface BucketDetailProps {
   onBack: () => void;
   onEditBucket?: (bucket: Bucket, suggestedAmount?: number) => void;
   onEditExpense?: (expense: Expense, bucket: Bucket) => void;
+  selectedMonth?: Date;
   onAddExpense?: (bucket: Bucket) => void;
 }
 
@@ -186,6 +187,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   onBack,
   onEditBucket,
   onEditExpense,
+  selectedMonth,
   onAddExpense,
 }) => {
   const [dismissedKey, setDismissedKey] = React.useState<string | null>(null);
@@ -215,10 +217,10 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
       allocationText = `Monthly contribution: ${contribution}`;
     }
   } else {
-    // Derive totalSpent from the reactive expenses query, filtered to current month
-    const now = new Date();
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+    // Derive totalSpent from the reactive expenses query, filtered to selected month
+    const ref = selectedMonth || new Date();
+    const monthStart = new Date(ref.getFullYear(), ref.getMonth(), 1).getTime();
+    const monthEnd = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
     const totalSpent = (expenses || [])
       .filter(e => e.date >= monthStart && e.date <= monthEnd)
       .reduce((sum, e) => sum + e.amount, 0);

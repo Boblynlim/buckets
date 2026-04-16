@@ -121,6 +121,8 @@ export const Settings: React.FC<SettingsProps> = ({
     currentUser ? { userId: currentUser._id } : 'skip',
   );
   const bulkImport = useMutation(api.expenses.bulkImport);
+  const fixUTCDates = useMutation(api.expenses.fixUTCImportedDates);
+  const replayCarryovers = useMutation(api.rollover.replayAndFixCarryovers);
   const generateReport = useAction(api.reportsNew.generateMonthlyReport);
   const resetAllData = useMutation(api.reset.deleteAllUserData);
   const removeBucket = useMutation(api.buckets.remove);
@@ -273,7 +275,21 @@ export const Settings: React.FC<SettingsProps> = ({
         return {
           bucketId,
           amount: exp.amount,
-          date: new Date(exp.date).getTime(),
+          date: (() => {
+            // Parse YYYY-MM-DD as local time (noon) to match how manual expenses
+            // use local time and how month filters use local boundaries.
+            // new Date("YYYY-MM-DD") parses as UTC which causes month-boundary mismatches.
+            const parts = exp.date.split('-');
+            if (parts.length === 3) {
+              return new Date(
+                parseInt(parts[0], 10),
+                parseInt(parts[1], 10) - 1,
+                parseInt(parts[2], 10),
+                12, 0, 0,
+              ).getTime();
+            }
+            return new Date(exp.date).getTime();
+          })(),
           note: exp.note,
           worthIt: exp.worthIt ?? false,
           category: exp.category,
@@ -411,6 +427,26 @@ export const Settings: React.FC<SettingsProps> = ({
       setPcError(clean);
     } finally {
       setPcSubmitting(false);
+    }
+  };
+
+  const handleRepairImportedData = async () => {
+    if (!currentUser) return;
+
+    try {
+      showToast('Fixing imported expense dates...', 'loading');
+      const fixResult = await fixUTCDates({ userId: currentUser._id });
+
+      showToast(`Fixed ${fixResult.fixed} expenses. Recalculating carryovers...`, 'loading');
+      const carryoverResult = await replayCarryovers({ userId: currentUser._id });
+
+      showToast(
+        `Repaired ${fixResult.fixed} expense dates and recalculated ${carryoverResult.bucketsFixed} bucket carryovers.`,
+        'success',
+      );
+    } catch (error: any) {
+      console.error('Repair failed:', error);
+      showToast(`Repair failed: ${error?.message || 'Unknown error'}`, 'error');
     }
   };
 
@@ -610,6 +646,13 @@ export const Settings: React.FC<SettingsProps> = ({
 
             <Pressable style={styles.groupRow} onPress={() => setShowExport(true)}>
               <Text style={styles.groupRowTitle}>Export Data</Text>
+              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
+            </Pressable>
+
+            <View style={styles.groupRowDivider} />
+
+            <Pressable style={styles.groupRow} onPress={handleRepairImportedData}>
+              <Text style={styles.groupRowTitle}>Repair Imported Data</Text>
               <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
             </Pressable>
 

@@ -314,16 +314,18 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
 
   const updateBucket = useMutation(api.buckets.update);
 
-  // Current month boundaries
-  const _now = new Date();
-  const currentMonthStart = new Date(
-    _now.getFullYear(),
-    _now.getMonth(),
+  const { user: currentUser } = useAuth();
+
+  // Use selectedMonth for bucket spent calculation so switching months
+  // shows the correct spent/remaining for that month's expenses.
+  const selectedMonthStart = new Date(
+    selectedMonth.getFullYear(),
+    selectedMonth.getMonth(),
     1,
   ).getTime();
-  const currentMonthEnd = new Date(
-    _now.getFullYear(),
-    _now.getMonth() + 1,
+  const selectedMonthEnd = new Date(
+    selectedMonth.getFullYear(),
+    selectedMonth.getMonth() + 1,
     0,
     23,
     59,
@@ -331,15 +333,13 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     999,
   ).getTime();
 
-  const { user: currentUser } = useAuth();
-
   const buckets = useQuery(
     api.buckets.getByUser,
     currentUser
       ? {
           userId: currentUser._id,
-          monthStart: currentMonthStart,
-          monthEnd: currentMonthEnd,
+          monthStart: selectedMonthStart,
+          monthEnd: selectedMonthEnd,
         }
       : 'skip',
   );
@@ -354,25 +354,9 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     currentUser ? { userId: currentUser._id } : 'skip',
   );
 
-  // Selected month analytics
-  const monthStart = new Date(
-    selectedMonth.getFullYear(),
-    selectedMonth.getMonth(),
-    1,
-  ).getTime();
-  const monthEnd = new Date(
-    selectedMonth.getFullYear(),
-    selectedMonth.getMonth() + 1,
-    0,
-    23,
-    59,
-    59,
-    999,
-  ).getTime();
-
   const monthlySpending = useQuery(
     api.analytics.getMonthlyTotalSpent,
-    currentUser ? { userId: currentUser._id, monthStart, monthEnd } : 'skip',
+    currentUser ? { userId: currentUser._id, monthStart: selectedMonthStart, monthEnd: selectedMonthEnd } : 'skip',
   );
 
   const allExpenses = useQuery(
@@ -466,6 +450,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     <BucketDetail
       visible={!!selectedBucket}
       bucket={selectedBucket}
+      selectedMonth={selectedMonth}
       onBack={() => setSelectedBucket(null)}
       onEditBucket={onEditBucket}
       onEditExpense={onEditExpense}
