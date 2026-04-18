@@ -19,6 +19,10 @@
     <!-- Favicon -->
     <link rel="icon" type="image/png" href="/icons/favicon-cup.png" />
 
+    <!-- Preload critical custom fonts to avoid FOUT -->
+    <link rel="preload" href="/Merchant%20Copy.ttf" as="font" type="font/ttf" crossorigin="anonymous" />
+    <link rel="preload" href="/Merchant%20Copy%20Wide.ttf" as="font" type="font/ttf" crossorigin="anonymous" />
+
     <!-- Space Mono Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -70,7 +74,7 @@
         src: url('./Merchant%20Copy.ttf') format('truetype');
         font-weight: normal;
         font-style: normal;
-        font-display: swap;
+        font-display: block;
       }
 
       @font-face {
@@ -78,7 +82,7 @@
         src: url('./Merchant%20Copy.ttf') format('truetype');
         font-weight: normal;
         font-style: normal;
-        font-display: swap;
+        font-display: block;
       }
 
       @font-face {
@@ -86,7 +90,7 @@
         src: url('./Merchant%20Copy%20Wide.ttf') format('truetype');
         font-weight: normal;
         font-style: normal;
-        font-display: swap;
+        font-display: block;
       }
       @font-face {
         font-family: 'Kaitou Yokoku Gothic';

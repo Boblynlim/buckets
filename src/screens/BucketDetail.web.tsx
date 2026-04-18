@@ -13,7 +13,19 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Edit2 } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { formatDistanceToNow } from 'date-fns';
+import { format } from 'date-fns';
+
+// Friendly relative date — "today"/"yesterday"/"N days ago" within a week, else "MMM d"
+const formatRelativeDate = (ts: number): string => {
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays > 1 && diffDays < 7) return `${diffDays} days ago`;
+  return format(d, d.getFullYear() === now.getFullYear() ? 'MMM d' : 'MMM d, yyyy');
+};
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
 
@@ -915,9 +927,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                     {expense.note || 'Expense'}
                   </Text>
                   <Text style={styles.transactionDate}>
-                    {formatDistanceToNow(new Date(expense.createdAt), {
-                      addSuffix: true,
-                    })}
+                    {formatRelativeDate(expense.date)}
                   </Text>
                 </View>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 } as any}>

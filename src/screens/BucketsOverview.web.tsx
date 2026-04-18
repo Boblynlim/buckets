@@ -41,6 +41,18 @@ const generateMonths = () => {
   return months;
 };
 
+// Helper: friendly relative date — "today"/"yesterday"/"N days ago" within a week, else "MMM d"
+const formatRelativeDate = (ts: number): string => {
+  const d = new Date(ts);
+  const now = new Date();
+  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diffDays = Math.floor((startOfDay(now) - startOfDay(d)) / 86400000);
+  if (diffDays === 0) return 'today';
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays > 1 && diffDays < 7) return `${diffDays} days ago`;
+  return format(d, d.getFullYear() === now.getFullYear() ? 'MMM d' : 'MMM d, yyyy');
+};
+
 // Helper: get available balance for a bucket
 const getAvailableBalance = (bucket: Bucket): number => {
   if (bucket.bucketMode === 'save') {
@@ -306,6 +318,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMonth, setSelectedMonth] = useState<Date>(new Date());
   const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showMonthlyModalPicker, setShowMonthlyModalPicker] = useState(false);
   const [selectedBucket, setSelectedBucket] = useState<Bucket | null>(null);
   const [showMonthlyTransactions, setShowMonthlyTransactions] = useState(false);
   const [activePage, setActivePage] = useState(0);
@@ -333,7 +346,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     999,
   ).getTime();
 
-  const buckets = useQuery(
+  const bucketsQuery = useQuery(
     api.buckets.getByUser,
     currentUser
       ? {
@@ -343,6 +356,13 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         }
       : 'skip',
   );
+
+  // Keep the last successful buckets result during month-change refetches so the
+  // component doesn't return the full-screen PotteryLoader (which would unmount
+  // the transactions Modal and cause it to slide-animate back in).
+  const lastBucketsRef = React.useRef<typeof bucketsQuery>(undefined);
+  if (bucketsQuery !== undefined) lastBucketsRef.current = bucketsQuery;
+  const buckets = bucketsQuery ?? lastBucketsRef.current;
 
   const groups = useQuery(
     api.groups.getByUser,
@@ -354,10 +374,24 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     currentUser ? { userId: currentUser._id } : 'skip',
   );
 
-  const monthlySpending = useQuery(
+  const monthlySpendingQuery = useQuery(
     api.analytics.getMonthlyTotalSpent,
     currentUser ? { userId: currentUser._id, monthStart: selectedMonthStart, monthEnd: selectedMonthEnd } : 'skip',
   );
+  const lastMonthlySpendingRef = React.useRef<typeof monthlySpendingQuery>(undefined);
+  // Only cache when the month hasn't changed, otherwise we'd show stale totals
+  const lastMonthlySpendingKeyRef = React.useRef<string>('');
+  const monthlySpendingKey = `${selectedMonthStart}-${selectedMonthEnd}`;
+  if (monthlySpendingQuery !== undefined) {
+    lastMonthlySpendingRef.current = monthlySpendingQuery;
+    lastMonthlySpendingKeyRef.current = monthlySpendingKey;
+  }
+  const monthlySpending =
+    monthlySpendingQuery ??
+    (lastMonthlySpendingKeyRef.current === monthlySpendingKey
+      ? lastMonthlySpendingRef.current
+      : undefined);
+  const isMonthlySpendingLoading = monthlySpendingQuery === undefined;
 
   const allExpenses = useQuery(
     api.expenses.getByUser,
@@ -436,6 +470,14 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   const setActivePageRef = React.useRef(setActivePage);
   setActivePageRef.current = setActivePage;
 
+  // If the user is on the Needs Attention page and the list empties (dismissed last card,
+  // all buckets became healthy), bounce them back to the home page.
+  React.useEffect(() => {
+    if (activePage === 1 && attentionItems.length === 0) {
+      setActivePage(0);
+    }
+  }, [activePage, attentionItems.length]);
+
   // Loading — pottery wheel animation
   if (currentUser === undefined || buckets === undefined) {
     return (
@@ -474,12 +516,9 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     />
   );
 
-  // Monthly transactions modal
-  const monthlyTransactionsModal =
-    showMonthlyTransactions &&
-    allExpenses &&
-    (() => {
-      const monthlyExpenses = allExpenses.filter(expense => {
+  // Monthly transactions modal — always renders so Modal stays mounted; visible prop controls slide animation
+  const monthlyTransactionsModal = (() => {
+      const monthlyExpenses = (allExpenses || []).filter(expense => {
         const d = new Date(expense.date);
         return (
           d.getMonth() === selectedMonth.getMonth() &&
@@ -489,6 +528,38 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
       monthlyExpenses.sort((a, b) => b.date - a.date);
       const bucketMap = new Map(allBuckets.map(b => [b._id, b]));
 
+      // Recurring bucket expenses are excluded from TOTAL SPENT — surface them as a note.
+      const recurringTotal = monthlyExpenses.reduce((sum, e) => {
+        const b = bucketMap.get(e.bucketId);
+        return b?.bucketMode === 'recurring' ? sum + e.amount : sum;
+      }, 0);
+
+      // Group expenses by bucket
+      type BucketGroup = {
+        bucketId: string;
+        bucket: Bucket | undefined;
+        expenses: Expense[];
+        total: number;
+      };
+      const groupsById = new Map<string, BucketGroup>();
+      for (const expense of monthlyExpenses) {
+        const existing = groupsById.get(expense.bucketId);
+        if (existing) {
+          existing.expenses.push(expense);
+          existing.total += expense.amount;
+        } else {
+          groupsById.set(expense.bucketId, {
+            bucketId: expense.bucketId,
+            bucket: bucketMap.get(expense.bucketId),
+            expenses: [expense],
+            total: expense.amount,
+          });
+        }
+      }
+      const bucketGroups = Array.from(groupsById.values()).sort(
+        (a, b) => b.total - a.total,
+      );
+
       return (
         <Modal
           visible={showMonthlyTransactions}
@@ -496,32 +567,241 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           transparent={false}
           onRequestClose={() => setShowMonthlyTransactions(false)}
         >
-          <View style={styles.container}>
-            <div style={{ paddingTop: 'env(safe-area-inset-top, 0px)' } as any}>
-            <View style={styles.monthlyHeader}>
-              <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => setShowMonthlyTransactions(false)}
+          <View style={styles.monthlyContainer}>
+            <div style={{ position: 'relative', zIndex: 2 } as any}>
+              <div
+                style={{
+                  background: `
+                    radial-gradient(ellipse at 30% 30%, rgba(190, 205, 170, 0.45) 0%, transparent 55%),
+                    radial-gradient(ellipse at 70% 25%, rgba(175, 190, 155, 0.35) 0%, transparent 50%),
+                    radial-gradient(ellipse at 85% 65%, rgba(160, 145, 115, 0.3) 0%, transparent 45%),
+                    radial-gradient(ellipse at 15% 75%, rgba(150, 160, 130, 0.25) 0%, transparent 50%),
+                    linear-gradient(180deg, #7E8E6C 0%, #889878 35%, #8B9B7A 65%, #889575 100%)
+                  `,
+                  paddingTop: 'calc(env(safe-area-inset-top, 0px) + 24px)',
+                  paddingLeft: 16,
+                  paddingRight: 16,
+                  paddingBottom: 14,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  boxShadow:
+                    'inset 0 0 30px rgba(255, 255, 255, 0.3), inset -8px -10px 24px rgba(0, 0, 0, 0.12), inset 6px 4px 18px rgba(255, 255, 255, 0.15)',
+                  filter: 'saturate(0.95) brightness(1.05) contrast(1.08)',
+                } as any}
               >
-                <Text style={styles.backIcon}>←</Text>
-              </TouchableOpacity>
-              <Text style={styles.monthlyHeaderTitle}>
-                {format(selectedMonth, 'MMMM yyyy')}
-              </Text>
-              <View style={{ width: 40 }} />
-            </View>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    height: 4,
+                    background:
+                      'linear-gradient(90deg, #8B5E3C, #A0704A, #7A5035, #A0704A, #8B5E3C)',
+                    zIndex: 3,
+                  }}
+                />
+                <View style={styles.monthlyHeader}>
+                  <TouchableOpacity
+                    style={styles.backButton}
+                    onPress={() => setShowMonthlyTransactions(false)}
+                  >
+                    <Text style={styles.monthlyBackIcon}>←</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={() => setShowMonthlyModalPicker(true)}
+                    activeOpacity={0.7}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Text style={styles.monthlyHeaderTitle}>
+                      {format(selectedMonth, 'MMMM yyyy')}
+                    </Text>
+                    <ChevronDown
+                      size={14}
+                      color="rgba(250, 248, 244, 0.7)"
+                      strokeWidth={2}
+                      style={{ marginTop: 2 }}
+                    />
+                  </TouchableOpacity>
+                  <View style={{ width: 40 }} />
+                </View>
+              </div>
             </div>
 
-            <View style={styles.monthlyTotalCard}>
-              <Text style={styles.monthlyTotalLabel}>TOTAL SPENT</Text>
-              <Text style={styles.monthlyTotalAmount}>
-                ${totalSpent.toFixed(2)}
-              </Text>
-              <Text style={styles.monthlyTotalCount}>
-                {monthlyExpenses.length} transaction
-                {monthlyExpenses.length === 1 ? '' : 's'}
-              </Text>
-            </View>
+            <div
+              style={{
+                width: 'calc(100% - 40px)',
+                marginLeft: 20,
+                marginRight: 20,
+                marginTop: 20,
+                marginBottom: 20,
+                borderRadius: 16,
+                padding: '16px 24px',
+                position: 'relative',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                backgroundColor: '#cdd5c4',
+                boxShadow:
+                  'inset 0 0 30px rgba(255,255,255,0.35), inset -3px -5px 14px rgba(40,50,20,0.05), 0 2px 8px rgba(100,100,80,0.06)',
+              } as any}
+            >
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background: [
+                    'radial-gradient(ellipse at 45% 60%, rgba(138,154,120,0.3) 0%, rgba(138,154,120,0.12) 25%, transparent 55%)',
+                    'radial-gradient(ellipse at 25% 30%, rgba(142,160,128,0.2) 0%, transparent 45%)',
+                    'radial-gradient(ellipse at 75% 35%, rgba(148,165,132,0.18) 0%, transparent 40%)',
+                    'radial-gradient(ellipse at 50% 110%, rgba(215,208,195,0.4) 0%, transparent 50%)',
+                    'linear-gradient(180deg, #bccdb4 0%, #c2d0ba 25%, #c8d4c0 50%, #ccd6c4 75%, #d0d8c6 100%)',
+                  ].join(', '),
+                  borderRadius: 16,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundImage: "url('/noise.png')",
+                  backgroundSize: '150px 150px',
+                  backgroundRepeat: 'repeat',
+                  opacity: 0.35,
+                  mixBlendMode: 'overlay' as any,
+                  borderRadius: 16,
+                  pointerEvents: 'none',
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  pointerEvents: 'none',
+                  borderRadius: 16,
+                  overflow: 'hidden',
+                }}
+              >
+                <svg
+                  width="100%"
+                  height="100%"
+                  viewBox="0 0 400 160"
+                  preserveAspectRatio="xMidYMid slice"
+                  fill="none"
+                >
+                  <defs>
+                    <filter id="monthlyTotalGlaze">
+                      <feTurbulence
+                        type="fractalNoise"
+                        baseFrequency="0.55"
+                        numOctaves="5"
+                        stitchTiles="stitch"
+                        seed="3"
+                      />
+                      <feColorMatrix type="saturate" values="0" />
+                      <feBlend in="SourceGraphic" mode="overlay" />
+                    </filter>
+                  </defs>
+                  <rect
+                    width="400"
+                    height="160"
+                    filter="url(#monthlyTotalGlaze)"
+                    opacity="0.15"
+                  />
+                  <circle cx="28" cy="18" r="1.5" fill="#3c230f" opacity="0.45" />
+                  <circle cx="95" cy="12" r="1" fill="#4a2818" opacity="0.35" />
+                  <circle cx="175" cy="28" r="1.8" fill="#3c230f" opacity="0.4" />
+                  <circle cx="260" cy="8" r="1.2" fill="#4a2818" opacity="0.3" />
+                  <circle cx="340" cy="22" r="1.4" fill="#3c230f" opacity="0.45" />
+                  <circle cx="55" cy="55" r="1.1" fill="#4a2818" opacity="0.35" />
+                  <circle cx="150" cy="70" r="1.6" fill="#3c230f" opacity="0.3" />
+                  <circle cx="230" cy="48" r="1" fill="#4a2818" opacity="0.4" />
+                  <circle cx="310" cy="65" r="1.3" fill="#3c230f" opacity="0.35" />
+                  <circle cx="380" cy="42" r="1.1" fill="#4a2818" opacity="0.3" />
+                  <circle cx="42" cy="100" r="1.4" fill="#3c230f" opacity="0.4" />
+                  <circle cx="120" cy="115" r="1" fill="#4a2818" opacity="0.35" />
+                  <circle cx="200" cy="95" r="1.5" fill="#3c230f" opacity="0.3" />
+                  <circle cx="285" cy="120" r="1.2" fill="#4a2818" opacity="0.4" />
+                  <circle cx="365" cy="105" r="1" fill="#3c230f" opacity="0.35" />
+                  <circle cx="70" cy="140" r="1.3" fill="#4a2818" opacity="0.3" />
+                  <circle cx="160" cy="145" r="1.1" fill="#3c230f" opacity="0.4" />
+                  <circle cx="330" cy="140" r="1.4" fill="#4a2818" opacity="0.35" />
+                </svg>
+              </div>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 3,
+                  background:
+                    'linear-gradient(90deg, transparent 5%, rgba(160,112,74,0.3) 25%, rgba(184,134,90,0.2) 50%, rgba(160,112,74,0.3) 75%, transparent 95%)',
+                  borderRadius: '16px 16px 0 0',
+                }}
+              />
+              <motion.div
+                style={{
+                  position: 'absolute',
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  background:
+                    'linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.18) 45%, rgba(255,255,255,0.25) 50%, rgba(255,255,255,0.18) 55%, transparent 70%)',
+                  borderRadius: 16,
+                  pointerEvents: 'none' as any,
+                }}
+                initial={{ x: '-100%' }}
+                animate={{ x: '100%' }}
+                transition={{
+                  duration: 3.5,
+                  ease: 'easeInOut',
+                  repeat: Infinity,
+                  repeatDelay: 6,
+                }}
+              />
+              <div
+                style={{
+                  position: 'relative',
+                  zIndex: 1,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  width: '100%',
+                }}
+              >
+                <Text style={styles.monthlyTotalLabel}>TOTAL SPENT</Text>
+                <Text style={styles.monthlyTotalAmount}>
+                  {isMonthlySpendingLoading && monthlySpending === undefined
+                    ? '$—'
+                    : `$${totalSpent.toFixed(2)}`}
+                </Text>
+                <Text style={styles.monthlyTotalCount}>
+                  {monthlyExpenses.length} transaction
+                  {monthlyExpenses.length === 1 ? '' : 's'}
+                </Text>
+                {recurringTotal > 0 && (
+                  <Text style={styles.monthlyTotalExcluded}>
+                    + ${recurringTotal.toFixed(2)} in recurring bills (not counted)
+                  </Text>
+                )}
+              </div>
+            </div>
 
             <ScrollView
               style={styles.scrollView}
@@ -532,49 +812,128 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                   <Text style={styles.emptyText}>No transactions yet</Text>
                 </View>
               ) : (
-                <View style={styles.transactionsList}>
-                  {monthlyExpenses.map(expense => {
-                    const bucket = bucketMap.get(expense.bucketId);
-                    return (
+                bucketGroups.map(group => {
+                  const cap = group.bucket?.fundedAmount || 0;
+                  return (
+                    <View key={group.bucketId} style={styles.bucketSection}>
                       <TouchableOpacity
-                        key={expense._id}
-                        style={styles.transactionItem}
+                        style={styles.bucketSectionHeader}
+                        activeOpacity={group.bucket ? 0.6 : 1}
+                        disabled={!group.bucket}
                         onPress={() => {
-                          if (onEditExpense && bucket)
-                            onEditExpense(expense, bucket);
+                          if (group.bucket) {
+                            setShowMonthlyTransactions(false);
+                            setSelectedBucket(group.bucket);
+                          }
                         }}
                       >
-                        <View style={{ flex: 1, marginRight: 12 }}>
-                          <Text style={styles.transactionNote}>
-                            {expense.note || 'Expense'}
-                          </Text>
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              gap: 8,
-                              marginTop: 4,
-                            }}
-                          >
-                            {bucket && (
-                              <Text style={styles.transactionBucket}>
-                                {bucket.name}
-                              </Text>
+                        {group.bucket ? (
+                          <Image
+                            source={getCupForBucketId(
+                              group.bucket._id,
+                              group.bucket.icon,
                             )}
-                            <Text style={styles.transactionDate}>
-                              {format(new Date(expense.date), 'MMM d')}
+                            style={styles.bucketSectionIcon}
+                            resizeMode="contain"
+                          />
+                        ) : (
+                          <View style={styles.bucketSectionIcon} />
+                        )}
+                        <Text
+                          style={styles.bucketSectionName}
+                          numberOfLines={1}
+                        >
+                          {group.bucket?.name || 'Uncategorized'}
+                        </Text>
+                        <Text style={styles.bucketSectionAmount}>
+                          ${group.total.toFixed(2)}
+                          {cap > 0 && (
+                            <Text style={styles.bucketSectionCap}>
+                              {' / $'}
+                              {cap.toFixed(0)}
                             </Text>
-                          </View>
-                        </View>
-                        <Text style={styles.transactionAmount}>
-                          ${expense.amount.toFixed(2)}
+                          )}
                         </Text>
                       </TouchableOpacity>
-                    );
-                  })}
-                </View>
+                      <View style={styles.transactionsList}>
+                        {group.expenses.map(expense => (
+                          <TouchableOpacity
+                            key={expense._id}
+                            style={styles.transactionItem}
+                            onPress={() => {
+                              if (onEditExpense && group.bucket)
+                                onEditExpense(expense, group.bucket);
+                            }}
+                          >
+                            <View style={{ flex: 1, marginRight: 12 }}>
+                              <Text style={styles.transactionNote}>
+                                {expense.note || 'Expense'}
+                              </Text>
+                              <Text
+                                style={[
+                                  styles.transactionDate,
+                                  { marginTop: 4 },
+                                ]}
+                              >
+                                {formatRelativeDate(expense.date)}
+                              </Text>
+                            </View>
+                            <Text style={styles.transactionAmount}>
+                              ${expense.amount.toFixed(2)}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  );
+                })
               )}
             </ScrollView>
+
+            {showMonthlyModalPicker && (
+              <TouchableOpacity
+                style={styles.monthlyPickerOverlay}
+                activeOpacity={1}
+                onPress={() => setShowMonthlyModalPicker(false)}
+              >
+                <View style={styles.monthPickerContainer}>
+                  <View style={styles.monthPickerHeader}>
+                    <Text style={styles.monthPickerTitle}>
+                      {selectedMonth.getFullYear()}
+                    </Text>
+                  </View>
+                  <View style={styles.monthGrid}>
+                    {months.map((month, index) => {
+                      const isSelected =
+                        month.getMonth() === selectedMonth.getMonth() &&
+                        month.getFullYear() === selectedMonth.getFullYear();
+                      return (
+                        <TouchableOpacity
+                          key={index}
+                          style={[
+                            styles.monthGridItem,
+                            isSelected && styles.monthGridItemSelected,
+                          ]}
+                          onPress={() => {
+                            setSelectedMonth(month);
+                            setShowMonthlyModalPicker(false);
+                          }}
+                        >
+                          <Text
+                            style={[
+                              styles.monthGridItemText,
+                              isSelected && styles.monthGridItemTextSelected,
+                            ]}
+                          >
+                            {format(month, 'MMM')}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              </TouchableOpacity>
+            )}
           </View>
         </Modal>
       );
@@ -1161,7 +1520,10 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         </motion.div>
       </div>
 
-      {/* Month Picker Modal */}
+      {monthlyTransactionsModal}
+      {bucketDetailModal}
+
+      {/* Month Picker Modal — rendered last so it stacks on top when transactions modal is open */}
       <Modal
         visible={showMonthPicker}
         transparent
@@ -1211,9 +1573,6 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
           </View>
         </TouchableOpacity>
       </Modal>
-
-      {monthlyTransactionsModal}
-      {bucketDetailModal}
 
     </View>
   );
@@ -1400,14 +1759,27 @@ const styles = StyleSheet.create({
   },
 
   // Monthly transactions
+  monthlyContainer: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    maxHeight: '100vh' as any,
+    minHeight: '100vh' as any,
+  },
+  monthlyPickerOverlay: {
+    position: 'absolute' as any,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(59, 49, 40, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
+  },
   monthlyHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   backButton: {
     width: 40,
@@ -1419,38 +1791,75 @@ const styles = StyleSheet.create({
     fontSize: 24,
     color: theme.colors.text,
   },
+  monthlyBackIcon: {
+    fontSize: 24,
+    color: 'rgba(250, 248, 244, 0.95)',
+  },
   monthlyHeaderTitle: {
-    fontSize: 19,
+    fontSize: 20,
+    fontWeight: '500',
+    color: 'rgba(250, 248, 244, 0.95)',
+    fontFamily: 'Merchant',
+  },
+  monthlyTotalLabel: {
+    fontSize: 13,
+    color: 'rgba(20, 50, 40, 0.5)',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    fontFamily: 'Merchant',
+  },
+  monthlyTotalAmount: {
+    fontSize: 30,
+    fontWeight: '400',
+    color: '#1a3a2e',
+    fontFamily: 'Merchant Copy',
+    letterSpacing: -1,
+    marginBottom: 8,
+  },
+  monthlyTotalCount: {
+    fontSize: 16,
+    color: 'rgba(20, 50, 40, 0.6)',
+    fontFamily: 'Merchant Copy',
+  },
+  monthlyTotalExcluded: {
+    fontSize: 13,
+    color: 'rgba(20, 50, 40, 0.5)',
+    fontFamily: 'Merchant',
+    fontStyle: 'italic',
+    marginTop: 6,
+  },
+  bucketSection: {
+    marginBottom: 20,
+  },
+  bucketSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 8,
+    gap: 12,
+  },
+  bucketSectionIcon: {
+    width: 36,
+    height: 36,
+  },
+  bucketSectionName: {
+    flex: 1,
+    fontSize: 17,
     fontWeight: '500',
     color: theme.colors.text,
     fontFamily: 'Merchant',
   },
-  monthlyTotalCard: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 16,
-    padding: 24,
-    marginHorizontal: 20,
-    marginVertical: 20,
-    alignItems: 'center',
-  },
-  monthlyTotalLabel: {
-    fontSize: 14,
-    color: 'rgba(250, 248, 244, 0.6)',
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
+  bucketSectionAmount: {
+    fontSize: 17,
+    fontWeight: '500',
+    color: theme.colors.text,
     fontFamily: 'Merchant Copy',
   },
-  monthlyTotalAmount: {
-    fontSize: 26,
-    fontWeight: '400',
-    color: theme.colors.textOnPrimary,
-    fontFamily: 'Merchant Copy',
-    marginBottom: 6,
-  },
-  monthlyTotalCount: {
+  bucketSectionCap: {
     fontSize: 15,
-    color: 'rgba(250, 248, 244, 0.6)',
+    fontWeight: '400',
+    color: theme.colors.textTertiary,
     fontFamily: 'Merchant Copy',
   },
   transactionsList: {
@@ -1475,11 +1884,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: theme.colors.text,
     fontFamily: 'Merchant',
-  },
-  transactionBucket: {
-    fontSize: 14,
-    color: theme.colors.clay,
-    fontFamily: 'Merchant Copy',
   },
   transactionDate: {
     fontSize: 14,
