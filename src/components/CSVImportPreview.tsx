@@ -7,10 +7,12 @@ import {
   TouchableOpacity,
   Modal,
   Pressable,
+  Image,
 } from 'react-native';
 import { X, ChevronDown, AlertCircle, CheckCircle } from 'lucide-react-native';
 import type { Bucket } from '../types';
 import type { CSVExpense } from '../utils/csvExport';
+import { getCupForBucketId } from '../constants/bucketIcons';
 
 interface CSVImportPreviewProps {
   visible: boolean;
@@ -51,6 +53,19 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
 
   const hasErrors = validationErrors.some(e => e !== null);
   const errorCount = validationErrors.filter(e => e !== null).length;
+
+  // Float invalid rows to the top so the user can fix them without scrolling.
+  // Each row keeps its original index so bucket edits patch the right expense.
+  const orderedRows = expenses
+    .map((expense, originalIndex) => ({
+      expense,
+      originalIndex,
+      error: validationErrors[originalIndex],
+    }))
+    .sort((a, b) => {
+      if ((a.error !== null) === (b.error !== null)) return a.originalIndex - b.originalIndex;
+      return a.error !== null ? -1 : 1;
+    });
 
   const handleBucketChange = (index: number, newBucketName: string) => {
     const newExpenses = [...expenses];
@@ -106,8 +121,9 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
             contentContainerStyle={styles.scrollContent}
             showsVerticalScrollIndicator={true}
           >
-          {expenses.map((expense, index) => {
-            const hasError = validationErrors[index] !== null;
+          {orderedRows.map(({ expense, originalIndex, error }) => {
+            const index = originalIndex;
+            const hasError = error !== null;
             const isDropdownOpen = showDropdownForIndex === index;
 
             return (
@@ -168,7 +184,11 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
                         style={styles.dropdownItem}
                         onPress={() => handleBucketChange(index, bucket.name)}
                       >
-                        <View style={[styles.bucketDot, { backgroundColor: bucket.color }]} />
+                        <Image
+                          source={getCupForBucketId(bucket._id, bucket.icon)}
+                          style={styles.bucketCup}
+                          resizeMode="contain"
+                        />
                         <Text style={styles.dropdownItemText}>{bucket.name}</Text>
                       </TouchableOpacity>
                     ))}
@@ -405,10 +425,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F3F4F6',
   },
-  bucketDot: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  bucketCup: {
+    width: 28,
+    height: 28,
   },
   dropdownItemText: {
     fontSize: 18,
