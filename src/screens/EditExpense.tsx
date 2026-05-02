@@ -254,16 +254,18 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
 
         {/* Hero Amount */}
         <View style={styles.amountHero}>
-          <Text style={styles.amountCurrency}>$</Text>
-          <TextInput
-            style={styles.amountInput}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-            placeholder="0.00"
-            placeholderTextColor="rgba(61,50,41,0.15)"
-            textAlign="center"
-          />
+          <View style={styles.amountInner}>
+            <Text style={styles.amountCurrency}>$</Text>
+            <TextInput
+              style={styles.amountInput}
+              value={amount}
+              onChangeText={setAmount}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor="rgba(61,50,41,0.15)"
+              textAlign="left"
+            />
+          </View>
         </View>
 
         {/* Bucket Selector — tap to open grid */}
@@ -477,11 +479,13 @@ const styles = StyleSheet.create({
 
   // Hero amount
   amountHero: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
+    alignItems: 'center',
     paddingVertical: 24,
     paddingHorizontal: 40,
+  },
+  amountInner: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   amountCurrency: {
     fontSize: 32,
@@ -494,7 +498,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant Copy',
     color: '#1A1A1A',
     letterSpacing: -2,
-    minWidth: 120,
+    minWidth: 60,
     paddingVertical: 0,
   },
 
