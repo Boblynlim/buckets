@@ -478,7 +478,7 @@ const styles = StyleSheet.create({
   // Hero amount
   amountHero: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'baseline',
     justifyContent: 'center',
     paddingVertical: 24,
     paddingHorizontal: 40,

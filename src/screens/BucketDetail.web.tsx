@@ -272,11 +272,19 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
     }
   }, [expenses]);
 
-  const expensesList = (expenses || []).map(e => ({
-    ...e,
-    worthIt: e._id in optimisticToggles ? optimisticToggles[e._id] : e.worthIt,
-    isNecessary: e._id in optimisticNecessary ? optimisticNecessary[e._id] : (e as any).isNecessary,
-  }));
+  // Scope the visible transactions and tug-of-war tally to the selected month so
+  // they line up with the spent/remaining numbers above (which are month-scoped).
+  // Save buckets keep the full history since the savings balance is cumulative.
+  const monthRef = selectedMonth || new Date();
+  const monthStartTs = new Date(monthRef.getFullYear(), monthRef.getMonth(), 1).getTime();
+  const monthEndTs = new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+  const expensesList = (expenses || [])
+    .filter(e => isSaveBucket || (e.date >= monthStartTs && e.date <= monthEndTs))
+    .map(e => ({
+      ...e,
+      worthIt: e._id in optimisticToggles ? optimisticToggles[e._id] : e.worthIt,
+      isNecessary: e._id in optimisticNecessary ? optimisticNecessary[e._id] : (e as any).isNecessary,
+    }));
 
   // Tug-of-war only counts non-necessary expenses
   const discretionary = expensesList.filter(e => !e.isNecessary);
