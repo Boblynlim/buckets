@@ -10,7 +10,7 @@ import {
   Modal,
 } from 'react-native';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Edit2 } from 'lucide-react';
+import { Edit2, ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { format } from 'date-fns';
@@ -190,6 +190,7 @@ interface BucketDetailProps {
   onEditBucket?: (bucket: Bucket, suggestedAmount?: number) => void;
   onEditExpense?: (expense: Expense, bucket: Bucket) => void;
   selectedMonth?: Date;
+  onSelectMonth?: (month: Date) => void;
   onAddExpense?: (bucket: Bucket) => void;
 }
 
@@ -200,10 +201,20 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   onEditBucket,
   onEditExpense,
   selectedMonth,
+  onSelectMonth,
   onAddExpense,
 }) => {
   const [dismissedKey, setDismissedKey] = React.useState<string | null>(null);
   const [scrollY, setScrollY] = useState(0);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const viewMonth = selectedMonth || new Date();
+  const shiftMonth = (delta: number) => {
+    if (!onSelectMonth) return;
+    onSelectMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + delta, 1));
+  };
+  const pickerYearMonths = Array.from({ length: 12 }, (_, i) =>
+    new Date(viewMonth.getFullYear(), i, 1)
+  );
   // Collapse progress: 0 = expanded, 1 = fully collapsed
   const collapse = Math.min(1, scrollY / 120);
   const isSaveBucket = bucket.bucketMode === 'save';
@@ -627,6 +638,32 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
             }}
           />
           <div style={{ position: 'relative', zIndex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+            {!isSaveBucket && (
+              <View style={styles.monthNavRow}>
+                <TouchableOpacity
+                  onPress={() => shiftMonth(-1)}
+                  style={styles.monthNavArrow}
+                  activeOpacity={0.6}
+                >
+                  <ChevronLeft size={16} color="#1a3a2e" strokeWidth={2.2} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => setShowMonthPicker(true)}
+                  style={styles.monthNavLabel}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.monthNavLabelText}>{format(viewMonth, 'MMMM yyyy')}</Text>
+                  <ChevronDown size={12} color="#1a3a2e" strokeWidth={2.2} style={{ marginLeft: 4, marginTop: 1 }} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => shiftMonth(1)}
+                  style={styles.monthNavArrow}
+                  activeOpacity={0.6}
+                >
+                  <ChevronRight size={16} color="#1a3a2e" strokeWidth={2.2} />
+                </TouchableOpacity>
+              </View>
+            )}
             <Text style={styles.spentLabel}>{displayLabel}</Text>
             <Text style={styles.spentAmount}>{'$'}{displayAmount.toFixed(2)}</Text>
             <Text style={styles.remainingText}>{displaySubtext}</Text>
@@ -1026,6 +1063,55 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
         )}
       </div>{/* end scroll padding */}
       </div>{/* end scrollable content */}
+      {/* Month picker overlay */}
+      <Modal
+        visible={showMonthPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowMonthPicker(false)}
+      >
+        <TouchableOpacity
+          style={styles.monthPickerBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowMonthPicker(false)}
+        >
+          <View style={styles.monthPickerCard}>
+            <View style={styles.monthPickerCardHeader}>
+              <Text style={styles.monthPickerCardTitle}>{viewMonth.getFullYear()}</Text>
+            </View>
+            <View style={styles.monthPickerGrid}>
+              {pickerYearMonths.map((month, index) => {
+                const isSelected =
+                  month.getMonth() === viewMonth.getMonth() &&
+                  month.getFullYear() === viewMonth.getFullYear();
+                return (
+                  <TouchableOpacity
+                    key={index}
+                    style={[
+                      styles.monthPickerGridItem,
+                      isSelected && styles.monthPickerGridItemSelected,
+                    ]}
+                    onPress={() => {
+                      onSelectMonth?.(month);
+                      setShowMonthPicker(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.monthPickerGridText,
+                        isSelected && styles.monthPickerGridTextSelected,
+                      ]}
+                    >
+                      {format(month, 'MMM')}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       {/* Confetti particles */}
       <ButtonConfetti bursts={confettiBursts} />
 
@@ -1212,6 +1298,87 @@ const styles = StyleSheet.create({
     marginBottom: 14,
     fontFamily: 'Merchant',
     letterSpacing: -0.5,
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginBottom: 10,
+  },
+  monthNavArrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(26, 58, 46, 0.06)',
+  },
+  monthNavLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: 14,
+    backgroundColor: 'rgba(26, 58, 46, 0.06)',
+  },
+  monthNavLabelText: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    fontWeight: '500',
+    color: '#1a3a2e',
+    letterSpacing: 0.3,
+  },
+  monthPickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(59, 49, 40, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthPickerCard: {
+    backgroundColor: theme.colors.backgroundLight,
+    borderRadius: 20,
+    width: 320,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+  },
+  monthPickerCardHeader: {
+    padding: 20,
+    paddingBottom: 12,
+    alignItems: 'center',
+  },
+  monthPickerCardTitle: {
+    fontSize: 22,
+    fontWeight: '500',
+    color: theme.colors.text,
+    fontFamily: 'Merchant',
+  },
+  monthPickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    padding: 12,
+    paddingBottom: 20,
+  },
+  monthPickerGridItem: {
+    width: '33.333%' as any,
+    aspectRatio: 2,
+    padding: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+  },
+  monthPickerGridItemSelected: {
+    backgroundColor: theme.colors.primary,
+  },
+  monthPickerGridText: {
+    fontSize: 18,
+    color: theme.colors.text,
+    fontFamily: 'Merchant',
+  },
+  monthPickerGridTextSelected: {
+    color: theme.colors.textOnPrimary,
+    fontWeight: '500',
   },
   spentLabel: {
     fontSize: 13,

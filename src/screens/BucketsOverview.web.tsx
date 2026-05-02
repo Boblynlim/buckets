@@ -493,6 +493,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
       visible={!!selectedBucket}
       bucket={selectedBucket}
       selectedMonth={selectedMonth}
+      onSelectMonth={setSelectedMonth}
       onBack={() => setSelectedBucket(null)}
       onEditBucket={onEditBucket}
       onEditExpense={onEditExpense}
