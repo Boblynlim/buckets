@@ -196,7 +196,47 @@ export const update = mutation({
       throw new Error("Bucket not found");
     }
 
-    await ctx.db.patch(bucketId, updates);
+    // If the bucket's mode is changing, clear fields from the previous mode and
+    // reset balances so distribution/rollover can recompute cleanly. Stale fields
+    // would otherwise produce wrong allocations (e.g. a leftover plannedPercent
+    // could double-count a now-save bucket against income).
+    const patch: Partial<typeof bucket> = { ...updates };
+    const isModeChange =
+      updates.bucketMode !== undefined && updates.bucketMode !== bucket.bucketMode;
+    if (isModeChange) {
+      const newMode = updates.bucketMode!;
+      if (newMode === "spend" || newMode === "recurring") {
+        // Clear save-mode fields
+        patch.targetAmount = undefined;
+        patch.currentBalance = undefined;
+        patch.contributionType = undefined;
+        patch.contributionAmount = undefined;
+        patch.contributionPercent = undefined;
+        patch.lastContributionDate = undefined;
+        patch.goalAlerts = undefined;
+        patch.reminderDays = undefined;
+        patch.notifyOnComplete = undefined;
+        patch.capBehavior = undefined;
+        patch.capRerouteBucketId = undefined;
+        // Reset spend/recurring balances — distribution will refund this month
+        patch.carryoverBalance = 0;
+        patch.fundedAmount = 0;
+        patch.lastRolloverDate = Date.now();
+      } else {
+        // Switching to save — clear spend/recurring-mode fields
+        patch.allocationType = undefined;
+        patch.plannedAmount = undefined;
+        patch.plannedPercent = undefined;
+        patch.carryoverBalance = undefined;
+        patch.fundedAmount = undefined;
+        patch.allocationValue = undefined; // legacy
+        patch.allocationType_legacy = undefined; // legacy
+        // Start savings balance at zero
+        patch.currentBalance = 0;
+      }
+    }
+
+    await ctx.db.patch(bucketId, patch);
 
     // Recalculate distribution after updating bucket
     await ctx.runMutation(api.distribution.calculateDistribution, {

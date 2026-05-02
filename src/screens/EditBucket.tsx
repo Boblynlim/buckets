@@ -50,8 +50,10 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
     return null;
   }
 
-  const bucketMode = bucket.bucketMode || 'spend';
+  const initialMode = bucket.bucketMode || 'spend';
+  const [bucketMode, setBucketMode] = useState<'spend' | 'save' | 'recurring'>(initialMode);
   const bucketType = bucketMode === 'recurring' ? 'bill' : bucketMode === 'save' ? 'goal' : 'budget';
+  const isModeChanged = bucketMode !== initialMode;
   const [name, setName] = useState(bucket.name);
   const [allocationType, setAllocationType] = useState<'amount' | 'percentage'>(
     bucket.allocationType || 'amount'
@@ -66,8 +68,36 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
     bucket.contributionType || 'none'
   );
   const [contributionValue, setContributionValue] = useState(
-    (bucketMode === 'save' && props.suggestedAmount !== undefined ? props.suggestedAmount : (bucket.contributionAmount || bucket.contributionPercent || 0)).toString()
+    (initialMode === 'save' && props.suggestedAmount !== undefined ? props.suggestedAmount : (bucket.contributionAmount || bucket.contributionPercent || 0)).toString()
   );
+
+  // Switching type wipes balances on the backend, so reset the input defaults
+  // for the new mode rather than carrying over values from the old one.
+  const handleChangeMode = (next: 'spend' | 'save' | 'recurring') => {
+    if (next === bucketMode) return;
+    setBucketMode(next);
+    if (next === 'spend' || next === 'recurring') {
+      // Default to a fixed-dollar allocation; user can switch to %.
+      setAllocationType(next === initialMode ? (bucket.allocationType || 'amount') : 'amount');
+      setAllocationValue(
+        next === initialMode
+          ? (bucket.plannedAmount || bucket.plannedPercent || bucket.allocationValue || 0).toString()
+          : ''
+      );
+    } else {
+      setTargetAmount(
+        next === initialMode ? (bucket.targetAmount || 0).toString() : ''
+      );
+      setContributionType(
+        next === initialMode ? (bucket.contributionType || 'none') : 'none'
+      );
+      setContributionValue(
+        next === initialMode
+          ? (bucket.contributionAmount || bucket.contributionPercent || 0).toString()
+          : ''
+      );
+    }
+  };
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [alertThreshold, setAlertThreshold] = useState(
     bucket.alertThreshold.toString()
@@ -106,13 +136,18 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
     try {
       setIsSaving(true);
 
-      const baseParams = {
+      const baseParams: any = {
         bucketId: bucket._id as any,
         name: name.trim(),
-        bucketMode,
         alertThreshold: parseFloat(alertThreshold),
         color: bucket.color,
       };
+
+      // Only send bucketMode when it has actually changed — the backend uses
+      // a mode change to clear opposite-mode fields and reset balances.
+      if (isModeChanged) {
+        baseParams.bucketMode = bucketMode;
+      }
 
       let updateParams;
       if (bucketMode === 'spend' || bucketMode === 'recurring') {
@@ -196,18 +231,22 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
           />
         </View>
 
-        {/* Type Pills (read-only) */}
+        {/* Type Pills */}
         <View style={styles.typeRow}>
-          {(['bill', 'budget', 'goal'] as const).map((t) => (
-            <View
-              key={t}
-              style={[styles.typePill, bucketType === t && styles.typePillActive]}
-            >
-              <Text style={[styles.typePillText, bucketType === t && styles.typePillTextActive]}>
-                {t === 'bill' ? 'BILL' : t === 'budget' ? 'BUDGET' : 'GOAL'}
-              </Text>
-            </View>
-          ))}
+          {(['bill', 'budget', 'goal'] as const).map((t) => {
+            const mode = t === 'bill' ? 'recurring' : t === 'budget' ? 'spend' : 'save';
+            return (
+              <Pressable
+                key={t}
+                style={[styles.typePill, bucketType === t && styles.typePillActive]}
+                onPress={() => handleChangeMode(mode)}
+              >
+                <Text style={[styles.typePillText, bucketType === t && styles.typePillTextActive]}>
+                  {t === 'bill' ? 'BILL' : t === 'budget' ? 'BUDGET' : 'GOAL'}
+                </Text>
+              </Pressable>
+            );
+          })}
         </View>
         <Text style={styles.typeHelper}>
           {bucketMode === 'spend'
@@ -216,6 +255,11 @@ export const EditBucket: React.FC<EditBucketProps> = (props) => {
             ? 'save toward a target amount over time'
             : 'fixed monthly expense — same amount each time'}
         </Text>
+        {isModeChanged && (
+          <Text style={styles.modeChangeWarning}>
+            switching type will reset this cup's balance
+          </Text>
+        )}
 
         {/* Amount Fields — Spend / Recurring */}
         {(bucketMode === 'spend' || bucketMode === 'recurring') && (
@@ -518,6 +562,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 10,
     marginBottom: 4,
+    paddingHorizontal: 40,
+  },
+  modeChangeWarning: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    fontStyle: 'italic',
+    color: '#C0564E',
+    textAlign: 'center',
+    marginTop: 4,
     paddingHorizontal: 40,
   },
 

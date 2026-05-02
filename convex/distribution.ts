@@ -162,30 +162,41 @@ export const getDistributionStatus = query({
       .filter(q => q.eq(q.field('isActive'), true))
       .collect();
 
+    // A bucket's "claim" on income:
+    //  - spend/recurring: plannedAmount or plannedPercent of income
+    //  - save: contributionAmount/contributionPercent (only if contributionType !== 'none')
+    // All three reduce free income — recurring buckets pay bills out of income just
+    // like spend, and save contributions are funded from income too (just tracked in
+    // currentBalance instead of fundedAmount).
     let totalPlanned = 0;
-    let totalFunded = 0;
 
     for (const bucket of buckets) {
-      if (bucket.bucketMode === 'spend') {
-        let planned = 0;
+      let claim = 0;
 
-        // Check new fields first
+      if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
         if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
-          planned = (totalIncome * bucket.plannedPercent) / 100;
+          claim = (totalIncome * bucket.plannedPercent) / 100;
         } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
-          planned = bucket.plannedAmount;
+          claim = bucket.plannedAmount;
+        } else if (bucket.allocationValue !== undefined) {
+          claim = bucket.allocationValue; // legacy
         }
-        // Fall back to legacy allocationValue
-        else if (bucket.allocationValue !== undefined) {
-          planned = bucket.allocationValue;
+      } else if (bucket.bucketMode === 'save' && bucket.contributionType && bucket.contributionType !== 'none') {
+        if (bucket.contributionType === 'percentage' && bucket.contributionPercent !== undefined) {
+          claim = (totalIncome * bucket.contributionPercent) / 100;
+        } else if (bucket.contributionType === 'amount' && bucket.contributionAmount !== undefined) {
+          claim = bucket.contributionAmount;
         }
-
-        totalPlanned += planned;
-        totalFunded += bucket.fundedAmount || 0;
       }
+
+      totalPlanned += claim;
     }
 
     const isOverPlanned = totalPlanned > totalIncome;
+    // totalFunded is what actually gets funded after the over-plan ratio is applied.
+    // Capping at totalIncome means unallocated is never negative — overplan shows up
+    // separately via isOverPlanned/overPlannedBy.
+    const totalFunded = Math.min(totalPlanned, totalIncome);
     const unallocated = totalIncome - totalFunded;
 
     return {

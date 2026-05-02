@@ -148,13 +148,26 @@ export const AddBucket: React.FC<AddBucketProps> = ({ visible, onClose }) => {
     return userIncome.reduce((sum: number, i: any) => sum + i.amount, 0);
   }, [userIncome]);
 
+  // Mirror convex/distribution.getDistributionStatus: each bucket's claim on
+  // income includes recurring (planned), spend (planned), and save (contribution),
+  // and percentage-based allocations are resolved against monthlyIncome.
   const allocatedAmount = useMemo(() => {
     if (!existingBuckets) return 0;
     return (existingBuckets as any[]).reduce((sum: number, b: any) => {
-      if (b.bucketMode === 'save') return sum + (b.contributionAmount || 0);
-      return sum + (b.plannedAmount || 0);
+      if (b.bucketMode === 'save') {
+        if (!b.contributionType || b.contributionType === 'none') return sum;
+        if (b.contributionType === 'percentage' && b.contributionPercent) {
+          return sum + (monthlyIncome * b.contributionPercent) / 100;
+        }
+        return sum + (b.contributionAmount || 0);
+      }
+      // spend or recurring (or legacy buckets with no mode)
+      if (b.allocationType === 'percentage' && b.plannedPercent) {
+        return sum + (monthlyIncome * b.plannedPercent) / 100;
+      }
+      return sum + (b.plannedAmount || b.allocationValue || 0);
     }, 0);
-  }, [existingBuckets]);
+  }, [existingBuckets, monthlyIncome]);
 
   const freeAmount = monthlyIncome - allocatedAmount;
   const allocatedPct = monthlyIncome > 0 ? Math.round((allocatedAmount / monthlyIncome) * 100) : 0;
