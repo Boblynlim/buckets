@@ -272,19 +272,43 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
     }
   }, [expenses]);
 
-  // Scope the visible transactions and tug-of-war tally to the selected month so
-  // they line up with the spent/remaining numbers above (which are month-scoped).
-  // Save buckets keep the full history since the savings balance is cumulative.
+  // The tug-of-war tally needs to align with the spent/remaining numbers above
+  // (which are month-scoped), so `expensesList` stays month-filtered for tally
+  // math. Save buckets show their full history since the balance is cumulative.
+  // The transaction list below uses `allExpensesList` so the user can see every
+  // expense in the bucket, grouped by month.
   const monthRef = selectedMonth || new Date();
   const monthStartTs = new Date(monthRef.getFullYear(), monthRef.getMonth(), 1).getTime();
   const monthEndTs = new Date(monthRef.getFullYear(), monthRef.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
-  const expensesList = (expenses || [])
-    .filter(e => isSaveBucket || (e.date >= monthStartTs && e.date <= monthEndTs))
-    .map(e => ({
-      ...e,
-      worthIt: e._id in optimisticToggles ? optimisticToggles[e._id] : e.worthIt,
-      isNecessary: e._id in optimisticNecessary ? optimisticNecessary[e._id] : (e as any).isNecessary,
-    }));
+  const allExpensesList = (expenses || []).map(e => ({
+    ...e,
+    worthIt: e._id in optimisticToggles ? optimisticToggles[e._id] : e.worthIt,
+    isNecessary: e._id in optimisticNecessary ? optimisticNecessary[e._id] : (e as any).isNecessary,
+  }));
+  const expensesList = allExpensesList.filter(
+    e => isSaveBucket || (e.date >= monthStartTs && e.date <= monthEndTs)
+  );
+
+  // Group all expenses by calendar month for the transaction list. Convex
+  // returns expenses ordered by date desc, so iteration order here is already
+  // newest → oldest.
+  const monthGroups: { key: string; label: string; items: typeof allExpensesList }[] = [];
+  const monthIndex = new Map<string, number>();
+  for (const expense of allExpensesList) {
+    const d = new Date(expense.date);
+    const key = `${d.getFullYear()}-${d.getMonth()}`;
+    let idx = monthIndex.get(key);
+    if (idx === undefined) {
+      idx = monthGroups.length;
+      monthIndex.set(key, idx);
+      monthGroups.push({
+        key,
+        label: d.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }),
+        items: [],
+      });
+    }
+    monthGroups[idx].items.push(expense);
+  }
 
   // Tug-of-war only counts non-necessary expenses
   const discretionary = expensesList.filter(e => !e.isNecessary);
@@ -828,7 +852,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
 
           {/* Percentages + counts below bar */}
           <div style={{
-            display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+            display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end',
             marginTop: 8, paddingLeft: 2, paddingRight: 2,
           } as any}>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 } as any}>
@@ -851,6 +875,15 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                 ${notWorthItTotal.toFixed(2)} not worth it
               </span>
             </div>
+            {necessaryTotal > 0 && (
+              <span style={{
+                fontSize: 14, fontFamily: 'Merchant',
+                color: 'rgba(61,50,41,0.35)',
+                textAlign: 'center' as any,
+              }}>
+                ${necessaryTotal.toFixed(2)} in necessary expenses
+              </span>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 } as any}>
               <motion.span
                 key={`w-${worthItPct}`}
@@ -872,20 +905,6 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
               </span>
             </div>
           </div>
-          {/* Necessary total */}
-          {necessaryTotal > 0 && (
-            <div style={{
-              textAlign: 'center' as any,
-              marginTop: 6,
-            }}>
-              <span style={{
-                fontSize: 14, fontFamily: 'Merchant',
-                color: 'rgba(61,50,41,0.35)',
-              }}>
-                ${necessaryTotal.toFixed(2)} in necessary expenses
-              </span>
-            </div>
-          )}
         </div>
       )}
 
@@ -913,7 +932,14 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
           </View>
         ) : (
           <View style={styles.transactionsList}>
-            {expensesList.map((expense, i) => (
+            {(() => {
+              let runningIndex = 0;
+              return monthGroups.map((group) => (
+                <View key={group.key}>
+                  <Text style={styles.monthGroupLabel}>{group.label}</Text>
+                  {group.items.map((expense) => {
+                    const i = runningIndex++;
+                    return (
               <motion.div
                 key={expense._id}
                 initial={{ opacity: 0, x: -12 }}
@@ -991,7 +1017,11 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                 </div>
               </TouchableOpacity>
               </motion.div>
-            ))}
+                    );
+                  })}
+                </View>
+              ));
+            })()}
           </View>
         )}
       </div>{/* end scroll padding */}
@@ -1243,6 +1273,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E0D8C8',
     marginHorizontal: 20,
+  },
+  monthGroupLabel: {
+    fontSize: 13,
+    fontFamily: 'Merchant',
+    color: 'rgba(61,50,41,0.45)',
+    letterSpacing: 0.6,
+    paddingHorizontal: 20,
+    paddingTop: 14,
+    paddingBottom: 6,
+    textTransform: 'uppercase' as any,
   },
   transactionItem: {
     flexDirection: 'row',
