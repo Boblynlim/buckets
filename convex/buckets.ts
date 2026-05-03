@@ -68,6 +68,15 @@ export const create = mutation({
       userId: args.userId,
     });
 
+    // If a recurring bucket is created mid-month, the sync inserts this
+    // month's auto-pay. No-op for spend/save modes.
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+      userId: args.userId,
+      month,
+    });
+
     return bucketId;
   },
 });
@@ -273,6 +282,14 @@ export const remove = mutation({
     // Recalculate distribution after deleting bucket
     await ctx.runMutation(api.distribution.calculateDistribution, {
       userId: bucket.userId,
+    });
+
+    // Sync clears any auto-pays since the bucket is no longer active.
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+      userId: bucket.userId,
+      month,
     });
   },
 });
