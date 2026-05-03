@@ -328,8 +328,26 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set());
 
   const updateBucket = useMutation(api.buckets.update);
+  const syncRecurring = useMutation(api.recurringSync.syncRecurringExpensesForMonth);
 
   const { user: currentUser } = useAuth();
+
+  // Self-heal once per session for the current calendar month. Picks up any
+  // recurring buckets the cron didn't auto-pay (cron failure, mid-month type
+  // flip, etc). Idempotent — a no-op if everything is already in sync.
+  const didSelfHealRef = React.useRef(false);
+  React.useEffect(() => {
+    if (didSelfHealRef.current) return;
+    if (!currentUser) return;
+    didSelfHealRef.current = true;
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    syncRecurring({ userId: currentUser._id as any, month }).catch(err => {
+      // Don't surface — self-heal is best-effort. Log so it shows up in
+      // dev tools when something is genuinely wrong.
+      console.warn('Recurring self-heal failed:', err);
+    });
+  }, [currentUser, syncRecurring]);
 
   // Use selectedMonth for bucket spent calculation so switching months
   // shows the correct spent/remaining for that month's expenses.

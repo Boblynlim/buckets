@@ -200,6 +200,10 @@ export const update = mutation({
     // reset balances so distribution/rollover can recompute cleanly. Stale fields
     // would otherwise produce wrong allocations (e.g. a leftover plannedPercent
     // could double-count a now-save bucket against income).
+    //
+    // We deliberately do NOT bump `lastRolloverDate` here. That timestamp is
+    // owned by the rollover process — overwriting it on edits used to confuse
+    // checkAndPerformRollover into thinking rollover had already run.
     const patch: Partial<typeof bucket> = { ...updates };
     const isModeChange =
       updates.bucketMode !== undefined && updates.bucketMode !== bucket.bucketMode;
@@ -221,7 +225,6 @@ export const update = mutation({
         // Reset spend/recurring balances — distribution will refund this month
         patch.carryoverBalance = 0;
         patch.fundedAmount = 0;
-        patch.lastRolloverDate = Date.now();
       } else {
         // Switching to save — clear spend/recurring-mode fields
         patch.allocationType = undefined;
@@ -241,6 +244,17 @@ export const update = mutation({
     // Recalculate distribution after updating bucket
     await ctx.runMutation(api.distribution.calculateDistribution, {
       userId: bucket.userId,
+    });
+
+    // Reconcile this month's recurring auto-pays. If the bucket just flipped
+    // to recurring, the sync inserts the missing auto-pay; if it flipped away
+    // from recurring (or its plan shrank to zero), the sync removes the
+    // stale row. Idempotent for unrelated edits.
+    const now = new Date();
+    const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+      userId: bucket.userId,
+      month,
     });
   },
 });

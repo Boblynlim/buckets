@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
 import { mutation, query } from './_generated/server';
+import { api } from './_generated/api';
 
 // Get all income entries for a specific month
 export const getByMonth = query({
@@ -68,6 +69,12 @@ export const seedMonth = mutation({
           const doc = await ctx.db.get(id);
           if (doc) newEntries.push(doc);
         }
+        // Income for this month just materialized — recurring auto-pays may
+        // need to appear too.
+        await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+          userId: args.userId,
+          month: args.month,
+        });
         return newEntries;
       }
     }
@@ -86,13 +93,20 @@ export const add = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert('monthlyIncome', {
+    const id = await ctx.db.insert('monthlyIncome', {
       userId: args.userId,
       month: args.month,
       amount: args.amount,
       note: args.note,
       isConfirmed: false,
     });
+    // Income changed → funding ratio + amount-based / pct-based plans for that
+    // month change too. Reconcile the recurring auto-pays for this month.
+    await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+      userId: args.userId,
+      month: args.month,
+    });
+    return id;
   },
 });
 
@@ -104,10 +118,18 @@ export const update = mutation({
     note: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.entryId);
+    if (!entry) throw new Error('Entry not found');
     const patch: Record<string, any> = {};
     if (args.amount !== undefined) patch.amount = args.amount;
     if (args.note !== undefined) patch.note = args.note;
     await ctx.db.patch(args.entryId, patch);
+    if (args.amount !== undefined && args.amount !== entry.amount) {
+      await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+        userId: entry.userId,
+        month: entry.month,
+      });
+    }
     return { success: true };
   },
 });
@@ -116,7 +138,13 @@ export const update = mutation({
 export const remove = mutation({
   args: { entryId: v.id('monthlyIncome') },
   handler: async (ctx, args) => {
+    const entry = await ctx.db.get(args.entryId);
+    if (!entry) throw new Error('Entry not found');
     await ctx.db.delete(args.entryId);
+    await ctx.runMutation(api.recurringSync.syncRecurringExpensesForMonth, {
+      userId: entry.userId,
+      month: entry.month,
+    });
     return { success: true };
   },
 });
