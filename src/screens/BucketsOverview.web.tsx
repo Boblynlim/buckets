@@ -154,7 +154,9 @@ const CupItem: React.FC<{
         {bucket.name}
       </Text>
       <Text style={cupStyles.balance}>
-        ${available.toFixed(0)} {bucket.bucketMode === 'save' ? 'saved' : 'left'} of ${allocation.toFixed(0)}
+        {bucket.bucketMode === 'recurring'
+          ? `$${(bucket.spentAmount || 0).toFixed(0)} paid of $${allocation.toFixed(0)}`
+          : `$${available.toFixed(0)} ${bucket.bucketMode === 'save' ? 'saved' : 'left'} of $${allocation.toFixed(0)}`}
       </Text>
     </motion.div>
   );
