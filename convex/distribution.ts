@@ -230,19 +230,3 @@ export const getDistributionStatus = query({
     };
   },
 });
-
-/**
- * Get spent amount for a bucket (computed from expenses)
- */
-export const getBucketSpent = query({
-  args: { bucketId: v.id('buckets') },
-  handler: async (ctx, args) => {
-    const expenses = await ctx.db
-      .query('expenses')
-      .withIndex('by_bucket', q => q.eq('bucketId', args.bucketId))
-      .collect();
-
-    const totalSpent = expenses.reduce((sum, expense) => sum + expense.amount, 0);
-    return totalSpent;
-  },
-});

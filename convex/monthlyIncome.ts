@@ -216,21 +216,3 @@ export const migrateFromLegacy = mutation({
     return { migrated };
   },
 });
-
-// Get total income for the current month (used by distribution)
-export const getCurrentMonthTotal = query({
-  args: { userId: v.id('users') },
-  handler: async (ctx, args) => {
-    const now = new Date();
-    const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-    const entries = await ctx.db
-      .query('monthlyIncome')
-      .withIndex('by_user_month', q =>
-        q.eq('userId', args.userId).eq('month', currentMonth)
-      )
-      .collect();
-
-    return entries.reduce((sum, e) => sum + e.amount, 0);
-  },
-});

@@ -104,53 +104,6 @@ export const generateMetadata = mutation({
 });
 
 /**
- * Get spending insights by category
- */
-export const getSpendingByCategory = query({
-  args: {
-    userId: v.id('users'),
-    startDate: v.optional(v.number()),
-    endDate: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    let query = ctx.db
-      .query('expenses')
-      .withIndex('by_user', (q) => q.eq('userId', args.userId));
-
-    if (args.startDate) {
-      query = query.filter((q) => q.gte(q.field('date'), args.startDate!));
-    }
-    if (args.endDate) {
-      query = query.filter((q) => q.lte(q.field('date'), args.endDate!));
-    }
-
-    const expenses = await query.collect();
-
-    // Group by category
-    const categoryTotals: Record<string, { total: number; count: number; avgHappiness: number }> = {};
-
-    for (const expense of expenses) {
-      const category = expense.category || 'Uncategorized';
-
-      if (!categoryTotals[category]) {
-        categoryTotals[category] = { total: 0, count: 0, avgHappiness: 0 };
-      }
-
-      categoryTotals[category].total += expense.amount;
-      categoryTotals[category].count += 1;
-      categoryTotals[category].avgHappiness += expense.happinessRating ?? 3; // Default to neutral
-    }
-
-    // Calculate averages
-    for (const category in categoryTotals) {
-      categoryTotals[category].avgHappiness /= categoryTotals[category].count;
-    }
-
-    return categoryTotals;
-  },
-});
-
-/**
  * Get needs vs wants breakdown
  */
 export const getNeedsVsWants = query({

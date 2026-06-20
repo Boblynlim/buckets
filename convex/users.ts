@@ -1,37 +1,12 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Create a new user
-export const create = mutation({
-  args: {
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const userId = await ctx.db.insert("users", {
-      name: args.name,
-      createdAt: Date.now(),
-    });
-    return userId;
-  },
-});
-
 // Get user by ID
 export const get = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     return user;
-  },
-});
-
-// Update user
-export const update = mutation({
-  args: {
-    userId: v.id("users"),
-    name: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.userId, { name: args.name });
   },
 });
 

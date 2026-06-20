@@ -153,24 +153,6 @@ export const getByUser = query({
   },
 });
 
-// Update bucket balance (for save buckets or legacy support)
-export const updateBalance = mutation({
-  args: {
-    bucketId: v.id("buckets"),
-    amount: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const bucket = await ctx.db.get(args.bucketId);
-    if (!bucket) {
-      throw new Error("Bucket not found");
-    }
-
-    await ctx.db.patch(args.bucketId, {
-      currentBalance: (bucket.currentBalance || 0) + args.amount,
-    });
-  },
-});
-
 // Update bucket details
 export const update = mutation({
   args: {
@@ -242,7 +224,6 @@ export const update = mutation({
         patch.carryoverBalance = undefined;
         patch.fundedAmount = undefined;
         patch.allocationValue = undefined; // legacy
-        patch.allocationType_legacy = undefined; // legacy
         // Start savings balance at zero
         patch.currentBalance = 0;
       }
@@ -291,52 +272,5 @@ export const remove = mutation({
       userId: bucket.userId,
       month,
     });
-  },
-});
-
-// Migration: Convert old buckets to new model
-export const migrateToNewModel = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const buckets = await ctx.db.query("buckets").collect();
-
-    for (const bucket of buckets) {
-      // Skip if already migrated
-      if (bucket.bucketMode) continue;
-
-      // Assume all old buckets are spend buckets
-      const updates: any = {
-        bucketMode: 'spend' as const,
-        fundedAmount: bucket.currentBalance || 0,
-      };
-
-      if (bucket.allocationType === 'amount') {
-        updates.plannedAmount = bucket.allocationValue;
-      } else if (bucket.allocationType === 'percentage') {
-        updates.plannedPercent = bucket.allocationValue;
-      }
-
-      await ctx.db.patch(bucket._id, updates);
-    }
-
-    return { migrated: buckets.length };
-  },
-});
-
-// Migration: Add random icons to buckets that don't have one
-export const addIconsToExistingBuckets = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const icons = ['octopus', 'frog', 'fish', 'duck', 'hippo', 'shrimp', 'seahorse', 'pufferfish', 'turtle'];
-    const buckets = await ctx.db.query("buckets").collect();
-
-    for (const bucket of buckets) {
-      if (!bucket.icon) {
-        const randomIcon = icons[Math.floor(Math.random() * icons.length)];
-        await ctx.db.patch(bucket._id, { icon: randomIcon });
-      }
-    }
-
-    return { updated: buckets.filter(b => !b.icon).length };
   },
 });

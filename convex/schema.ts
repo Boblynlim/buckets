@@ -57,9 +57,8 @@ export default defineSchema({
     createdAt: v.number(),
     isActive: v.boolean(),
 
-    // Legacy fields for migration
+    // Legacy field still read as a fallback for older buckets
     allocationValue: v.optional(v.number()), // DEPRECATED: use plannedAmount/plannedPercent
-    allocationType_legacy: v.optional(v.union(v.literal("amount"), v.literal("percentage"))),
   }).index("by_user", ["userId"]),
 
   income: defineTable({
@@ -72,17 +71,6 @@ export default defineSchema({
     startMonth: v.optional(v.string()), // "2026-01" — month this source begins (defaults to creation month)
     endMonth: v.optional(v.string()), // "2026-03" — last month this source applies (undefined = still active)
   }).index("by_user", ["userId"]),
-
-  incomeReceipts: defineTable({
-    userId: v.id("users"),
-    sourceId: v.optional(v.id("income")), // links to recurring source, null for ad-hoc
-    amount: v.number(),
-    month: v.string(), // "2026-03" format
-    note: v.optional(v.string()),
-    receivedAt: v.number(),
-  })
-    .index("by_user_month", ["userId", "month"])
-    .index("by_user", ["userId"]),
 
   // Per-month income entries — each month is independent
   monthlyIncome: defineTable({
@@ -171,18 +159,6 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
     .index("by_dedupe", ["dedupeKey"]),
-
-  recurringExpenses: defineTable({
-    userId: v.id("users"),
-    bucketId: v.id("buckets"),
-    name: v.string(),
-    amount: v.number(),
-    dayOfMonth: v.number(), // 1-31
-    isActive: v.boolean(),
-    createdAt: v.number(),
-  })
-    .index("by_user", ["userId"])
-    .index("by_bucket", ["bucketId"]),
 
   claudeConversations: defineTable({
     userId: v.id("users"),

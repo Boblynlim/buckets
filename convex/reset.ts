@@ -52,16 +52,6 @@ export const deleteAllUserData = mutation({
       await ctx.db.delete(expense._id);
     }
 
-    // Delete all recurring expenses
-    const recurringExpenses = await ctx.db
-      .query('recurringExpenses')
-      .withIndex('by_user', q => q.eq('userId', userId))
-      .collect();
-
-    for (const recurring of recurringExpenses) {
-      await ctx.db.delete(recurring._id);
-    }
-
     // Delete all Claude conversations
     const conversations = await ctx.db
       .query('claudeConversations')
@@ -88,7 +78,6 @@ export const deleteAllUserData = mutation({
         buckets: buckets.length,
         income: income.length,
         expenses: expenses.length,
-        recurringExpenses: recurringExpenses.length,
         conversations: conversations.length,
         memories: memories.length,
       },
