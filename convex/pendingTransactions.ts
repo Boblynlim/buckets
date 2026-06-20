@@ -227,6 +227,7 @@ export const confirm = mutation({
     note: v.optional(v.string()), // override merchant-derived note
     date: v.optional(v.number()), // override parsed date
     worthIt: v.optional(v.boolean()),
+    isNecessary: v.optional(v.boolean()), // explicit "necessary" choice from review
   },
   handler: async (ctx, args) => {
     const pending = await ctx.db.get(args.pendingId);
@@ -248,6 +249,15 @@ export const confirm = mutation({
       note,
       worthIt: args.worthIt,
     });
+
+    // expenses.create auto-detects "necessary" from remembered notes; honor an
+    // explicit choice from the review UI when given.
+    if (args.isNecessary !== undefined) {
+      await ctx.runMutation(api.expenses.markNecessary, {
+        expenseId,
+        isNecessary: args.isNecessary,
+      });
+    }
 
     await ctx.db.patch(args.pendingId, {
       status: "confirmed",
