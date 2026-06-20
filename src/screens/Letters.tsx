@@ -19,9 +19,10 @@ import { PotteryLoader } from '../components/PotteryLoader';
 
 interface LettersProps {
   onLetterSelected?: (isSelected: boolean) => void;
+  onBack?: () => void;
 }
 
-export const Letters: React.FC<LettersProps> = ({ onLetterSelected }) => {
+export const Letters: React.FC<LettersProps> = ({ onLetterSelected, onBack }) => {
   const [selectedLetter, setSelectedLetter] = useState<any | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -137,6 +138,12 @@ export const Letters: React.FC<LettersProps> = ({ onLetterSelected }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.pageHeader}>
+        {onBack && (
+          <TouchableOpacity onPress={onBack} style={styles.backButtonContainer}>
+            <ArrowLeft size={20} color={theme.colors.primary} strokeWidth={2} />
+            <Text style={styles.backButton}>Back</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.pageTitle}>Letters</Text>
       </View>
 

@@ -836,9 +836,9 @@ function App() {
       case 'review':
         return <ReviewQueue onBack={() => setCurrentScreen('settings')} />;
       case 'reports':
-        return <Reports onReportSelected={setIsReportSelected} />;
+        return <Reports onReportSelected={setIsReportSelected} onBack={() => setCurrentScreen('settings')} />;
       case 'letters':
-        return <Letters onLetterSelected={setIsLetterSelected} />;
+        return <Letters onLetterSelected={setIsLetterSelected} onBack={() => setCurrentScreen('settings')} />;
       default:
         return (
           <BucketsOverview

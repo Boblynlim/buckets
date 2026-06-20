@@ -21,9 +21,10 @@ import { PotteryLoader } from '../components/PotteryLoader';
 
 interface ReportsProps {
   onReportSelected?: (isSelected: boolean) => void;
+  onBack?: () => void;
 }
 
-export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
+export const Reports: React.FC<ReportsProps> = ({ onReportSelected, onBack }) => {
   const [selectedReport, setSelectedReport] = useState<Report | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -270,6 +271,12 @@ export const Reports: React.FC<ReportsProps> = ({ onReportSelected }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.pageHeader}>
+        {onBack && (
+          <TouchableOpacity onPress={onBack} style={styles.backButtonContainer}>
+            <ArrowLeft size={20} color={theme.colors.primary} strokeWidth={2} />
+            <Text style={styles.backButton}>Back</Text>
+          </TouchableOpacity>
+        )}
         <Text style={styles.pageTitle}>Reports</Text>
       </View>
       {/* Generate Button */}
