@@ -26,6 +26,27 @@ export const calculateDistribution = mutation({
 
     const totalIncome = monthlyEntries.reduce((sum, entry) => sum + entry.amount, 0);
 
+    // No income recorded for this month YET — do nothing rather than wipe.
+    //
+    // Distribution funds each bucket as planned * (income / totalPlanned), so a
+    // zero total collapses every bucket's fundedAmount to $0. With irregular
+    // income the user often edits buckets before logging that month's (variable)
+    // paycheck — that edit must not silently zero their funding. We treat the
+    // ABSENCE of any monthlyIncome row as "not entered yet" and leave existing
+    // funding intact until a real figure arrives. An explicit $0 entry is a
+    // deliberate choice and still distributes (ratio 0) via the normal path.
+    if (monthlyEntries.length === 0) {
+      return {
+        totalIncome: 0,
+        totalPlanned: 0,
+        isOverPlanned: false,
+        overPlannedBy: 0,
+        fundingRatio: 1,
+        skipped: true as const,
+        reason: 'no-income-recorded' as const,
+      };
+    }
+
     // Get all active buckets
     const buckets = await ctx.db
       .query('buckets')
