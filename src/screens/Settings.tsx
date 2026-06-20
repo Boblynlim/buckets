@@ -51,6 +51,7 @@ interface SettingsProps {
   onSetIncome?: () => void;
   onNavigateToReports?: () => void;
   onNavigateToLetters?: () => void;
+  onNavigateToReviewQueue?: () => void;
 }
 
 export const Settings: React.FC<SettingsProps> = ({
@@ -60,6 +61,7 @@ export const Settings: React.FC<SettingsProps> = ({
   onSetIncome,
   onNavigateToReports,
   onNavigateToLetters,
+  onNavigateToReviewQueue,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -106,6 +108,10 @@ export const Settings: React.FC<SettingsProps> = ({
   );
   const expenses = useQuery(
     api.expenses.getByUser,
+    currentUser ? { userId: currentUser._id } : 'skip',
+  );
+  const reviewPendingCount = useQuery(
+    api.pendingTransactions.pendingCount,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
   const currentMonthStr = (() => {
@@ -618,6 +624,29 @@ export const Settings: React.FC<SettingsProps> = ({
               <View style={{flex: 1}}>
                 <Text style={styles.groupRowTitle}>Letters</Text>
               </View>
+              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
+            </Pressable>
+
+            <View style={styles.groupRowDivider} />
+
+            <Pressable
+              style={styles.groupRow}
+              onPress={() => {
+                if (onNavigateToReviewQueue) {
+                  onNavigateToReviewQueue();
+                } else {
+                  navigation?.navigate('ReviewQueue');
+                }
+              }}
+            >
+              <View style={{flex: 1}}>
+                <Text style={styles.groupRowTitle}>Review queue</Text>
+              </View>
+              {!!reviewPendingCount && reviewPendingCount > 0 && (
+                <View style={styles.reviewBadge}>
+                  <Text style={styles.reviewBadgeText}>{reviewPendingCount}</Text>
+                </View>
+              )}
               <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
             </Pressable>
           </View>
@@ -1928,6 +1957,21 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#E0D8C8',
     marginHorizontal: 18,
+  },
+  reviewBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    backgroundColor: '#5C8A7A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  reviewBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
   },
   textInputField: {
     backgroundColor: '#FFFFFF',

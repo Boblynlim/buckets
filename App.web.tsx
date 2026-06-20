@@ -25,13 +25,14 @@ import { IncomeManagement } from './src/screens/IncomeManagement';
 import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
 import { Letters } from './src/screens/Letters';
+import { ReviewQueue } from './src/screens/ReviewQueue.web';
 import { Drawer } from './src/components/Drawer';
 import { DailyPromptModal } from './src/components/DailyPromptModal';
 import { GrowthLetterOverlay } from './src/components/GrowthLetter';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
-type Screen = 'buckets' | 'settings' | 'reports' | 'letters';
+type Screen = 'buckets' | 'settings' | 'reports' | 'letters' | 'review';
 
 // Cup images for the shelf — all 15 cups fill a 5x5 grid
 const SHELF_CUPS = [
@@ -829,8 +830,11 @@ function App() {
             onSetIncome={() => setShowIncomeManagement(true)}
             onNavigateToReports={() => setCurrentScreen('reports')}
             onNavigateToLetters={() => setCurrentScreen('letters')}
+            onNavigateToReviewQueue={() => setCurrentScreen('review')}
           />
         );
+      case 'review':
+        return <ReviewQueue onBack={() => setCurrentScreen('settings')} />;
       case 'reports':
         return <Reports onReportSelected={setIsReportSelected} />;
       case 'letters':

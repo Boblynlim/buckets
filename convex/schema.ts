@@ -142,6 +142,36 @@ export default defineSchema({
     .index("by_category", ["userId", "category"])
     .index("by_merchant", ["userId", "merchant"]),
 
+  // Parsed bank-alert emails awaiting user review before becoming real expenses.
+  // Populated by the /import-email HTTP action; drained by the in-app review queue.
+  pendingTransactions: defineTable({
+    userId: v.id("users"),
+    bank: v.string(), // "dbs" | "ocbc" | "hsbc" | "amex" | "unknown"
+    direction: v.optional(v.union(v.literal("in"), v.literal("out"))), // "in" = received (income)
+    amount: v.number(),
+    currency: v.string(), // e.g. "SGD", "USD"
+    merchant: v.optional(v.string()),
+    date: v.number(), // transaction timestamp parsed from the alert
+    last4: v.optional(v.string()), // last 4 of the card, when the alert exposes it
+    status: v.union(
+      v.literal("pending"),
+      v.literal("confirmed"),
+      v.literal("dismissed")
+    ),
+    suggestedBucketId: v.optional(v.id("buckets")),
+    confirmedExpenseId: v.optional(v.id("expenses")), // set once confirmed as a spend
+    confirmedIncomeId: v.optional(v.id("monthlyIncome")), // set when auto-captured as income
+    // Stable identity for de-duplication. Built from the source email's
+    // Message-ID when available, else a hash of (bank, amount, date, merchant).
+    dedupeKey: v.string(),
+    rawSource: v.optional(v.string()), // original email text, for re-parsing/debugging
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_status", ["userId", "status"])
+    .index("by_dedupe", ["dedupeKey"]),
+
   recurringExpenses: defineTable({
     userId: v.id("users"),
     bucketId: v.id("buckets"),
