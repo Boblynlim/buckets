@@ -14,6 +14,7 @@ import {useQuery, useMutation} from 'convex/react';
 import {api} from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import {theme} from '../theme';
+import {type} from '../theme/fonts';
 import {Drawer} from '../components/Drawer';
 import {PotteryLoader} from '../components/PotteryLoader';
 import {format, addMonths, subMonths, startOfMonth, isSameMonth, isBefore} from 'date-fns';
@@ -523,8 +524,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   title: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
+    ...type.sectionTitle,
     color: theme.colors.text,
   },
   closeButton: {
@@ -542,8 +542,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   monthLabel: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
+    ...type.rowTitle,
     color: theme.colors.text,
   },
 
@@ -570,10 +569,9 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
   statusCaption: {
+    ...type.eyebrow,
     fontSize: 13,
-    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
   },
@@ -624,13 +622,11 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   allocationDetail: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.caption,
     color: theme.colors.textSecondary,
   },
   allocationHint: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.caption,
     color: theme.colors.primary,
     marginTop: 4,
   },
@@ -653,10 +649,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   label: {
+    ...type.eyebrow,
     fontSize: 15,
-    fontFamily: 'Merchant',
     color: theme.colors.textSecondary,
-    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
 
@@ -688,8 +683,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   entryName: {
-    fontSize: 17,
-    fontFamily: 'Merchant',
+    ...type.rowTitle,
     color: theme.colors.text,
     marginBottom: 2,
   },
@@ -702,8 +696,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
   },
   confirmedDate: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.caption,
     color: theme.colors.success,
     marginTop: 2,
   },

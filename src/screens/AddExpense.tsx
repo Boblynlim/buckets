@@ -14,6 +14,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 import { getCupForBucketId } from '../constants/bucketIcons';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { DatePicker } from '../components/DatePicker';
@@ -426,11 +427,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   title: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
+    ...type.sectionTitle,
     fontWeight: '500',
     color: '#1A1A1A',
-    letterSpacing: -0.3,
   },
   cancelButton: {
     fontSize: 16,
@@ -543,7 +542,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   bucketGridName: {
-    fontSize: 12,
+    ...type.caption,
+    fontSize: 13,
     fontFamily: 'Merchant',
     color: '#877E6F',
     textAlign: 'center',
@@ -553,8 +553,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   bucketGridBalance: {
-    fontSize: 12,
-    fontFamily: 'Merchant Copy',
+    ...type.caption,
+    fontSize: 13,
     color: '#8ac0ae',
     marginTop: 1,
   },
@@ -568,9 +568,9 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   infoText: {
+    ...type.body,
     fontSize: 15,
     color: '#877E6F',
-    fontFamily: 'Merchant',
     lineHeight: 20,
     textAlign: 'center',
   },
@@ -621,8 +621,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(61,50,41,0.15)',
   },
   worthItBtnText: {
-    fontSize: 12,
-    fontFamily: 'Merchant',
+    ...type.button,
     color: 'rgba(61,50,41,0.3)',
     fontWeight: '600',
     letterSpacing: 0.8,

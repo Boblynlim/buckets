@@ -13,6 +13,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 import { getRandomCupIcon, getCupImage } from '../constants/bucketIcons';
 import { Drawer } from '../components/Drawer';
 
@@ -484,11 +485,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   title: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
+    ...type.sectionTitle,
     fontWeight: '500',
     color: '#1A1A1A',
-    letterSpacing: -0.3,
   },
   cancelButton: {
     fontSize: 16,
@@ -551,8 +550,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(92,138,122,0.3)',
   },
   typePillText: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.button,
     fontWeight: '600',
     color: '#877E6F',
     letterSpacing: 0.8,
@@ -561,8 +559,7 @@ const styles = StyleSheet.create({
     color: '#245045',
   },
   typeHelper: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
+    ...type.label,
     color: '#A09686',
     textAlign: 'center',
     marginTop: 10,
@@ -607,8 +604,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   budgetBarText: {
-    fontSize: 13,
-    fontFamily: 'Merchant Copy',
+    ...type.caption,
     color: '#877E6F',
   },
 
@@ -655,8 +651,7 @@ const styles = StyleSheet.create({
     borderTopColor: 'rgba(61,50,41,0.06)',
   },
   contributionLabel: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
+    ...type.button,
     color: '#A09686',
   },
   contributionCurrency: {
@@ -673,13 +668,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   contributionSuffix: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
+    ...type.button,
     color: '#A09686',
   },
   timeEstimate: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
+    ...type.label,
     fontStyle: 'italic',
     color: '#5C8A7A',
     textAlign: 'center',
@@ -700,13 +693,11 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   suggestionText: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
+    ...type.label,
     color: '#245045',
   },
   suggestionApply: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.button,
     fontWeight: '600',
     color: '#5C8A7A',
   },
@@ -722,8 +713,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   warningText: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
+    ...type.label,
     color: '#C0564E',
   },
 
@@ -733,8 +723,7 @@ const styles = StyleSheet.create({
     marginTop: 28,
   },
   advancedToggleText: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
+    ...type.label,
     color: '#A09686',
     textDecorationLine: 'underline',
   },
@@ -743,10 +732,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   advancedLabel: {
+    ...type.eyebrow,
     fontSize: 13,
-    fontFamily: 'Merchant',
     color: '#877E6F',
-    textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
@@ -767,8 +755,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   advancedSuffix: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
+    ...type.button,
     color: '#A09686',
   },
 });

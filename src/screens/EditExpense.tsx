@@ -16,6 +16,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 import { getCupForBucketId } from '../constants/bucketIcons';
 import type { Expense, Bucket } from '../types';
 import { DatePicker } from '../components/DatePicker';
@@ -439,11 +440,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   title: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
+    ...type.sectionTitle,
     fontWeight: '500',
     color: '#1A1A1A',
-    letterSpacing: -0.3,
   },
   cancelButton: {
     fontSize: 16,
@@ -620,8 +619,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(61,50,41,0.15)',
   },
   worthItBtnText: {
-    fontSize: 12,
-    fontFamily: 'Merchant',
+    ...type.button,
     color: 'rgba(61,50,41,0.3)',
     fontWeight: '600',
     letterSpacing: 0.8,
@@ -648,8 +646,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.danger,
   },
   deleteButtonText: {
+    ...type.button,
     fontSize: 16,
-    fontFamily: 'Merchant',
     color: theme.colors.textOnPrimary,
   },
 

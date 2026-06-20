@@ -31,6 +31,7 @@ import { getCupForBucketId } from '../constants/bucketIcons';
 
 import { PotteryLoader } from '../components/PotteryLoader';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 import { computeBucketHealth, healthColors, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
 
 // ── Sound helper ──────────────────────────────────────────────
@@ -1417,11 +1418,9 @@ const styles = StyleSheet.create({
     flexShrink: 0,
   },
   transactionsTitle: {
-    fontSize: 18,
+    ...type.sectionTitle,
     fontWeight: '500',
     color: '#3D3229',
-    fontFamily: 'Merchant',
-    letterSpacing: -0.3,
   },
   addButton: {
     paddingHorizontal: 0,
@@ -1465,11 +1464,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   transactionName: {
-    fontSize: 17,
+    ...type.rowTitle,
     fontWeight: '500',
     color: '#3D3229',
     marginBottom: 3,
-    fontFamily: 'Merchant',
   },
   transactionDate: {
     fontSize: 14,

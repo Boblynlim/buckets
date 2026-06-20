@@ -15,6 +15,7 @@ import type { RouteProp } from '@react-navigation/native';
 import { useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 import type { Bucket } from '../types';
 import { Drawer } from '../components/Drawer';
 import { getCupForBucketId } from '../constants/bucketIcons';
@@ -479,11 +480,9 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
   },
   title: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
+    ...type.sectionTitle,
     fontWeight: '500',
     color: '#1A1A1A',
-    letterSpacing: -0.3,
   },
   cancelButton: {
     fontSize: 16,
@@ -546,8 +545,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(92,138,122,0.3)',
   },
   typePillText: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.button,
     fontWeight: '600',
     color: '#877E6F',
     letterSpacing: 0.8,
@@ -565,8 +563,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   modeChangeWarning: {
-    fontSize: 13,
-    fontFamily: 'Merchant',
+    ...type.caption,
     fontStyle: 'italic',
     color: '#C0564E',
     textAlign: 'center',
@@ -625,8 +622,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(92,138,122,0.3)',
   },
   allocationPillText: {
-    fontSize: 12,
-    fontFamily: 'Merchant',
+    ...type.button,
     fontWeight: '600',
     color: '#877E6F',
     letterSpacing: 0.6,
@@ -694,10 +690,9 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   advancedLabel: {
+    ...type.eyebrow,
     fontSize: 13,
-    fontFamily: 'Merchant',
     color: '#877E6F',
-    textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 8,
   },
@@ -735,8 +730,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.danger,
   },
   deleteButtonText: {
+    ...type.button,
     fontSize: 16,
-    fontFamily: 'Merchant',
     color: theme.colors.textOnPrimary,
   },
   deleteHint: {

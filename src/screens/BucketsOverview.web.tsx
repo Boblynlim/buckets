@@ -19,6 +19,7 @@ import { BucketDetail } from './BucketDetail';
 import type { Bucket, Expense } from '../types';
 import { format } from 'date-fns';
 import { theme } from '../theme';
+import { type } from '../theme/fonts';
 
 import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIcons';
 import { AnimatedNumber } from '../components/AnimatedNumber';
@@ -210,17 +211,16 @@ const cupStyles = StyleSheet.create({
     zIndex: 2,
   },
   name: {
-    fontSize: 16,
+    ...type.rowTitle,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant',
     textAlign: 'center',
     marginBottom: 3,
   },
   balance: {
-    fontSize: 14,
+    ...type.body,
+    fontSize: 15,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy',
     textAlign: 'center',
   },
 });
@@ -1609,9 +1609,8 @@ const styles = StyleSheet.create({
   header: {
   },
   monthLabel: {
-    fontSize: 22,
+    ...type.sectionTitle,
     color: 'rgba(250, 248, 244, 0.9)',
-    fontFamily: 'Merchant',
     fontWeight: '500',
   },
 
@@ -1648,9 +1647,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   warningText: {
-    fontSize: 15,
+    ...type.body,
     color: 'rgba(250, 248, 244, 0.7)',
-    fontFamily: 'Merchant Copy',
   },
 
   // Search
@@ -1665,10 +1663,9 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   searchInput: {
+    ...type.body,
     flex: 1,
-    fontSize: 16,
     color: 'rgba(250, 248, 244, 0.9)',
-    fontFamily: 'Merchant Copy',
     outlineStyle: 'none' as any,
   },
 
@@ -1700,10 +1697,8 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   infoText: {
-    fontSize: 15,
+    ...type.body,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy',
-    lineHeight: 20,
   },
 
   // Empty
@@ -1713,15 +1708,13 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   emptyStateText: {
-    fontSize: 20,
+    ...type.sectionTitle,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant',
   },
   emptyStateSubtext: {
-    fontSize: 16,
+    ...type.body,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy',
     textAlign: 'center',
   },
 
@@ -1747,10 +1740,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   monthPickerTitle: {
-    fontSize: 22,
+    ...type.sectionTitle,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant',
   },
   monthGrid: {
     flexDirection: 'row',
@@ -1770,9 +1762,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
   },
   monthGridItemText: {
-    fontSize: 18,
+    ...type.rowTitle,
     color: theme.colors.text,
-    fontFamily: 'Merchant',
   },
   monthGridItemTextSelected: {
     color: theme.colors.textOnPrimary,
@@ -1817,10 +1808,9 @@ const styles = StyleSheet.create({
     color: 'rgba(250, 248, 244, 0.95)',
   },
   monthlyHeaderTitle: {
-    fontSize: 20,
+    ...type.sectionTitle,
     fontWeight: '500',
     color: 'rgba(250, 248, 244, 0.95)',
-    fontFamily: 'Merchant',
   },
   monthlyTotalLabel: {
     fontSize: 13,
@@ -1839,9 +1829,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   monthlyTotalCount: {
-    fontSize: 16,
+    ...type.body,
     color: 'rgba(20, 50, 40, 0.6)',
-    fontFamily: 'Merchant Copy',
   },
   monthlyTotalExcluded: {
     fontSize: 13,
@@ -1865,11 +1854,10 @@ const styles = StyleSheet.create({
     height: 36,
   },
   bucketSectionName: {
+    ...type.rowTitle,
     flex: 1,
-    fontSize: 17,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant',
   },
   bucketSectionAmount: {
     fontSize: 17,
@@ -1901,10 +1889,9 @@ const styles = StyleSheet.create({
     borderBottomColor: theme.colors.border,
   },
   transactionNote: {
-    fontSize: 17,
+    ...type.rowTitle,
     fontWeight: '500',
     color: theme.colors.text,
-    fontFamily: 'Merchant',
   },
   transactionDate: {
     fontSize: 14,
@@ -1922,9 +1909,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   emptyText: {
-    fontSize: 18,
+    ...type.rowTitle,
     color: theme.colors.textSecondary,
-    fontFamily: 'Merchant',
   },
 
   // Loading
