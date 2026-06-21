@@ -72,6 +72,20 @@ export default defineSchema({
     endMonth: v.optional(v.string()), // "2026-03" — last month this source applies (undefined = still active)
   }).index("by_user", ["userId"]),
 
+  // Legacy income-receipt history. No live query functions, but production holds
+  // real rows (past Peek/Synscribe draws), so the table definition stays to keep
+  // that data valid under schema validation.
+  incomeReceipts: defineTable({
+    userId: v.id("users"),
+    sourceId: v.optional(v.id("income")),
+    amount: v.number(),
+    month: v.string(), // "2026-03" format
+    note: v.optional(v.string()),
+    receivedAt: v.number(),
+  })
+    .index("by_user_month", ["userId", "month"])
+    .index("by_user", ["userId"]),
+
   // Per-month income entries — each month is independent
   monthlyIncome: defineTable({
     userId: v.id("users"),
@@ -159,6 +173,20 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
     .index("by_dedupe", ["dedupeKey"]),
+
+  // Legacy table — no live query functions (superseded by recurringSync), kept
+  // as a schema definition so any residual rows stay valid across deployments.
+  recurringExpenses: defineTable({
+    userId: v.id("users"),
+    bucketId: v.id("buckets"),
+    name: v.string(),
+    amount: v.number(),
+    dayOfMonth: v.number(),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_bucket", ["bucketId"]),
 
   claudeConversations: defineTable({
     userId: v.id("users"),
