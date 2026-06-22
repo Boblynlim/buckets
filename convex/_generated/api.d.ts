@@ -11,10 +11,12 @@
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as authHelpers from "../authHelpers.js";
+import type * as backfillCarryover from "../backfillCarryover.js";
 import type * as buckets from "../buckets.js";
 import type * as chat from "../chat.js";
 import type * as crons from "../crons.js";
 import type * as dailyPrompts from "../dailyPrompts.js";
+import type * as diagnostics from "../diagnostics.js";
 import type * as distribution from "../distribution.js";
 import type * as expenses from "../expenses.js";
 import type * as groups from "../groups.js";
@@ -46,10 +48,12 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   auth: typeof auth;
   authHelpers: typeof authHelpers;
+  backfillCarryover: typeof backfillCarryover;
   buckets: typeof buckets;
   chat: typeof chat;
   crons: typeof crons;
   dailyPrompts: typeof dailyPrompts;
+  diagnostics: typeof diagnostics;
   distribution: typeof distribution;
   expenses: typeof expenses;
   groups: typeof groups;

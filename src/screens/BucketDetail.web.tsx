@@ -27,7 +27,7 @@ const formatRelativeDate = (ts: number): string => {
 };
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
-import { findDuplicateExpenseIds } from '../utils/duplicates';
+import { findDuplicateExpenseIds, getDismissedDuplicates, dismissDuplicate } from '../utils/duplicates';
 
 import { PotteryLoader } from '../components/PotteryLoader';
 import { theme } from '../theme';
@@ -273,6 +273,12 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   // Optimistic local overrides — instantly reflect toggled state before server responds
   const [optimisticToggles, setOptimisticToggles] = React.useState<Record<string, boolean>>({});
   const [optimisticNecessary, setOptimisticNecessary] = React.useState<Record<string, boolean>>({});
+  const [dismissedDupes, setDismissedDupes] = React.useState<Set<string>>(() => getDismissedDuplicates());
+
+  const handleDismissDuplicate = (expenseId: string) => {
+    dismissDuplicate(expenseId);
+    setDismissedDupes(new Set(getDismissedDuplicates())); // re-render with it gone
+  };
 
   // Clear optimistic state when server data updates
   const prevExpensesRef = useRef(expenses);
@@ -324,7 +330,7 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
 
   // Flag likely duplicates (auto-pay + manual copy, or an alert confirmed
   // twice). Shared with the overview's per-cup dup badge so the logic matches.
-  const duplicateIds = findDuplicateExpenseIds(allExpensesList);
+  const duplicateIds = findDuplicateExpenseIds(allExpensesList, { dismissed: dismissedDupes });
 
   // Tug-of-war only counts non-necessary expenses
   const discretionary = expensesList.filter(e => !e.isNecessary);
@@ -1006,9 +1012,18 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                     {formatRelativeDate(expense.date)}
                   </Text>
                   {duplicateIds.has(expense._id) && (
-                    <View style={styles.dupTag}>
-                      <Text style={styles.dupTagText}>⚠ possible duplicate</Text>
-                    </View>
+                    <div
+                      onClick={(e: any) => {
+                        e.stopPropagation?.();
+                        handleDismissDuplicate(expense._id);
+                      }}
+                      title="Not a duplicate — dismiss this flag"
+                      style={{ alignSelf: 'flex-start', cursor: 'pointer' }}
+                    >
+                      <View style={styles.dupTag}>
+                        <Text style={styles.dupTagText}>⚠ possible duplicate ✕</Text>
+                      </View>
+                    </div>
                   )}
                 </View>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 } as any}>

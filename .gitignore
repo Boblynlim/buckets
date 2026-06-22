@@ -88,3 +88,8 @@ yarn-error.log
 dist/
 .vercel
 .env*.local
+
+# Local env files with secrets (never commit)
+.env.local
+.env.polite
+.env.production

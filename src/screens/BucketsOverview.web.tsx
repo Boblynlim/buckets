@@ -25,7 +25,7 @@ import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIc
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
-import { findDuplicateExpenseIds } from '../utils/duplicates';
+import { findDuplicateExpenseIds, getDismissedDuplicates } from '../utils/duplicates';
 
 interface BucketsOverviewProps {
   onEditBucket?: (bucket: Bucket, suggestedAmount?: number) => void;
@@ -507,6 +507,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   // bills where the auto-pay plus a manual copy were both logged. Scoped per
   // bucket, same detector the bucket-detail list uses.
   const dupMap = React.useMemo(() => {
+    const dismissed = getDismissedDuplicates();
     const byBucket = new Map<string, Expense[]>();
     for (const e of expensesList) {
       const arr = byBucket.get(e.bucketId);
@@ -515,7 +516,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     }
     const counts = new Map<string, number>();
     for (const [bucketId, list] of byBucket) {
-      const n = findDuplicateExpenseIds(list).size;
+      const n = findDuplicateExpenseIds(list, { dismissed }).size;
       if (n > 0) counts.set(bucketId, n);
     }
     return counts;
@@ -1868,6 +1869,7 @@ const styles = StyleSheet.create({
   opSubtitle: {
     fontSize: 14,
     color: theme.colors.textSecondary,
+    fontFamily: 'Merchant',
     lineHeight: 20,
   },
   opScroll: {
@@ -1894,21 +1896,25 @@ const styles = StyleSheet.create({
   opName: {
     fontSize: 17,
     color: theme.colors.text,
+    fontFamily: 'Merchant',
     fontWeight: '500',
     marginBottom: 3,
   },
   opMeta: {
     fontSize: 13,
     color: theme.colors.textSecondary,
+    fontFamily: 'Merchant',
   },
   opCut: {
     fontSize: 13,
     color: '#5C8A6F', // sage — safe to cut
+    fontFamily: 'Merchant',
     marginTop: 3,
   },
   opOver: {
     fontSize: 13,
     color: '#C0604E', // terracotta — usually overspends
+    fontFamily: 'Merchant',
     marginTop: 3,
   },
   opClaim: {
