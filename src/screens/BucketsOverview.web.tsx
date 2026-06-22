@@ -24,7 +24,6 @@ import { type } from '../theme/fonts';
 import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIcons';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
-import { Drawer } from '../components/Drawer';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
 
 interface BucketsOverviewProps {
@@ -1653,62 +1652,94 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         </TouchableOpacity>
       </Modal>
 
-      {/* Over-planned breakdown drawer */}
-      <Drawer
-        visible={showOverplanBreakdown}
-        onClose={() => setShowOverplanBreakdown(false)}
-      >
-        <View style={styles.opHeader}>
-          <Text style={styles.opTitle}>
-            Over-planned by ${distributionStatus?.overPlannedBy.toFixed(2) ?? '0.00'}
-          </Text>
-          <Text style={styles.opSubtitle}>
-            Income ${distributionStatus?.totalIncome.toFixed(0) ?? '0'} · Planned $
-            {distributionStatus?.totalPlanned.toFixed(0) ?? '0'} — trim the cups
-            with slack, or add income.
-          </Text>
-        </View>
-        <ScrollView
-          style={styles.opScroll}
-          contentContainerStyle={styles.opScrollContent}
+      {/* Over-planned breakdown drawer.
+          A plain web fixed-overlay rather than the RN Modal-based Drawer: under
+          web's framer-motion transformed ancestors the Modal didn't reliably
+          slide into view, so tapping the banner appeared to do nothing. A
+          position:fixed div is bulletproof and viewport-anchored. */}
+      {showOverplanBreakdown && (
+        <div
+          onClick={() => setShowOverplanBreakdown(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'flex-end',
+          }}
         >
-          {overplanClaims.map(({ b, claim, detail, avg, slack }) => {
-            const meta =
-              avg !== undefined
-                ? `${detail} · spends ~$${Math.round(avg)}/mo`
-                : `${detail} · no spend history yet`;
-            const cuttable = slack !== undefined && slack >= 1;
-            const over = slack !== undefined && slack <= -1;
-            return (
-              <TouchableOpacity
-                key={b._id}
-                style={styles.opRow}
-                activeOpacity={0.6}
-                onPress={() => {
-                  setShowOverplanBreakdown(false);
-                  onEditBucket && onEditBucket(b);
-                }}
-              >
-                <View style={styles.opRowName}>
-                  <Text style={styles.opName}>{b.name}</Text>
-                  <Text style={styles.opMeta}>{meta}</Text>
-                  {cuttable && (
-                    <Text style={styles.opCut}>
-                      ↓ up to ${Math.round(slack!)} of slack to cut
-                    </Text>
-                  )}
-                  {over && (
-                    <Text style={styles.opOver}>
-                      ↑ runs ~${Math.round(-slack!)} over plan
-                    </Text>
-                  )}
-                </View>
-                <Text style={styles.opClaim}>${claim.toFixed(2)}</Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </Drawer>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxHeight: '82vh',
+              background: '#EAE3D5',
+              borderTopLeftRadius: 20,
+              borderTopRightRadius: 20,
+              boxShadow: '0 -2px 24px rgba(0,0,0,0.25)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0' }}>
+              <div style={{ width: 40, height: 5, borderRadius: 3, background: '#C4BAA8' }} />
+            </div>
+            <View style={styles.opHeader}>
+              <Text style={styles.opTitle}>
+                Over-planned by ${distributionStatus?.overPlannedBy.toFixed(2) ?? '0.00'}
+              </Text>
+              <Text style={styles.opSubtitle}>
+                Income ${distributionStatus?.totalIncome.toFixed(0) ?? '0'} · Planned $
+                {distributionStatus?.totalPlanned.toFixed(0) ?? '0'} — trim the cups
+                with slack, or add income.
+              </Text>
+            </View>
+            <ScrollView
+              style={styles.opScroll}
+              contentContainerStyle={styles.opScrollContent}
+            >
+              {overplanClaims.map(({ b, claim, detail, avg, slack }) => {
+                const meta =
+                  avg !== undefined
+                    ? `${detail} · spends ~$${Math.round(avg)}/mo`
+                    : `${detail} · no spend history yet`;
+                const cuttable = slack !== undefined && slack >= 1;
+                const over = slack !== undefined && slack <= -1;
+                return (
+                  <TouchableOpacity
+                    key={b._id}
+                    style={styles.opRow}
+                    activeOpacity={0.6}
+                    onPress={() => {
+                      setShowOverplanBreakdown(false);
+                      onEditBucket && onEditBucket(b);
+                    }}
+                  >
+                    <View style={styles.opRowName}>
+                      <Text style={styles.opName}>{b.name}</Text>
+                      <Text style={styles.opMeta}>{meta}</Text>
+                      {cuttable && (
+                        <Text style={styles.opCut}>
+                          ↓ up to ${Math.round(slack!)} of slack to cut
+                        </Text>
+                      )}
+                      {over && (
+                        <Text style={styles.opOver}>
+                          ↑ runs ~${Math.round(-slack!)} over plan
+                        </Text>
+                      )}
+                    </View>
+                    <Text style={styles.opClaim}>${claim.toFixed(2)}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </div>
+        </div>
+      )}
 
     </View>
   );
@@ -1794,6 +1825,7 @@ const styles = StyleSheet.create({
   },
   opScroll: {
     flex: 1,
+    minHeight: 0 as any, // let the flex child shrink so it actually scrolls
   },
   opScrollContent: {
     paddingHorizontal: 22,
