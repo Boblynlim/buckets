@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -37,6 +37,26 @@ function formatDate(ms: number): string {
   }
 }
 
+// "2026-06" → "June 2026". Used as the month-section header.
+function monthLabel(key: string): string {
+  const [y, m] = key.split('-').map(Number);
+  try {
+    return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
+      month: 'long',
+      year: 'numeric',
+    });
+  } catch {
+    return key;
+  }
+}
+
+// Calendar-month key ("YYYY-MM") for a timestamp, local time — matches how the
+// rest of the app buckets months.
+function monthKeyOf(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
 type RowEdit = {
   amount: string;
   note: string;
@@ -63,6 +83,38 @@ export function ReviewQueue({ onBack }: Props) {
   // Per-row editable state, keyed by pending id.
   const [edits, setEdits] = useState<Record<string, RowEdit>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Which month sections are collapsed, keyed by "YYYY-MM".
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  // Group pending rows into month sections, newest month first. Within a month
+  // we keep the queue's ordering (needs-attention rows first, then newest), so
+  // the items that need fixing still float to the top of their month.
+  const monthGroups = useMemo(() => {
+    if (!pending) return [];
+    const map = new Map<string, any[]>();
+    for (const row of pending) {
+      const key = monthKeyOf(row.date);
+      const list = map.get(key);
+      if (list) list.push(row);
+      else map.set(key, [row]);
+    }
+    return [...map.keys()]
+      .sort((a, b) => (a < b ? 1 : -1)) // newest month first
+      .map((key) => {
+        const rows = map.get(key)!.slice().sort((a, b) => {
+          if (a.needsAttention !== b.needsAttention) {
+            return a.needsAttention ? -1 : 1;
+          }
+          return b.date - a.date;
+        });
+        const total = rows.reduce((s, r) => s + (r.amount || 0), 0);
+        const currency = rows[0]?.currency ?? '';
+        return { key, rows, total, currency };
+      });
+  }, [pending]);
+
+  const toggleMonth = (key: string) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const defaultsFor = (row: any): RowEdit => ({
     amount: String(row.amount ?? ''),
@@ -112,29 +164,11 @@ export function ReviewQueue({ onBack }: Props) {
     }
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
-        {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </TouchableOpacity>
-        )}
-        <Text style={styles.title}>Review queue</Text>
-        <Text style={styles.subtitle}>
-          {pending === undefined
-            ? 'Loading…'
-            : pending.length === 0
-            ? 'Nothing to review — imported transactions will appear here.'
-            : `${pending.length} transaction${pending.length === 1 ? '' : 's'} to confirm`}
-        </Text>
-      </View>
-
-      {pending?.map((row: any) => {
-        const e = getEdit(row);
-        const isBusy = busyId === row._id;
-        const notWorth = !e.worthIt && !e.isNecessary;
-        return (
+  const renderCard = (row: any) => {
+    const e = getEdit(row);
+    const isBusy = busyId === row._id;
+    const notWorth = !e.worthIt && !e.isNecessary;
+    return (
           <View
             key={row._id}
             style={[styles.card, row.needsAttention && styles.cardAttention]}
@@ -256,6 +290,44 @@ export function ReviewQueue({ onBack }: Props) {
               </TouchableOpacity>
             </View>
           </View>
+    );
+  };
+
+  return (
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.header}>
+        {onBack && (
+          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
+            <Text style={styles.backText}>‹ Back</Text>
+          </TouchableOpacity>
+        )}
+        <Text style={styles.title}>Review queue</Text>
+        <Text style={styles.subtitle}>
+          {pending === undefined
+            ? 'Loading…'
+            : pending.length === 0
+            ? 'Nothing to review — imported transactions will appear here.'
+            : `${pending.length} transaction${pending.length === 1 ? '' : 's'} to confirm`}
+        </Text>
+      </View>
+
+      {monthGroups.map((group) => {
+        const isCollapsed = collapsed[group.key];
+        return (
+          <View key={group.key} style={styles.monthSection}>
+            <TouchableOpacity
+              style={styles.monthHeader}
+              onPress={() => toggleMonth(group.key)}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.monthChevron}>{isCollapsed ? '▸' : '▾'}</Text>
+              <Text style={styles.monthTitle}>{monthLabel(group.key)}</Text>
+              <Text style={styles.monthMeta}>
+                {group.rows.length} · {group.currency} {group.total.toFixed(2)}
+              </Text>
+            </TouchableOpacity>
+            {!isCollapsed && group.rows.map((row: any) => renderCard(row))}
+          </View>
         );
       })}
     </ScrollView>
@@ -280,6 +352,28 @@ const styles = StyleSheet.create({
   },
   content: { paddingHorizontal: 20, paddingTop: 44, paddingBottom: 120 },
   header: { marginBottom: 20 },
+  monthSection: { marginBottom: 8 },
+  monthHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    marginBottom: 6,
+  },
+  monthChevron: {
+    ...type.caption,
+    color: theme.colors.textSecondary,
+    width: 14,
+  },
+  monthTitle: {
+    ...type.eyebrow,
+    color: theme.colors.text,
+    flex: 1,
+  },
+  monthMeta: {
+    ...type.caption,
+    color: theme.colors.textSecondary,
+  },
   backBtn: { marginBottom: 10 },
   backText: { ...type.button, color: theme.colors.primary },
   title: {
