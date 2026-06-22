@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import { mutation, action, internalMutation } from './_generated/server';
 import { api } from './_generated/api';
 import { Id } from './_generated/dataModel';
-import { monthKey } from './lib/recurring';
+import { monthKey, totalPlannedFor, fundingRatioFor } from './lib/recurring';
 
 /**
  * Perform monthly rollover for all active buckets
@@ -59,16 +59,25 @@ export const performMonthlyRollover = mutation({
     const rolloverResults = [];
 
     for (const bucket of buckets) {
-      if (bucket.bucketMode === 'spend') {
-        // SPEND BUCKET ROLLOVER
+      if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
+        // SPEND & RECURRING BUCKET ROLLOVER
+        //
+        // Both modes carry forward over/underspend. Recurring buckets get an
+        // auto-pay expense each month (created by the sync at the end of this
+        // function); if the real bill differs from plan — or the user logs an
+        // extra expense against the bucket — that difference must roll forward
+        // as carryover/debt, exactly like a spend bucket. The old code skipped
+        // this for recurring buckets and only bumped lastRolloverDate, which
+        // silently dropped recurring overspend (e.g. an insurance overpayment
+        // never carried into the next month, so the bucket looked like it had
+        // excess instead of a debt).
 
-        // Only count expenses from the month being rolled over (the previous month).
+        // Only count expenses from the cycle being rolled over.
         // Using all-time expenses would double-count historical spending across rollover cycles.
         const prevMonthEnd = now;
         const prevMonthStart = new Date(now);
         prevMonthStart.setDate(1);       // 1st of this month
         prevMonthStart.setHours(0, 0, 0, 0);
-        const prevMonthStartTs = prevMonthStart.getTime() - 1; // end of last day of prev month
 
         // Last rollover date tells us when the previous cycle started
         const cycleStart = bucket.lastRolloverDate
@@ -93,26 +102,22 @@ export const performMonthlyRollover = mutation({
         const totalAvailable = previousCarryover + thisMonthFunding;
         const unspent = totalAvailable - totalSpent;
 
-        // Calculate new monthly funding
-        let newMonthlyFunding = 0;
+        // Calculate new monthly funding. Use the SAME planned base and funding
+        // ratio that the recurring sync (computeRecurringAmount) uses, so a
+        // recurring bucket's fundedAmount and its auto-pay expense match. If
+        // they used different ratios, even a perfectly-on-plan recurring bucket
+        // would generate a phantom carryover every month. The shared helpers
+        // count both spend and recurring buckets in the denominator (matching
+        // distribution.ts), so spend buckets fund consistently here too.
+        let base = 0;
         if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
-          newMonthlyFunding = (totalIncome * bucket.plannedPercent) / 100;
+          base = (totalIncome * bucket.plannedPercent) / 100;
         } else if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
-          newMonthlyFunding = bucket.plannedAmount;
+          base = bucket.plannedAmount;
         }
-
-        // Apply funding ratio if over-planned
-        const allSpendBuckets = buckets.filter(b => b.bucketMode === 'spend');
-        let totalPlanned = 0;
-        for (const b of allSpendBuckets) {
-          if (b.allocationType === 'percentage' && b.plannedPercent !== undefined) {
-            totalPlanned += (totalIncome * b.plannedPercent) / 100;
-          } else if (b.allocationType === 'amount' && b.plannedAmount !== undefined) {
-            totalPlanned += b.plannedAmount;
-          }
-        }
-        const fundingRatio = totalPlanned > totalIncome ? totalIncome / totalPlanned : 1;
-        newMonthlyFunding = newMonthlyFunding * fundingRatio;
+        const totalPlanned = totalPlannedFor(buckets as any, totalIncome);
+        const fundingRatio = fundingRatioFor(totalIncome, totalPlanned);
+        const newMonthlyFunding = base * fundingRatio;
 
         // Update bucket with rollover
         await ctx.db.patch(bucket._id, {
@@ -124,7 +129,7 @@ export const performMonthlyRollover = mutation({
         rolloverResults.push({
           bucketId: bucket._id,
           bucketName: bucket.name,
-          bucketMode: 'spend',
+          bucketMode: bucket.bucketMode,
           previousCarryover,
           thisMonthFunding,
           totalSpent,
@@ -133,12 +138,6 @@ export const performMonthlyRollover = mutation({
           newTotalAvailable: unspent + newMonthlyFunding,
         });
 
-      } else if (bucket.bucketMode === 'recurring') {
-        // Recurring buckets are reconciled by the sync mutation below — it
-        // handles create/update/delete in one idempotent pass. We just bump
-        // lastRolloverDate so spend-bucket cycle math (which uses it as a
-        // window edge) keeps working consistently.
-        await ctx.db.patch(bucket._id, { lastRolloverDate: now });
       } else {
         // SAVE BUCKET ROLLOVER
 

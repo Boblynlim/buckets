@@ -263,8 +263,11 @@ export function ReviewQueue({ onBack }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: theme.colors.background },
-  content: { padding: 24, paddingBottom: 120 },
+  // Transparent so the app's textured wallpaper (set on <body>) shows through,
+  // matching every other screen. A solid fill here painted over the texture and
+  // made the page look flat/different from the rest of the app.
+  container: { flex: 1, backgroundColor: 'transparent' },
+  content: { paddingHorizontal: 20, paddingTop: 44, paddingBottom: 120 },
   header: { marginBottom: 20 },
   backBtn: { marginBottom: 10 },
   backText: { ...type.button, color: theme.colors.primary },
