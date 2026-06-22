@@ -265,8 +265,19 @@ export function ReviewQueue({ onBack }: Props) {
 const styles = StyleSheet.create({
   // Transparent so the app's textured wallpaper (set on <body>) shows through,
   // matching every other screen. A solid fill here painted over the texture and
-  // made the page look flat/different from the rest of the app.
-  container: { flex: 1, backgroundColor: 'transparent' },
+  // made the page look flat/different from the rest of the app — and showed as
+  // a two-tone "block" where the fill ended above the wallpaper.
+  //
+  // maxHeight: 100vh + overflow: auto are required for the ScrollView to
+  // actually scroll on react-native-web. Without a bounded height it grows to
+  // fit every card and the ancestor clips the overflow, leaving you stuck on
+  // the first cards. Mirrors BucketsOverview.web's working pattern.
+  container: {
+    flex: 1,
+    backgroundColor: 'transparent',
+    maxHeight: '100vh' as any,
+    overflow: 'auto' as any,
+  },
   content: { paddingHorizontal: 20, paddingTop: 44, paddingBottom: 120 },
   header: { marginBottom: 20 },
   backBtn: { marginBottom: 10 },
