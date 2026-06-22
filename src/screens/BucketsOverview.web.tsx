@@ -24,6 +24,7 @@ import { type } from '../theme/fonts';
 import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIcons';
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
+import { Drawer } from '../components/Drawer';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
 
 interface BucketsOverviewProps {
@@ -475,6 +476,24 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     () => getBucketsNeedingAttention(allBuckets, expensesList),
     [allBuckets, expensesList],
   );
+
+  // Per-bucket claims on income that drive the over-planned warning, biggest
+  // first. Each carries avg monthly spend (from healthMap) and the resulting
+  // slack so the drawer can flag where to cut. Memoised so the banner trigger
+  // and the drawer share one computation.
+  const overplanClaims = React.useMemo(() => {
+    if (!distributionStatus?.isOverPlanned) return [];
+    const totalIncome = distributionStatus.totalIncome;
+    return (buckets ?? [])
+      .map((b) => {
+        const { claim, detail } = getPlannedClaim(b, totalIncome);
+        const avg = healthMap.get(b._id)?.avgMonthlySpend;
+        const slack = avg !== undefined ? claim - avg : undefined;
+        return { b, claim, detail, avg, slack };
+      })
+      .filter((x) => x.claim > 0)
+      .sort((a, c) => c.claim - a.claim);
+  }, [buckets, distributionStatus, healthMap]);
 
   const attentionItems = React.useMemo(
     () => attentionItemsAll.filter(({ bucket, health }) =>
@@ -1097,103 +1116,19 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               </View>
             </TouchableOpacity>
 
-            {/* Over-planned warning — tap to see which cups claim the income */}
-            {distributionStatus && distributionStatus.isOverPlanned && (() => {
-              const totalIncome = distributionStatus.totalIncome;
-              const claims = (buckets ?? [])
-                .map((b) => {
-                  const { claim, detail } = getPlannedClaim(b, totalIncome);
-                  // avgMonthlySpend comes from the same health calc that powers
-                  // the over/under-budget flags, so the numbers stay consistent.
-                  const avg = healthMap.get(b._id)?.avgMonthlySpend;
-                  // Positive slack = you plan more than you typically spend →
-                  // a safe place to cut. Negative = you usually run over plan.
-                  const slack = avg !== undefined ? claim - avg : undefined;
-                  return { b, claim, detail, avg, slack };
-                })
-                .filter((x) => x.claim > 0)
-                .sort((a, c) => c.claim - a.claim); // largest claim first
-              return (
-                <View style={styles.warningWrap}>
-                  <TouchableOpacity
-                    style={styles.warningBanner}
-                    onPress={() => setShowOverplanBreakdown((v) => !v)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={styles.warningText}>
-                      Over-planned by ${distributionStatus.overPlannedBy.toFixed(2)}
-                    </Text>
-                    <Text style={styles.warningChevron}>
-                      {showOverplanBreakdown ? '▾' : '▸'}
-                    </Text>
-                  </TouchableOpacity>
-
-                  {showOverplanBreakdown && (
-                    <View style={styles.breakdownPanel}>
-                      <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownIncomeLabel}>Income this month</Text>
-                        <Text style={styles.breakdownIncomeValue}>
-                          ${totalIncome.toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={styles.breakdownDivider} />
-                      {claims.map(({ b, claim, detail, avg, slack }) => {
-                        const meta =
-                          avg !== undefined
-                            ? `${detail} · spends ~$${Math.round(avg)}/mo`
-                            : `${detail} · no spend history yet`;
-                        // Only flag meaningful gaps (≥ $1) so rounding noise
-                        // doesn't show a "cut $0" hint.
-                        const cuttable = slack !== undefined && slack >= 1;
-                        const over = slack !== undefined && slack <= -1;
-                        return (
-                          <TouchableOpacity
-                            key={b._id}
-                            style={styles.breakdownRow}
-                            onPress={() => onEditBucket && onEditBucket(b)}
-                            activeOpacity={0.6}
-                          >
-                            <View style={styles.breakdownNameCol}>
-                              <Text style={styles.breakdownName}>{b.name}</Text>
-                              <Text style={styles.breakdownDetail}>{meta}</Text>
-                              {cuttable && (
-                                <Text style={styles.breakdownCut}>
-                                  ↓ up to ${Math.round(slack!)} of slack to cut
-                                </Text>
-                              )}
-                              {over && (
-                                <Text style={styles.breakdownOverHint}>
-                                  ↑ runs ~${Math.round(-slack!)} over plan
-                                </Text>
-                              )}
-                            </View>
-                            <Text style={styles.breakdownClaim}>
-                              ${claim.toFixed(2)}
-                            </Text>
-                          </TouchableOpacity>
-                        );
-                      })}
-                      <View style={styles.breakdownDivider} />
-                      <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownTotalLabel}>Planned total</Text>
-                        <Text style={styles.breakdownTotalValue}>
-                          ${distributionStatus.totalPlanned.toFixed(2)}
-                        </Text>
-                      </View>
-                      <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownOverLabel}>Over by</Text>
-                        <Text style={styles.breakdownOverValue}>
-                          ${distributionStatus.overPlannedBy.toFixed(2)}
-                        </Text>
-                      </View>
-                      <Text style={styles.breakdownHint}>
-                        Tap a cup to trim its plan, or add income to close the gap.
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })()}
+            {/* Over-planned warning — tap to open the breakdown drawer */}
+            {distributionStatus && distributionStatus.isOverPlanned && (
+              <TouchableOpacity
+                style={styles.warningBanner}
+                onPress={() => setShowOverplanBreakdown(true)}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.warningText}>
+                  Over-planned by ${distributionStatus.overPlannedBy.toFixed(2)}
+                </Text>
+                <Text style={styles.warningChevron}>›</Text>
+              </TouchableOpacity>
+            )}
 
             {/* Search */}
             <View style={styles.searchContainer}>
@@ -1718,6 +1653,63 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
         </TouchableOpacity>
       </Modal>
 
+      {/* Over-planned breakdown drawer */}
+      <Drawer
+        visible={showOverplanBreakdown}
+        onClose={() => setShowOverplanBreakdown(false)}
+      >
+        <View style={styles.opHeader}>
+          <Text style={styles.opTitle}>
+            Over-planned by ${distributionStatus?.overPlannedBy.toFixed(2) ?? '0.00'}
+          </Text>
+          <Text style={styles.opSubtitle}>
+            Income ${distributionStatus?.totalIncome.toFixed(0) ?? '0'} · Planned $
+            {distributionStatus?.totalPlanned.toFixed(0) ?? '0'} — trim the cups
+            with slack, or add income.
+          </Text>
+        </View>
+        <ScrollView
+          style={styles.opScroll}
+          contentContainerStyle={styles.opScrollContent}
+        >
+          {overplanClaims.map(({ b, claim, detail, avg, slack }) => {
+            const meta =
+              avg !== undefined
+                ? `${detail} · spends ~$${Math.round(avg)}/mo`
+                : `${detail} · no spend history yet`;
+            const cuttable = slack !== undefined && slack >= 1;
+            const over = slack !== undefined && slack <= -1;
+            return (
+              <TouchableOpacity
+                key={b._id}
+                style={styles.opRow}
+                activeOpacity={0.6}
+                onPress={() => {
+                  setShowOverplanBreakdown(false);
+                  onEditBucket && onEditBucket(b);
+                }}
+              >
+                <View style={styles.opRowName}>
+                  <Text style={styles.opName}>{b.name}</Text>
+                  <Text style={styles.opMeta}>{meta}</Text>
+                  {cuttable && (
+                    <Text style={styles.opCut}>
+                      ↓ up to ${Math.round(slack!)} of slack to cut
+                    </Text>
+                  )}
+                  {over && (
+                    <Text style={styles.opOver}>
+                      ↑ runs ~${Math.round(-slack!)} over plan
+                    </Text>
+                  )}
+                </View>
+                <Text style={styles.opClaim}>${claim.toFixed(2)}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </Drawer>
+
     </View>
   );
 };
@@ -1762,14 +1754,12 @@ const styles = StyleSheet.create({
   },
 
   // Warning
-  warningWrap: {
-    marginBottom: 12,
-  },
   warningBanner: {
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
+    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1779,91 +1769,73 @@ const styles = StyleSheet.create({
     color: 'rgba(250, 248, 244, 0.7)',
   },
   warningChevron: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.5)',
+    fontSize: 22,
+    color: 'rgba(250, 248, 244, 0.55)',
+    marginTop: -2,
   },
-  // Over-planned breakdown
-  breakdownPanel: {
-    backgroundColor: 'rgba(0, 0, 0, 0.08)',
-    borderRadius: 12,
-    paddingVertical: 6,
-    paddingHorizontal: 14,
-    marginTop: 6,
+  // Over-planned breakdown drawer — dark text on the drawer's light surface.
+  opHeader: {
+    paddingHorizontal: 22,
+    paddingTop: 4,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(61,50,41,0.1)',
   },
-  breakdownDivider: {
-    height: 1,
-    backgroundColor: 'rgba(250, 248, 244, 0.12)',
-    marginVertical: 6,
+  opTitle: {
+    fontSize: 22,
+    color: theme.colors.text,
+    fontFamily: 'Merchant Copy',
+    marginBottom: 4,
   },
-  breakdownRow: {
+  opSubtitle: {
+    fontSize: 14,
+    color: theme.colors.textSecondary,
+    lineHeight: 20,
+  },
+  opScroll: {
+    flex: 1,
+  },
+  opScrollContent: {
+    paddingHorizontal: 22,
+    paddingVertical: 8,
+    paddingBottom: 32,
+  },
+  opRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 7,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(61,50,41,0.07)',
   },
-  breakdownNameCol: {
+  opRowName: {
     flex: 1,
-    paddingRight: 12,
+    paddingRight: 14,
   },
-  breakdownName: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.9)',
+  opName: {
+    fontSize: 17,
+    color: theme.colors.text,
+    fontWeight: '500',
+    marginBottom: 3,
   },
-  breakdownDetail: {
-    fontSize: 12,
-    color: 'rgba(250, 248, 244, 0.45)',
+  opMeta: {
+    fontSize: 13,
+    color: theme.colors.textSecondary,
+  },
+  opCut: {
+    fontSize: 13,
+    color: '#5C8A6F', // sage — safe to cut
+    marginTop: 3,
+  },
+  opOver: {
+    fontSize: 13,
+    color: '#C0604E', // terracotta — usually overspends
+    marginTop: 3,
+  },
+  opClaim: {
+    fontSize: 18,
+    color: theme.colors.text,
     fontFamily: 'Merchant Copy',
-    marginTop: 1,
-  },
-  breakdownCut: {
-    fontSize: 12,
-    color: '#A8C99A', // sage — a safe place to cut
-    fontFamily: 'Merchant Copy',
-    marginTop: 2,
-  },
-  breakdownOverHint: {
-    fontSize: 12,
-    color: '#E8A09A', // terracotta — usually overspends plan
-    fontFamily: 'Merchant Copy',
-    marginTop: 2,
-  },
-  breakdownClaim: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.9)',
-    fontFamily: 'Merchant Copy',
-  },
-  breakdownIncomeLabel: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.6)',
-  },
-  breakdownIncomeValue: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.85)',
-    fontFamily: 'Merchant Copy',
-  },
-  breakdownTotalLabel: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.7)',
-  },
-  breakdownTotalValue: {
-    ...type.body,
-    color: 'rgba(250, 248, 244, 0.85)',
-    fontFamily: 'Merchant Copy',
-  },
-  breakdownOverLabel: {
-    ...type.body,
-    color: '#E8A09A',
-  },
-  breakdownOverValue: {
-    ...type.body,
-    color: '#E8A09A',
-    fontFamily: 'Merchant Copy',
-  },
-  breakdownHint: {
-    fontSize: 12,
-    color: 'rgba(250, 248, 244, 0.4)',
-    fontFamily: 'Merchant Copy',
-    paddingVertical: 8,
   },
 
   // Search
