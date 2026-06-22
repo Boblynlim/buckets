@@ -240,6 +240,24 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
         : `${(bucket.contributionPercent || 0)}% of income`;
       allocationText = `Monthly contribution: ${contribution}`;
     }
+  } else if (bucket.bucketMode === 'recurring') {
+    // Recurring buckets (bills, investments, fixed contributions) auto-log a
+    // payment each month, so framing them as "spent / $0 remaining" reads as if
+    // the money's gone — confusing for an investment you're accumulating. Show
+    // the running total put in instead, with this month + the monthly plan.
+    const ref = selectedMonth || new Date();
+    const monthStart = new Date(ref.getFullYear(), ref.getMonth(), 1).getTime();
+    const monthEnd = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
+    const thisMonth = (expenses || [])
+      .filter(e => e.date >= monthStart && e.date <= monthEnd)
+      .reduce((sum, e) => sum + e.amount, 0);
+    const allTime = (expenses || []).reduce((sum, e) => sum + e.amount, 0);
+    const planned = bucket.plannedAmount ?? bucket.fundedAmount ?? 0;
+
+    displayLabel = 'TOTAL CONTRIBUTED';
+    displayAmount = allTime;
+    displaySubtext = `$${thisMonth.toFixed(2)} this month`;
+    allocationText = planned ? `Monthly: $${planned.toFixed(2)}` : '';
   } else {
     // Derive totalSpent from the reactive expenses query, filtered to selected month
     const ref = selectedMonth || new Date();
