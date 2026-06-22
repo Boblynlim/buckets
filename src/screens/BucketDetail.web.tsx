@@ -15,16 +15,15 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { format } from 'date-fns';
 
-// Friendly relative date — "today"/"yesterday"/"N days ago" within a week, else "MMM d"
+// Absolute transaction date — always shows the exact day (with weekday) so two
+// charges in the same month are easy to tell apart and spot as duplicates.
+// Relative phrasing ("today", "2 days ago") was hiding the month/day and made
+// it impossible to know when something was logged. Year shown only off the
+// current year, since the month-group header already carries it.
 const formatRelativeDate = (ts: number): string => {
   const d = new Date(ts);
   const now = new Date();
-  const startOfDay = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const diffDays = Math.floor((startOfDay(now) - startOfDay(d)) / 86400000);
-  if (diffDays === 0) return 'today';
-  if (diffDays === 1) return 'yesterday';
-  if (diffDays > 1 && diffDays < 7) return `${diffDays} days ago`;
-  return format(d, d.getFullYear() === now.getFullYear() ? 'MMM d' : 'MMM d, yyyy');
+  return format(d, d.getFullYear() === now.getFullYear() ? 'EEE, MMM d' : 'MMM d, yyyy');
 };
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
