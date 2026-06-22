@@ -25,6 +25,7 @@ import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIc
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
+import { findDuplicateExpenseIds } from '../utils/duplicates';
 
 interface BucketsOverviewProps {
   onEditBucket?: (bucket: Bucket, suggestedAmount?: number) => void;
@@ -130,7 +131,8 @@ const CupItem: React.FC<{
   onPress: () => void;
   index?: number;
   health?: BucketHealth;
-}> = ({ bucket, onPress, index = 0, health }) => {
+  dupCount?: number;
+}> = ({ bucket, onPress, index = 0, health, dupCount }) => {
   const available = getAvailableBalance(bucket);
   const allocation = getAllocation(bucket);
   const rollover = getRolloverBadge(bucket);
@@ -183,6 +185,11 @@ const CupItem: React.FC<{
         {health && health.status !== 'healthy' && (
           <View style={[cupStyles.healthDot, { backgroundColor: healthColors[health.status] }]} />
         )}
+        {dupCount ? (
+          <View style={cupStyles.dupBadge}>
+            <Text style={cupStyles.dupBadgeText}>⚠ {dupCount}</Text>
+          </View>
+        ) : null}
       </View>
       <Text style={cupStyles.name} numberOfLines={1}>
         {bucket.name}
@@ -243,6 +250,23 @@ const cupStyles = StyleSheet.create({
     borderColor: '#EAE3D5',
     zIndex: 2,
   },
+  dupBadge: {
+    position: 'absolute',
+    top: 1,
+    left: -8,
+    backgroundColor: '#B8986A',
+    paddingHorizontal: 6,
+    paddingVertical: 3,
+    borderRadius: 14,
+    transform: [{ rotate: '-12deg' }],
+    zIndex: 2,
+  },
+  dupBadgeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+    fontFamily: 'Merchant Copy',
+  },
   name: {
     ...type.rowTitle,
     fontWeight: '500',
@@ -265,7 +289,8 @@ const ShelfGroup: React.FC<{
   onBucketPress: (bucket: Bucket) => void;
   startIndex?: number;
   healthMap?: Map<string, BucketHealth>;
-}> = ({ groupName, buckets, onBucketPress, startIndex = 0, healthMap }) => {
+  dupMap?: Map<string, number>;
+}> = ({ groupName, buckets, onBucketPress, startIndex = 0, healthMap, dupMap }) => {
   const sorted = [...buckets].sort((a, b) => a.name.localeCompare(b.name));
 
   return (
@@ -299,6 +324,7 @@ const ShelfGroup: React.FC<{
             onPress={() => onBucketPress(bucket)}
             index={startIndex + i}
             health={healthMap?.get(bucket._id)}
+            dupCount={dupMap?.get(bucket._id)}
           />
         ))}
       </div>
@@ -475,6 +501,25 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     () => getBucketsNeedingAttention(allBuckets, expensesList),
     [allBuckets, expensesList],
   );
+
+  // Per-bucket count of likely-duplicate expenses (same amount within a few
+  // days), so cups carrying double-counted payments get a badge — recurring
+  // bills where the auto-pay plus a manual copy were both logged. Scoped per
+  // bucket, same detector the bucket-detail list uses.
+  const dupMap = React.useMemo(() => {
+    const byBucket = new Map<string, Expense[]>();
+    for (const e of expensesList) {
+      const arr = byBucket.get(e.bucketId);
+      if (arr) arr.push(e);
+      else byBucket.set(e.bucketId, [e]);
+    }
+    const counts = new Map<string, number>();
+    for (const [bucketId, list] of byBucket) {
+      const n = findDuplicateExpenseIds(list).size;
+      if (n > 0) counts.set(bucketId, n);
+    }
+    return counts;
+  }, [expensesList]);
 
   // Per-bucket claims on income that drive the over-planned warning, biggest
   // first. Each carries avg monthly spend (from healthMap) and the resulting
@@ -1357,6 +1402,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                   onBucketPress={handleBucketPress}
                   startIndex={gi * 10}
                   healthMap={healthMap}
+                  dupMap={dupMap}
                 />
               ))}
 
@@ -1370,6 +1416,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                       onPress={() => handleBucketPress(bucket)}
                       index={sortedGroups.length * 10 + i}
                       health={healthMap.get(bucket._id)}
+                      dupCount={dupMap.get(bucket._id)}
                     />
                   ))}
                 </View>

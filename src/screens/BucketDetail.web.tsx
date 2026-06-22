@@ -27,6 +27,7 @@ const formatRelativeDate = (ts: number): string => {
 };
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
+import { findDuplicateExpenseIds } from '../utils/duplicates';
 
 import { PotteryLoader } from '../components/PotteryLoader';
 import { theme } from '../theme';
@@ -321,27 +322,9 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
     monthGroups[idx].items.push(expense);
   }
 
-  // Flag likely duplicates: two+ expenses in this bucket with the same amount
-  // within a few days of each other — e.g. the monthly auto-pay plus a manually
-  // logged copy of the same bill, or the same imported alert confirmed twice. A
-  // genuine recurring charge appears once a month (well outside the window), so
-  // it isn't flagged. Every member of a same-amount cluster is tagged so the
-  // user can decide which to delete.
-  const DUP_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
-  const duplicateIds = new Set<string>();
-  for (let i = 0; i < allExpensesList.length; i++) {
-    for (let j = i + 1; j < allExpensesList.length; j++) {
-      const a = allExpensesList[i];
-      const b = allExpensesList[j];
-      if (
-        Math.abs(a.amount - b.amount) < 0.01 &&
-        Math.abs(a.date - b.date) <= DUP_WINDOW_MS
-      ) {
-        duplicateIds.add(a._id);
-        duplicateIds.add(b._id);
-      }
-    }
-  }
+  // Flag likely duplicates (auto-pay + manual copy, or an alert confirmed
+  // twice). Shared with the overview's per-cup dup badge so the logic matches.
+  const duplicateIds = findDuplicateExpenseIds(allExpensesList);
 
   // Tug-of-war only counts non-necessary expenses
   const discretionary = expensesList.filter(e => !e.isNecessary);
