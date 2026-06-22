@@ -321,6 +321,28 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
     monthGroups[idx].items.push(expense);
   }
 
+  // Flag likely duplicates: two+ expenses in this bucket with the same amount
+  // within a few days of each other — e.g. the monthly auto-pay plus a manually
+  // logged copy of the same bill, or the same imported alert confirmed twice. A
+  // genuine recurring charge appears once a month (well outside the window), so
+  // it isn't flagged. Every member of a same-amount cluster is tagged so the
+  // user can decide which to delete.
+  const DUP_WINDOW_MS = 4 * 24 * 60 * 60 * 1000;
+  const duplicateIds = new Set<string>();
+  for (let i = 0; i < allExpensesList.length; i++) {
+    for (let j = i + 1; j < allExpensesList.length; j++) {
+      const a = allExpensesList[i];
+      const b = allExpensesList[j];
+      if (
+        Math.abs(a.amount - b.amount) < 0.01 &&
+        Math.abs(a.date - b.date) <= DUP_WINDOW_MS
+      ) {
+        duplicateIds.add(a._id);
+        duplicateIds.add(b._id);
+      }
+    }
+  }
+
   // Tug-of-war only counts non-necessary expenses
   const discretionary = expensesList.filter(e => !e.isNecessary);
   const worthItExpenses = discretionary.filter(e => e.worthIt);
@@ -1000,6 +1022,11 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
                   <Text style={styles.transactionDate}>
                     {formatRelativeDate(expense.date)}
                   </Text>
+                  {duplicateIds.has(expense._id) && (
+                    <View style={styles.dupTag}>
+                      <Text style={styles.dupTagText}>⚠ possible duplicate</Text>
+                    </View>
+                  )}
                 </View>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 } as any}>
                   <Text style={styles.transactionAmount}>
@@ -1472,6 +1499,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#7A6E62',
     fontFamily: 'Merchant',
+  },
+  dupTag: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(184,152,106,0.16)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: 5,
+  },
+  dupTagText: {
+    fontSize: 12,
+    color: '#9A7B4F',
+    fontFamily: 'Merchant Copy',
   },
   transactionAmount: {
     fontSize: 20,
