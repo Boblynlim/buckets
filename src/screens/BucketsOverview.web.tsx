@@ -26,6 +26,7 @@ import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
 import { findDuplicateExpenseIds, getDismissedDuplicates } from '../utils/duplicates';
+import { getAvailable, getAllocated, plannedClaim } from '../../convex/lib/bucketMath';
 
 interface BucketsOverviewProps {
   onEditBucket?: (bucket: Bucket, suggestedAmount?: number) => void;
@@ -55,56 +56,17 @@ const formatRelativeDate = (ts: number): string => {
   return format(d, d.getFullYear() === now.getFullYear() ? 'MMM d' : 'MMM d, yyyy');
 };
 
-// Helper: get available balance for a bucket
-const getAvailableBalance = (bucket: Bucket): number => {
-  if (bucket.bucketMode === 'save') {
-    return bucket.currentBalance || 0;
-  }
-  const funded = bucket.fundedAmount || 0;
-  const carryover = bucket.carryoverBalance || 0;
-  const spent = bucket.spentAmount || 0;
-  return funded + carryover - spent;
-};
-
-// Helper: get total allocation for a bucket
-const getAllocation = (bucket: Bucket): number => {
-  if (bucket.bucketMode === 'save') {
-    return bucket.targetAmount || 0;
-  }
-  return (bucket.fundedAmount || 0) + (bucket.carryoverBalance || 0);
-};
-
-// Helper: a bucket's planned *claim* on this month's income — the number that
-// drives the over-planned warning. Mirrors getDistributionStatus on the
-// backend so the breakdown adds up to the same total. `detail` describes the
-// rule so the user knows what to edit ("$200/mo" vs "15% of income").
+// Derived bucket money — all from the canonical bucketMath module so the
+// overview agrees with the backend and every other screen. (Local thin
+// wrappers keep the existing call sites unchanged.)
+const getAvailableBalance = (bucket: Bucket): number => getAvailable(bucket as any);
+const getAllocation = (bucket: Bucket): number => getAllocated(bucket as any);
 const getPlannedClaim = (
   bucket: Bucket,
   totalIncome: number,
 ): { claim: number; detail: string } => {
-  if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
-    if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
-      return { claim: (totalIncome * bucket.plannedPercent) / 100, detail: `${bucket.plannedPercent}% of income` };
-    }
-    if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
-      return { claim: bucket.plannedAmount, detail: `$${bucket.plannedAmount.toFixed(2)}/mo` };
-    }
-    if (bucket.allocationValue !== undefined) {
-      return { claim: bucket.allocationValue, detail: `$${bucket.allocationValue.toFixed(2)}/mo` };
-    }
-  } else if (
-    bucket.bucketMode === 'save' &&
-    bucket.contributionType &&
-    bucket.contributionType !== 'none'
-  ) {
-    if (bucket.contributionType === 'percentage' && bucket.contributionPercent !== undefined) {
-      return { claim: (totalIncome * bucket.contributionPercent) / 100, detail: `${bucket.contributionPercent}% saved` };
-    }
-    if (bucket.contributionType === 'amount' && bucket.contributionAmount !== undefined) {
-      return { claim: bucket.contributionAmount, detail: `$${bucket.contributionAmount.toFixed(2)}/mo saved` };
-    }
-  }
-  return { claim: 0, detail: '' };
+  const { claim, detail } = plannedClaim(bucket as any, totalIncome);
+  return { claim, detail };
 };
 
 // Helper: get rollover amount (carryover that exceeds funded amount)
