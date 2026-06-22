@@ -1101,9 +1101,18 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
             {distributionStatus && distributionStatus.isOverPlanned && (() => {
               const totalIncome = distributionStatus.totalIncome;
               const claims = (buckets ?? [])
-                .map((b) => ({ b, ...getPlannedClaim(b, totalIncome) }))
+                .map((b) => {
+                  const { claim, detail } = getPlannedClaim(b, totalIncome);
+                  // avgMonthlySpend comes from the same health calc that powers
+                  // the over/under-budget flags, so the numbers stay consistent.
+                  const avg = healthMap.get(b._id)?.avgMonthlySpend;
+                  // Positive slack = you plan more than you typically spend →
+                  // a safe place to cut. Negative = you usually run over plan.
+                  const slack = avg !== undefined ? claim - avg : undefined;
+                  return { b, claim, detail, avg, slack };
+                })
                 .filter((x) => x.claim > 0)
-                .sort((a, c) => c.claim - a.claim);
+                .sort((a, c) => c.claim - a.claim); // largest claim first
               return (
                 <View style={styles.warningWrap}>
                   <TouchableOpacity
@@ -1128,24 +1137,42 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                         </Text>
                       </View>
                       <View style={styles.breakdownDivider} />
-                      {claims.map(({ b, claim, detail }) => (
-                        <TouchableOpacity
-                          key={b._id}
-                          style={styles.breakdownRow}
-                          onPress={() => onEditBucket && onEditBucket(b)}
-                          activeOpacity={0.6}
-                        >
-                          <View style={styles.breakdownNameCol}>
-                            <Text style={styles.breakdownName}>{b.name}</Text>
-                            {!!detail && (
-                              <Text style={styles.breakdownDetail}>{detail}</Text>
-                            )}
-                          </View>
-                          <Text style={styles.breakdownClaim}>
-                            ${claim.toFixed(2)}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
+                      {claims.map(({ b, claim, detail, avg, slack }) => {
+                        const meta =
+                          avg !== undefined
+                            ? `${detail} · spends ~$${Math.round(avg)}/mo`
+                            : `${detail} · no spend history yet`;
+                        // Only flag meaningful gaps (≥ $1) so rounding noise
+                        // doesn't show a "cut $0" hint.
+                        const cuttable = slack !== undefined && slack >= 1;
+                        const over = slack !== undefined && slack <= -1;
+                        return (
+                          <TouchableOpacity
+                            key={b._id}
+                            style={styles.breakdownRow}
+                            onPress={() => onEditBucket && onEditBucket(b)}
+                            activeOpacity={0.6}
+                          >
+                            <View style={styles.breakdownNameCol}>
+                              <Text style={styles.breakdownName}>{b.name}</Text>
+                              <Text style={styles.breakdownDetail}>{meta}</Text>
+                              {cuttable && (
+                                <Text style={styles.breakdownCut}>
+                                  ↓ up to ${Math.round(slack!)} of slack to cut
+                                </Text>
+                              )}
+                              {over && (
+                                <Text style={styles.breakdownOverHint}>
+                                  ↑ runs ~${Math.round(-slack!)} over plan
+                                </Text>
+                              )}
+                            </View>
+                            <Text style={styles.breakdownClaim}>
+                              ${claim.toFixed(2)}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
                       <View style={styles.breakdownDivider} />
                       <View style={styles.breakdownRow}>
                         <Text style={styles.breakdownTotalLabel}>Planned total</Text>
@@ -1787,6 +1814,18 @@ const styles = StyleSheet.create({
     color: 'rgba(250, 248, 244, 0.45)',
     fontFamily: 'Merchant Copy',
     marginTop: 1,
+  },
+  breakdownCut: {
+    fontSize: 12,
+    color: '#A8C99A', // sage — a safe place to cut
+    fontFamily: 'Merchant Copy',
+    marginTop: 2,
+  },
+  breakdownOverHint: {
+    fontSize: 12,
+    color: '#E8A09A', // terracotta — usually overspends plan
+    fontFamily: 'Merchant Copy',
+    marginTop: 2,
   },
   breakdownClaim: {
     ...type.body,
