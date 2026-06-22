@@ -73,6 +73,39 @@ const getAllocation = (bucket: Bucket): number => {
   return (bucket.fundedAmount || 0) + (bucket.carryoverBalance || 0);
 };
 
+// Helper: a bucket's planned *claim* on this month's income — the number that
+// drives the over-planned warning. Mirrors getDistributionStatus on the
+// backend so the breakdown adds up to the same total. `detail` describes the
+// rule so the user knows what to edit ("$200/mo" vs "15% of income").
+const getPlannedClaim = (
+  bucket: Bucket,
+  totalIncome: number,
+): { claim: number; detail: string } => {
+  if (bucket.bucketMode === 'spend' || bucket.bucketMode === 'recurring') {
+    if (bucket.allocationType === 'percentage' && bucket.plannedPercent !== undefined) {
+      return { claim: (totalIncome * bucket.plannedPercent) / 100, detail: `${bucket.plannedPercent}% of income` };
+    }
+    if (bucket.allocationType === 'amount' && bucket.plannedAmount !== undefined) {
+      return { claim: bucket.plannedAmount, detail: `$${bucket.plannedAmount.toFixed(2)}/mo` };
+    }
+    if (bucket.allocationValue !== undefined) {
+      return { claim: bucket.allocationValue, detail: `$${bucket.allocationValue.toFixed(2)}/mo` };
+    }
+  } else if (
+    bucket.bucketMode === 'save' &&
+    bucket.contributionType &&
+    bucket.contributionType !== 'none'
+  ) {
+    if (bucket.contributionType === 'percentage' && bucket.contributionPercent !== undefined) {
+      return { claim: (totalIncome * bucket.contributionPercent) / 100, detail: `${bucket.contributionPercent}% saved` };
+    }
+    if (bucket.contributionType === 'amount' && bucket.contributionAmount !== undefined) {
+      return { claim: bucket.contributionAmount, detail: `$${bucket.contributionAmount.toFixed(2)}/mo saved` };
+    }
+  }
+  return { claim: 0, detail: '' };
+};
+
 // Helper: get rollover amount (carryover that exceeds funded amount)
 const getRolloverBadge = (bucket: Bucket): number | null => {
   if (bucket.bucketMode === 'save') return null;
@@ -325,6 +358,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   const [showMonthlyTransactions, setShowMonthlyTransactions] = useState(false);
   const [activePage, setActivePage] = useState(0);
   const [confirmAdjust, setConfirmAdjust] = useState<string | null>(null); // bucket._id being confirmed
+  const [showOverplanBreakdown, setShowOverplanBreakdown] = useState(false);
   const [dismissedInsights, setDismissedInsights] = useState<Set<string>>(new Set());
 
   const updateBucket = useMutation(api.buckets.update);
@@ -1063,14 +1097,76 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               </View>
             </TouchableOpacity>
 
-            {/* Over-planned warning */}
-            {distributionStatus && distributionStatus.isOverPlanned && (
-              <View style={styles.warningBanner}>
-                <Text style={styles.warningText}>
-                  Over-planned by ${distributionStatus.overPlannedBy.toFixed(2)}
-                </Text>
-              </View>
-            )}
+            {/* Over-planned warning — tap to see which cups claim the income */}
+            {distributionStatus && distributionStatus.isOverPlanned && (() => {
+              const totalIncome = distributionStatus.totalIncome;
+              const claims = (buckets ?? [])
+                .map((b) => ({ b, ...getPlannedClaim(b, totalIncome) }))
+                .filter((x) => x.claim > 0)
+                .sort((a, c) => c.claim - a.claim);
+              return (
+                <View style={styles.warningWrap}>
+                  <TouchableOpacity
+                    style={styles.warningBanner}
+                    onPress={() => setShowOverplanBreakdown((v) => !v)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.warningText}>
+                      Over-planned by ${distributionStatus.overPlannedBy.toFixed(2)}
+                    </Text>
+                    <Text style={styles.warningChevron}>
+                      {showOverplanBreakdown ? '▾' : '▸'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {showOverplanBreakdown && (
+                    <View style={styles.breakdownPanel}>
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownIncomeLabel}>Income this month</Text>
+                        <Text style={styles.breakdownIncomeValue}>
+                          ${totalIncome.toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.breakdownDivider} />
+                      {claims.map(({ b, claim, detail }) => (
+                        <TouchableOpacity
+                          key={b._id}
+                          style={styles.breakdownRow}
+                          onPress={() => onEditBucket && onEditBucket(b)}
+                          activeOpacity={0.6}
+                        >
+                          <View style={styles.breakdownNameCol}>
+                            <Text style={styles.breakdownName}>{b.name}</Text>
+                            {!!detail && (
+                              <Text style={styles.breakdownDetail}>{detail}</Text>
+                            )}
+                          </View>
+                          <Text style={styles.breakdownClaim}>
+                            ${claim.toFixed(2)}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                      <View style={styles.breakdownDivider} />
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownTotalLabel}>Planned total</Text>
+                        <Text style={styles.breakdownTotalValue}>
+                          ${distributionStatus.totalPlanned.toFixed(2)}
+                        </Text>
+                      </View>
+                      <View style={styles.breakdownRow}>
+                        <Text style={styles.breakdownOverLabel}>Over by</Text>
+                        <Text style={styles.breakdownOverValue}>
+                          ${distributionStatus.overPlannedBy.toFixed(2)}
+                        </Text>
+                      </View>
+                      <Text style={styles.breakdownHint}>
+                        Tap a cup to trim its plan, or add income to close the gap.
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })()}
 
             {/* Search */}
             <View style={styles.searchContainer}>
@@ -1639,16 +1735,96 @@ const styles = StyleSheet.create({
   },
 
   // Warning
+  warningWrap: {
+    marginBottom: 12,
+  },
   warningBanner: {
     backgroundColor: 'rgba(0, 0, 0, 0.1)',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 14,
-    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   warningText: {
     ...type.body,
     color: 'rgba(250, 248, 244, 0.7)',
+  },
+  warningChevron: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.5)',
+  },
+  // Over-planned breakdown
+  breakdownPanel: {
+    backgroundColor: 'rgba(0, 0, 0, 0.08)',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 14,
+    marginTop: 6,
+  },
+  breakdownDivider: {
+    height: 1,
+    backgroundColor: 'rgba(250, 248, 244, 0.12)',
+    marginVertical: 6,
+  },
+  breakdownRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 7,
+  },
+  breakdownNameCol: {
+    flex: 1,
+    paddingRight: 12,
+  },
+  breakdownName: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.9)',
+  },
+  breakdownDetail: {
+    fontSize: 12,
+    color: 'rgba(250, 248, 244, 0.45)',
+    fontFamily: 'Merchant Copy',
+    marginTop: 1,
+  },
+  breakdownClaim: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.9)',
+    fontFamily: 'Merchant Copy',
+  },
+  breakdownIncomeLabel: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.6)',
+  },
+  breakdownIncomeValue: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.85)',
+    fontFamily: 'Merchant Copy',
+  },
+  breakdownTotalLabel: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.7)',
+  },
+  breakdownTotalValue: {
+    ...type.body,
+    color: 'rgba(250, 248, 244, 0.85)',
+    fontFamily: 'Merchant Copy',
+  },
+  breakdownOverLabel: {
+    ...type.body,
+    color: '#E8A09A',
+  },
+  breakdownOverValue: {
+    ...type.body,
+    color: '#E8A09A',
+    fontFamily: 'Merchant Copy',
+  },
+  breakdownHint: {
+    fontSize: 12,
+    color: 'rgba(250, 248, 244, 0.4)',
+    fontFamily: 'Merchant Copy',
+    paddingVertical: 8,
   },
 
   // Search
