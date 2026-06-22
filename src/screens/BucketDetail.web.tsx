@@ -28,6 +28,7 @@ const formatRelativeDate = (ts: number): string => {
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
 import { findDuplicateExpenseIds, getDismissedDuplicates, dismissDuplicate } from '../utils/duplicates';
+import { getBucketDisplay } from '../utils/bucketPresentation';
 
 import { PotteryLoader } from '../components/PotteryLoader';
 import { theme } from '../theme';
@@ -222,60 +223,19 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
 
   const expenses = useQuery(api.expenses.getByBucket, { bucketId: bucket._id as any });
 
-  let displayLabel = '';
-  let displayAmount = 0;
-  let displaySubtext = '';
-  let allocationText = '';
-
-  if (isSaveBucket) {
-    const currentBalance = bucket.currentBalance || 0;
-    const targetAmount = bucket.targetAmount || 0;
-    displayLabel = 'CURRENT SAVINGS';
-    displayAmount = currentBalance;
-    displaySubtext = `$${currentBalance.toFixed(2)} saved of $${targetAmount.toFixed(2)}`;
-
-    if (bucket.contributionType !== 'none') {
-      const contribution = bucket.contributionType === 'amount'
-        ? `$${(bucket.contributionAmount || 0).toFixed(2)}`
-        : `${(bucket.contributionPercent || 0)}% of income`;
-      allocationText = `Monthly contribution: ${contribution}`;
-    }
-  } else if (bucket.bucketMode === 'recurring') {
-    // Recurring buckets (bills, investments, fixed contributions) auto-log a
-    // payment each month, so framing them as "spent / $0 remaining" reads as if
-    // the money's gone — confusing for an investment you're accumulating. Show
-    // the running total put in instead, with this month + the monthly plan.
-    const ref = selectedMonth || new Date();
-    const monthStart = new Date(ref.getFullYear(), ref.getMonth(), 1).getTime();
-    const monthEnd = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
-    const thisMonth = (expenses || [])
-      .filter(e => e.date >= monthStart && e.date <= monthEnd)
-      .reduce((sum, e) => sum + e.amount, 0);
-    const allTime = (expenses || []).reduce((sum, e) => sum + e.amount, 0);
-    const planned = bucket.plannedAmount ?? bucket.fundedAmount ?? 0;
-
-    displayLabel = 'TOTAL CONTRIBUTED';
-    displayAmount = allTime;
-    displaySubtext = `$${thisMonth.toFixed(2)} this month`;
-    allocationText = planned ? `Monthly: $${planned.toFixed(2)}` : '';
-  } else {
-    // Derive totalSpent from the reactive expenses query, filtered to selected month
-    const ref = selectedMonth || new Date();
-    const monthStart = new Date(ref.getFullYear(), ref.getMonth(), 1).getTime();
-    const monthEnd = new Date(ref.getFullYear(), ref.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
-    const totalSpent = (expenses || [])
-      .filter(e => e.date >= monthStart && e.date <= monthEnd)
-      .reduce((sum, e) => sum + e.amount, 0);
-    const allocated = bucket.fundedAmount || 0;
-    const carryover = bucket.carryoverBalance || 0;
-    const totalAvailable = allocated + carryover;
-    const remaining = totalAvailable - totalSpent;
-
-    displayLabel = 'TOTAL SPENT';
-    displayAmount = totalSpent;
-    displaySubtext = `$${remaining.toFixed(2)} remaining of $${totalAvailable.toFixed(2)}`;
-    allocationText = `Allocated this month: $${allocated.toFixed(2)}`;
-  }
+  // Copy/presentation is driven entirely by bucket mode via the presentation
+  // registry — one source of truth, with a safe fallback for legacy rows.
+  const presentationRef = selectedMonth || new Date();
+  const {
+    label: displayLabel,
+    amount: displayAmount,
+    subtext: displaySubtext,
+    allocationText,
+  } = getBucketDisplay(bucket, {
+    expenses: expenses || [],
+    monthStart: new Date(presentationRef.getFullYear(), presentationRef.getMonth(), 1).getTime(),
+    monthEnd: new Date(presentationRef.getFullYear(), presentationRef.getMonth() + 1, 0, 23, 59, 59, 999).getTime(),
+  });
   const toggleWorthItMutation = useMutation(api.expenses.toggleWorthIt);
   const markNoteAsNecessaryMutation = useMutation(api.expenses.markNoteAsNecessary);
   const markNecessaryMutation = useMutation(api.expenses.markNecessary);
