@@ -1729,10 +1729,10 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                     key={b._id}
                     style={styles.opRow}
                     activeOpacity={0.6}
-                    onPress={() => {
-                      setShowOverplanBreakdown(false);
-                      onEditBucket && onEditBucket(b);
-                    }}
+                    // Keep the breakdown open underneath — the editor opens over
+                    // it (full-screen drawer), so closing the editor lands you
+                    // back here to keep trimming, instead of on the bare overview.
+                    onPress={() => onEditBucket && onEditBucket(b)}
                   >
                     <View style={styles.opRowName}>
                       <Text style={styles.opName}>{b.name}</Text>
