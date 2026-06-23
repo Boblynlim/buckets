@@ -90,10 +90,14 @@ export const syncRecurringExpensesForMonth = mutation({
         }
       }
 
-      // For active recurring buckets we want exactly one auto-pay; everything
-      // else we want zero. Compute target first, then reconcile.
-      const isTargetActive =
-        bucket.isActive !== false && bucket.bucketMode === 'recurring';
+      // Recurring buckets are now sinking funds: the monthly allocation
+      // accumulates and REAL (logged / bank-imported) payments draw it down.
+      // We no longer synthesize an auto-pay equal to the allocation — it
+      // blocked accumulation and collided with imported payments (duplicates).
+      // So the target is always "no sync-managed auto-pay"; the should-not-
+      // exist path below deletes any that linger. User-overridden rows are
+      // kept (they stand in for a real payment the user set by hand).
+      const isTargetActive = false;
 
       const result = computeRecurringAmount(
         // Cast through `any` because the Convex Doc type carries extra

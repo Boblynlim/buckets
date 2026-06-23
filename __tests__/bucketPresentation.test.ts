@@ -29,25 +29,30 @@ describe('getBucketDisplay', () => {
     expect(d.allocationText).toBe('Monthly contribution: $200.00');
   });
 
-  it('recurring → accumulated total, never "remaining"', () => {
+  it('recurring → sinking fund: shows BANKED, never "remaining"', () => {
     const bucket = {
       bucketMode: 'recurring',
       plannedAmount: 250,
       fundedAmount: 250,
+      carryoverBalance: 800, // accumulated from prior months
     } as unknown as Bucket;
-    const d = getBucketDisplay(
-      bucket,
-      ctx([
-        { amount: 250, date: inMonth },
-        { amount: 250, date: lastMonth },
-        { amount: 250, date: new Date(2026, 3, 15).getTime() },
-      ]),
-    );
-    expect(d.label).toBe('TOTAL CONTRIBUTED');
-    expect(d.amount).toBe(750); // all-time, not this month
-    expect(d.subtext).toBe('$250.00 this month');
-    expect(d.allocationText).toBe('Monthly: $250.00');
+    const d = getBucketDisplay(bucket, ctx([])); // no payment this month
+    expect(d.label).toBe('BANKED');
+    expect(d.amount).toBe(1050); // 250 funded + 800 carryover − 0 spent
+    expect(d.subtext).toBe('$0.00 spent this month');
+    expect(d.allocationText).toBe('Setting aside $250.00/mo');
     expect(d.subtext).not.toMatch(/remaining/);
+  });
+
+  it('recurring → banked can go negative right after a big bill', () => {
+    const bucket = {
+      bucketMode: 'recurring',
+      plannedAmount: 250,
+      fundedAmount: 250,
+      carryoverBalance: 800,
+    } as unknown as Bucket;
+    const d = getBucketDisplay(bucket, ctx([{ amount: 1200, date: inMonth }]));
+    expect(d.amount).toBe(-150); // 250 + 800 − 1200
   });
 
   it('spend → this-month spent vs available (incl. carryover)', () => {

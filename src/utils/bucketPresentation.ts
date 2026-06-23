@@ -35,9 +35,6 @@ const sumInMonth = (ctx: BucketDisplayContext) =>
     .filter((e) => e.date >= ctx.monthStart && e.date <= ctx.monthEnd)
     .reduce((s, e) => s + e.amount, 0);
 
-const sumAll = (ctx: BucketDisplayContext) =>
-  ctx.expenses.reduce((s, e) => s + e.amount, 0);
-
 type Presenter = (bucket: Bucket, ctx: BucketDisplayContext) => BucketDisplay;
 
 const PRESENTERS: Record<BucketMode, Presenter> = {
@@ -61,17 +58,21 @@ const PRESENTERS: Record<BucketMode, Presenter> = {
     };
   },
 
-  // Bills / investments / fixed contributions — money goes out (or in) on a
-  // schedule and accumulates. Frame as a running total, never "$0 remaining".
+  // Bills / investments / fixed contributions — a sinking fund. The monthly
+  // allocation accumulates and real payments draw it down, so the headline is
+  // what's BANKED toward the next bill (can go negative right after a big one),
+  // with the monthly set-aside underneath. Never "$0 remaining".
   recurring: (bucket, ctx) => {
-    const thisMonth = sumInMonth(ctx);
-    const allTime = sumAll(ctx);
-    const planned = bucket.plannedAmount ?? bucket.fundedAmount ?? 0;
+    const funded = bucket.fundedAmount || 0;
+    const carryover = bucket.carryoverBalance || 0;
+    const spentThisMonth = sumInMonth(ctx);
+    const banked = funded + carryover - spentThisMonth;
+    const planned = bucket.plannedAmount ?? funded;
     return {
-      label: 'TOTAL CONTRIBUTED',
-      amount: allTime,
-      subtext: `${money(thisMonth)} this month`,
-      allocationText: planned ? `Monthly: ${money(planned)}` : '',
+      label: 'BANKED',
+      amount: banked,
+      subtext: `${money(spentThisMonth)} spent this month`,
+      allocationText: planned ? `Setting aside ${money(planned)}/mo` : '',
     };
   },
 
