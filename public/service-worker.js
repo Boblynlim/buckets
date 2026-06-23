@@ -1,5 +1,5 @@
 // Service Worker for Buckets PWA
-const CACHE_VERSION = 'buckets-v3';
+const CACHE_VERSION = 'buckets-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 
@@ -71,11 +71,19 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // For same-origin requests, use cache-first for static assets
+  // Navigations and HTML must be NETWORK-FIRST: the HTML references the current
+  // hashed JS bundle, so serving a stale cached index.html pins users to an old
+  // bundle and they never see new deploys. Falls back to cache when offline.
+  if (request.mode === 'navigate' || url.pathname === '/' || url.pathname.endsWith('.html')) {
+    event.respondWith(networkFirst(request));
+    return;
+  }
+
+  // Hashed static assets (bundle.<hash>.js, fonts, icons) are immutable per
+  // build, so cache-first is safe and fast.
   if (isStaticAsset(request.url)) {
     event.respondWith(cacheFirst(request));
   } else {
-    // For dynamic content, use network-first
     event.respondWith(networkFirst(request));
   }
 });
