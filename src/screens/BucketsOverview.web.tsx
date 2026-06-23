@@ -1704,8 +1704,8 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               </Text>
               <Text style={styles.opSubtitle}>
                 Income ${distributionStatus?.totalIncome.toFixed(0) ?? '0'} · Planned $
-                {distributionStatus?.totalPlanned.toFixed(0) ?? '0'} — trim the cups
-                with slack, or add income.
+                {distributionStatus?.totalPlanned.toFixed(0) ?? '0'} — trim a spend
+                cup with slack, or add income. Savings stays protected.
               </Text>
             </View>
             <ScrollView
@@ -1713,12 +1713,17 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
               contentContainerStyle={styles.opScrollContent}
             >
               {overplanClaims.map(({ b, claim, detail, avg, slack }) => {
-                const meta =
-                  avg !== undefined
+                // Savings is protected — it's counted in the overage (so the
+                // banner is honest) but never suggested as a cut. You close the
+                // gap by trimming spend cups, not your goals.
+                const isSave = b.bucketMode === 'save';
+                const meta = isSave
+                  ? `${detail} · protected`
+                  : avg !== undefined
                     ? `${detail} · spends ~$${Math.round(avg)}/mo`
                     : `${detail} · no spend history yet`;
-                const cuttable = slack !== undefined && slack >= 1;
-                const over = slack !== undefined && slack <= -1;
+                const cuttable = !isSave && slack !== undefined && slack >= 1;
+                const over = !isSave && slack !== undefined && slack <= -1;
                 return (
                   <TouchableOpacity
                     key={b._id}
@@ -1731,7 +1736,9 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
                   >
                     <View style={styles.opRowName}>
                       <Text style={styles.opName}>{b.name}</Text>
-                      <Text style={styles.opMeta}>{meta}</Text>
+                      <Text style={[styles.opMeta, isSave && styles.opProtected]}>
+                        {meta}
+                      </Text>
                       {cuttable && (
                         <Text style={styles.opCut}>
                           ↓ up to ${Math.round(slack!)} of slack to cut
@@ -1873,6 +1880,9 @@ const styles = StyleSheet.create({
     color: '#5C8A6F', // sage — safe to cut
     fontFamily: 'Merchant',
     marginTop: 3,
+  },
+  opProtected: {
+    color: '#5C8A6F', // sage — savings is safe, not a cut target
   },
   opOver: {
     fontSize: 13,
