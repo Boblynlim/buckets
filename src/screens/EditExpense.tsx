@@ -131,7 +131,9 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
 
   if (!expense || !bucket) return null;
 
-  const [amount, setAmount] = useState((expense._id as any) === 'new' ? '' : expense.amount.toString());
+  // toFixed(2) so an existing amount shows its cents (1.8 → "1.80"), not a
+  // bare "1.8". The field is still freely editable after.
+  const [amount, setAmount] = useState((expense._id as any) === 'new' ? '' : expense.amount.toFixed(2));
   const [note, setNote] = useState(expense.note);
   const [worthIt, setWorthIt] = useState(expense.worthIt ?? false);
   const [isNecessary, setIsNecessary] = useState(expense.isNecessary ?? false);
