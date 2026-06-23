@@ -25,7 +25,7 @@ import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIc
 import { AnimatedNumber } from '../components/AnimatedNumber';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { computeBucketHealth, getBucketsNeedingAttention, healthColors, type BucketHealth, dismissInsight, isInsightDismissed } from '../utils/bucketHealth';
-import { findDuplicateExpenseIds, getDismissedDuplicates } from '../utils/duplicates';
+import { findDuplicateExpenseIds, useDismissedDuplicates } from '../utils/duplicates';
 import { getAvailable, getAllocated, plannedClaim } from '../../convex/lib/bucketMath';
 
 interface BucketsOverviewProps {
@@ -468,8 +468,9 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
   // days), so cups carrying double-counted payments get a badge — recurring
   // bills where the auto-pay plus a manual copy were both logged. Scoped per
   // bucket, same detector the bucket-detail list uses.
+  const dismissedDupes = useDismissedDuplicates(); // reactive — re-renders on dismiss
   const dupMap = React.useMemo(() => {
-    const dismissed = getDismissedDuplicates();
+    const dismissed = dismissedDupes;
     const byBucket = new Map<string, Expense[]>();
     for (const e of expensesList) {
       const arr = byBucket.get(e.bucketId);
@@ -482,7 +483,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
       if (n > 0) counts.set(bucketId, n);
     }
     return counts;
-  }, [expensesList]);
+  }, [expensesList, dismissedDupes]);
 
   // Per-bucket claims on income that drive the over-planned warning, biggest
   // first. Each carries avg monthly spend (from healthMap) and the resulting

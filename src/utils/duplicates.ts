@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from 'react';
 import type { Expense } from '../types';
 
 // Two expenses are "likely duplicates" when they sit in the same bucket, share
@@ -43,9 +44,17 @@ export function findDuplicateExpenseIds(
 
 // "Not a duplicate" dismissals, persisted locally (mirrors the dismissed-
 // insights pattern). Keyed by expense id; an id here is never flagged.
+//
+// Backed by a tiny reactive store so every screen stays in sync: dismissing a
+// pill in the bucket detail must immediately drop the ⚠ badge on the overview
+// cup. We cache the snapshot Set and only rebuild it on a write, so
+// useSyncExternalStore sees a stable reference between changes.
 const DISMISS_KEY = 'buckets_dismissed_duplicates';
 
-export function getDismissedDuplicates(): Set<string> {
+let snapshot: Set<string> | null = null;
+const listeners = new Set<() => void>();
+
+function load(): Set<string> {
   try {
     const raw = localStorage.getItem(DISMISS_KEY);
     return raw ? new Set<string>(JSON.parse(raw)) : new Set<string>();
@@ -54,12 +63,32 @@ export function getDismissedDuplicates(): Set<string> {
   }
 }
 
+export function getDismissedDuplicates(): Set<string> {
+  if (!snapshot) snapshot = load();
+  return snapshot;
+}
+
 export function dismissDuplicate(expenseId: string): void {
   try {
-    const s = getDismissedDuplicates();
+    const s = new Set(getDismissedDuplicates());
     s.add(expenseId);
     localStorage.setItem(DISMISS_KEY, JSON.stringify([...s]));
   } catch {
     // ignore storage failures — flag just stays visible
   }
+  snapshot = load(); // new reference → subscribers re-render
+  listeners.forEach((l) => l());
+}
+
+function subscribe(cb: () => void): () => void {
+  listeners.add(cb);
+  return () => listeners.delete(cb);
+}
+
+/**
+ * React hook: current dismissed-duplicate ids, re-rendering the caller whenever
+ * a dismissal happens anywhere in the app.
+ */
+export function useDismissedDuplicates(): Set<string> {
+  return useSyncExternalStore(subscribe, getDismissedDuplicates, getDismissedDuplicates);
 }

@@ -27,7 +27,7 @@ const formatRelativeDate = (ts: number): string => {
 };
 import type { Bucket, Expense } from '../types';
 import { getCupForBucketId } from '../constants/bucketIcons';
-import { findDuplicateExpenseIds, getDismissedDuplicates, dismissDuplicate } from '../utils/duplicates';
+import { findDuplicateExpenseIds, dismissDuplicate, useDismissedDuplicates } from '../utils/duplicates';
 import { getBucketDisplay } from '../utils/bucketPresentation';
 
 import { PotteryLoader } from '../components/PotteryLoader';
@@ -251,12 +251,8 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
   // Optimistic local overrides — instantly reflect toggled state before server responds
   const [optimisticToggles, setOptimisticToggles] = React.useState<Record<string, boolean>>({});
   const [optimisticNecessary, setOptimisticNecessary] = React.useState<Record<string, boolean>>({});
-  const [dismissedDupes, setDismissedDupes] = React.useState<Set<string>>(() => getDismissedDuplicates());
-
-  const handleDismissDuplicate = (expenseId: string) => {
-    dismissDuplicate(expenseId);
-    setDismissedDupes(new Set(getDismissedDuplicates())); // re-render with it gone
-  };
+  const dismissedDupes = useDismissedDuplicates(); // reactive across screens
+  const handleDismissDuplicate = (expenseId: string) => dismissDuplicate(expenseId);
 
   // Clear optimistic state when server data updates
   const prevExpensesRef = useRef(expenses);
@@ -285,12 +281,15 @@ export const BucketDetail: React.FC<BucketDetailProps> = ({
     e => isSaveBucket || (e.date >= monthStartTs && e.date <= monthEndTs)
   );
 
-  // Group all expenses by calendar month for the transaction list. Convex
-  // returns expenses ordered by date desc, so iteration order here is already
-  // newest → oldest.
+  // Group all expenses by calendar month for the transaction list. The query
+  // returns rows in CREATION order (by_bucket index), and a transaction's date
+  // is user-editable, so we can't rely on it being date-sorted — sort by date
+  // desc first so both the months and the rows within each month run newest →
+  // oldest.
+  const sortedForGrouping = [...allExpensesList].sort((a, b) => b.date - a.date);
   const monthGroups: { key: string; label: string; items: typeof allExpensesList }[] = [];
   const monthIndex = new Map<string, number>();
-  for (const expense of allExpensesList) {
+  for (const expense of sortedForGrouping) {
     const d = new Date(expense.date);
     const key = `${d.getFullYear()}-${d.getMonth()}`;
     let idx = monthIndex.get(key);
