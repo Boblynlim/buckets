@@ -23,6 +23,18 @@ import type { Bucket } from '../types';
 import { theme } from '../theme';
 import { getFontFamily } from '../theme/fonts';
 import { PotteryLoader } from '../components/PotteryLoader';
+import { getAvailable, getAllocated } from '../../convex/lib/bucketMath';
+
+// Low-balance = canonical available has dropped past the alert threshold of
+// allocation. Replaces the legacy `allocationValue − currentBalance`, which
+// ignored carryover and disagreed with the web overview.
+function isLowBalance(bucket: Bucket): boolean {
+  const allocated = getAllocated(bucket as any);
+  if (allocated <= 0) return false;
+  const used = allocated - getAvailable(bucket as any);
+  const percentUsed = (used / allocated) * 100;
+  return percentUsed > 0 && percentUsed >= ((bucket as any).alertThreshold || 75);
+}
 
 type FilterTab = 'all' | 'low';
 
@@ -76,19 +88,7 @@ export const BucketsOverview: React.FC = () => {
   const tabFilteredBuckets =
     activeTab === 'all'
       ? allBuckets
-      : allBuckets.filter(bucket => {
-          // Calculate percent used - handle rollovers correctly
-          const spent = Math.max(
-            0,
-            (bucket.allocationValue || 0) - (bucket.currentBalance || 0),
-          );
-          const percentUsed =
-            (bucket.allocationValue || 0) > 0
-              ? (spent / (bucket.allocationValue || 0)) * 100
-              : 0;
-          // Only show as low balance if there's actual spending AND it exceeds threshold
-          return percentUsed > 0 && percentUsed >= (bucket.alertThreshold || 75);
-        });
+      : allBuckets.filter(isLowBalance);
 
   const filteredBuckets = searchQuery.trim()
     ? tabFilteredBuckets.filter(b =>
@@ -96,19 +96,7 @@ export const BucketsOverview: React.FC = () => {
       )
     : tabFilteredBuckets;
 
-  const lowBalanceCount = allBuckets.filter(bucket => {
-    // Calculate percent used - handle rollovers correctly
-    const spent = Math.max(
-      0,
-      (bucket.allocationValue || 0) - (bucket.currentBalance || 0),
-    );
-    const percentUsed =
-      (bucket.allocationValue || 0) > 0
-        ? (spent / (bucket.allocationValue || 0)) * 100
-        : 0;
-    // Only count as low balance if there's actual spending AND it exceeds threshold
-    return percentUsed > 0 && percentUsed >= (bucket.alertThreshold || 75);
-  }).length;
+  const lowBalanceCount = allBuckets.filter(isLowBalance).length;
 
   const totalBalance = allBuckets.reduce(
     (sum, bucket) => sum + (bucket.currentBalance || 0),

@@ -18,6 +18,7 @@ import { type } from '../theme/fonts';
 import { getCupForBucketId } from '../constants/bucketIcons';
 import { PotteryLoader } from '../components/PotteryLoader';
 import { DatePicker } from '../components/DatePicker';
+import { getAvailable } from '../../convex/lib/bucketMath';
 import { Drawer } from '../components/Drawer';
 
 // ── Sound (same pentatonic chime as BucketDetail) ────────────────────────
@@ -166,13 +167,9 @@ export const AddExpense: React.FC<AddExpenseProps> = ({
     }
   }, [note, necessaryNotes]);
 
-  const getAvailableBalance = (bucket: any) => {
-    if (!bucket) return 0;
-    if (bucket.bucketMode === 'spend') {
-      return (bucket.fundedAmount || 0) + (bucket.carryoverBalance || 0) - (bucket.spentAmount || 0);
-    }
-    return bucket.currentBalance || 0;
-  };
+  // Canonical available-balance — also handles recurring buckets correctly
+  // (the old inline check only covered 'spend' and fell through to currentBalance).
+  const getAvailableBalance = (bucket: any) => (bucket ? getAvailable(bucket) : 0);
 
   const handleWorthItPress = useCallback((e: any) => {
     if (worthIt) {

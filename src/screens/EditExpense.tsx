@@ -21,6 +21,7 @@ import { getCupForBucketId } from '../constants/bucketIcons';
 import type { Expense, Bucket } from '../types';
 import { DatePicker } from '../components/DatePicker';
 import { Drawer } from '../components/Drawer';
+import { getAvailable } from '../../convex/lib/bucketMath';
 
 // ── Sound (same pentatonic chime as BucketDetail) ────────────────────────
 const CHIME_NOTES = [
@@ -155,13 +156,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   const allBuckets = buckets || [];
   const [selectedBucket, setSelectedBucket] = useState(bucket);
 
-  const getAvailableBalance = (b: any) => {
-    if (!b) return 0;
-    if (b.bucketMode === 'spend') {
-      return (b.fundedAmount || 0) + (b.carryoverBalance || 0) - (b.spentAmount || 0);
-    }
-    return b.currentBalance || 0;
-  };
+  const getAvailableBalance = (b: any) => (b ? getAvailable(b) : 0);
 
   const handleWorthItPress = useCallback((e: any) => {
     if (worthIt) { setWorthIt(false); return; }
