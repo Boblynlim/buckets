@@ -250,18 +250,16 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
 
         {/* Hero Amount */}
         <View style={styles.amountHero}>
-          <View style={styles.amountInner}>
-            <Text style={styles.amountCurrency}>$</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor="rgba(61,50,41,0.15)"
-              textAlign="left"
-            />
-          </View>
+          <Text style={styles.amountCurrency}>$</Text>
+          <TextInput
+            style={styles.amountInput}
+            value={amount}
+            onChangeText={setAmount}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor="rgba(61,50,41,0.15)"
+            textAlign="center"
+          />
         </View>
 
         {/* Bucket Selector — tap to open grid */}
@@ -471,15 +469,15 @@ const styles = StyleSheet.create({
     color: '#877E6F',
   },
 
-  // Hero amount
+  // Hero amount — single centered row (matches Add Expense). On web the input
+  // has a wide default width, so the row must center as a whole and the input
+  // text must be centered, or the number drifts left of centre.
   amountHero: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingVertical: 24,
     paddingHorizontal: 40,
-  },
-  amountInner: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
   },
   amountCurrency: {
     fontSize: 32,
@@ -492,7 +490,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Merchant Copy',
     color: '#1A1A1A',
     letterSpacing: -2,
-    minWidth: 60,
+    minWidth: 120,
     paddingVertical: 0,
   },
 
