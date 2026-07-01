@@ -22,6 +22,7 @@ import type * as expenses from "../expenses.js";
 import type * as groups from "../groups.js";
 import type * as growthLetters from "../growthLetters.js";
 import type * as http from "../http.js";
+import type * as lib_bucketMath from "../lib/bucketMath.js";
 import type * as lib_emailParsers from "../lib/emailParsers.js";
 import type * as lib_recurring from "../lib/recurring.js";
 import type * as memories from "../memories.js";
@@ -59,6 +60,7 @@ declare const fullApi: ApiFromModules<{
   groups: typeof groups;
   growthLetters: typeof growthLetters;
   http: typeof http;
+  "lib/bucketMath": typeof lib_bucketMath;
   "lib/emailParsers": typeof lib_emailParsers;
   "lib/recurring": typeof lib_recurring;
   memories: typeof memories;
