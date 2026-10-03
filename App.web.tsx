@@ -18,6 +18,7 @@ import { AuthProvider, useAuth } from './src/lib/AuthContext';
 import { Home } from './src/screens/home/Home.web';
 import { Checkin } from './src/screens/checkin/Checkin.web';
 import { useHomeStyles } from './src/screens/home/homeStyles';
+import { playClink, playTap, playUnlock } from './src/utils/cupClink';
 import { AddBucket } from './src/screens/AddBucket';
 import { AddExpense } from './src/screens/AddExpense';
 import { Settings } from './src/screens/Settings';
@@ -32,6 +33,8 @@ import type { Bucket, Expense } from './src/types';
 type Screen = 'buckets' | 'settings' | 'review';
 
 // Cup images for the shelf — all 15 cups fill a 5x5 grid
+const CUBBY_IMG = require('./assets/images/shelf.png');
+
 const SHELF_CUPS = [
   require('./assets/images/cup0.png'),
   require('./assets/images/cup8.png'),
@@ -75,6 +78,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   }, [hasUsersAction]);
 
   useHomeStyles();
+  useEffect(() => { if (success) playUnlock(); }, [success]);
 
   // Reset passcode when lock screen activates
   useEffect(() => {
@@ -214,58 +218,6 @@ function AuthGate({ children }: { children: React.ReactNode }) {
 
   const currentCode = (isSetup && isConfirming) ? confirmPasscode : passcode;
 
-  // Ceramic cup clink sounds — bright, short, high-pitched like tapping porcelain
-  const CLINK_NOTES = [
-    1568, 1760, 1976, 2093, 2349, 2637, 2794, 3136, 3520, 3951, 4186, 4699,
-  ];
-  const playCupChime = (row: number, col: number) => {
-    try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-      const t = ctx.currentTime;
-      const noteIdx = Math.min(row * 3 + col, CLINK_NOTES.length - 1);
-      const baseFreq = CLINK_NOTES[noteIdx];
-      const freq = baseFreq * (1 + (Math.random() - 0.5) * 0.015);
-
-      // Primary clink — sharp sine with fast decay
-      const osc1 = ctx.createOscillator();
-      const g1 = ctx.createGain();
-      osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(freq, t);
-      osc1.frequency.exponentialRampToValueAtTime(freq * 0.95, t + 0.12);
-      g1.gain.setValueAtTime(0.18, t);
-      g1.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-      osc1.connect(g1).connect(ctx.destination);
-      osc1.start(t);
-      osc1.stop(t + 0.15);
-
-      // High harmonic — ceramic shimmer
-      const osc2 = ctx.createOscillator();
-      const g2 = ctx.createGain();
-      osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(freq * 2.5, t);
-      osc2.frequency.exponentialRampToValueAtTime(freq * 2.2, t + 0.08);
-      g2.gain.setValueAtTime(0.06, t);
-      g2.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-      osc2.connect(g2).connect(ctx.destination);
-      osc2.start(t);
-      osc2.stop(t + 0.08);
-
-      // Tap body — short noise-like click from triangle wave
-      const osc3 = ctx.createOscillator();
-      const g3 = ctx.createGain();
-      osc3.type = 'triangle';
-      osc3.frequency.setValueAtTime(freq * 1.5, t);
-      osc3.frequency.exponentialRampToValueAtTime(freq * 0.8, t + 0.05);
-      g3.gain.setValueAtTime(0.1, t);
-      g3.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-      osc3.connect(g3).connect(ctx.destination);
-      osc3.start(t);
-      osc3.stop(t + 0.06);
-
-      setTimeout(() => ctx.close(), 250);
-    } catch (_) {}
-  };
-
   const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
   const keyCup = (d: string) => {
     const mod: any = SHELF_CUPS[(Number(d) + 1) % SHELF_CUPS.length];
@@ -311,31 +263,26 @@ function AuthGate({ children }: { children: React.ReactNode }) {
           }} />
         ))}
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {[0, 1, 2, 3].map((r) => (
-          <div key={r}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', alignItems: 'end' }}>
-              {KEYS.slice(r * 3, r * 3 + 3).map((d, c) =>
-                d === '' ? <span key={c} /> : d === 'del' ? (
-                  <button key={c} type="button" onClick={handleDelete} aria-label="Delete"
-                    style={{ ...linkStyle, justifySelf: 'center', height: 56, fontSize: 13 }}>Delete</button>
-                ) : (
-                  <button key={c} type="button" className="bk-cup bk-key" aria-label={d}
-                    onClick={() => { playCupChime(r, c); handleDigit(d); }}
-                    style={{ justifySelf: 'center', width: 56, height: 56 }}>
-                    <img src={keyCup(d)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'bottom', mixBlendMode: 'multiply' }} />
-                  </button>
-                )
-              )}
-            </div>
-            <div className="bk-plank" />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', paddingTop: 8 }}>
-              {KEYS.slice(r * 3, r * 3 + 3).map((d, c) => (
-                <span key={c} style={{ textAlign: 'center', fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>{d === 'del' ? '' : d}</span>
-              ))}
-            </div>
-          </div>
-        ))}
+      {/* Passcode keypad: your cups in the wooden cubby, one per number. */}
+      <div style={{ position: 'relative', width: '100%', maxWidth: 300, alignSelf: 'center', filter: 'drop-shadow(0 14px 22px rgba(45,28,16,0.18))' }}>
+        <img src={typeof CUBBY_IMG === 'string' ? CUBBY_IMG : CUBBY_IMG?.default} alt="" style={{ display: 'block', width: '100%', height: 'auto' }} />
+        <div style={{ position: 'absolute', top: '3.5%', left: '4%', right: '4%', bottom: '3%', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(4, 1fr)', gap: '3% 2.5%' }}>
+          {KEYS.map((d, i) =>
+            d === '' ? <span key={i} /> : d === 'del' ? (
+              <button key={i} type="button" onClick={() => { playTap(); handleDelete(); }} aria-label="Delete"
+                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'rgba(255,255,255,0.85)', fontSize: 13, fontFamily: 'inherit' }}>
+                Delete
+              </button>
+            ) : (
+              <button key={i} type="button" className="bk-key" aria-label={d}
+                onClick={() => { playClink(d); handleDigit(d); }}
+                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '10% 10% 4%', position: 'relative', top: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transition: 'top .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
+                <span style={{ position: 'absolute', top: '8%', left: '10%', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.8)' }}>{d}</span>
+                <img src={keyCup(d)} alt="" style={{ width: '82%', height: '78%', objectFit: 'contain', objectPosition: 'bottom', filter: 'drop-shadow(0 3px 3px rgba(40,22,10,0.35))' }} />
+              </button>
+            )
+          )}
+        </div>
       </div>
       {!isLockScreen && (
         <button type="button" style={linkStyle} onClick={() => {
