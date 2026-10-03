@@ -17,6 +17,7 @@ import { convexClient } from './src/lib/convex';
 import { AuthProvider, useAuth } from './src/lib/AuthContext';
 import { Home } from './src/screens/home/Home.web';
 import { Checkin } from './src/screens/checkin/Checkin.web';
+import { useHomeStyles } from './src/screens/home/homeStyles';
 import { AddBucket } from './src/screens/AddBucket';
 import { AddExpense } from './src/screens/AddExpense';
 import { Settings } from './src/screens/Settings';
@@ -49,72 +50,6 @@ const SHELF_CUPS = [
   require('./assets/images/cup21.png'),
 ];
 
-const SHELF_IMG = require('./assets/images/shelf.png');
-const WALL_IMG = require('./assets/images/wall.jpg');
-
-// Slight random rotations per cup for personality
-const CUP_ROTATIONS = [-3, 2, -1, 4, -2, 1, 3, -4, 2, -1, 3, -2, 1, -3, 2];
-
-function useWindowSize() {
-  const [size, setSize] = useState({ w: window.innerWidth, h: window.innerHeight });
-  useEffect(() => {
-    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight });
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-  return size;
-}
-
-function useResponsiveShelf() {
-  const { w, h } = useWindowSize();
-  return useMemo(() => {
-    let cols: number, rows: number;
-
-    if (w < 400) {
-      cols = 3; rows = Math.max(5, Math.round(h / (w / 3)));
-    } else if (w < 600) {
-      cols = 4; rows = Math.max(5, Math.round(h / (w / 4)));
-    } else if (w < 900) {
-      cols = 5; rows = Math.max(4, Math.round(h / (w / 5)));
-    } else if (w < 1200) {
-      cols = 6; rows = Math.max(4, Math.round(h / (w / 6)));
-    } else {
-      cols = 7; rows = Math.max(4, Math.round(h / (w / 7)));
-    }
-    rows = Math.min(rows, 9);
-    const total = cols * rows;
-
-    const divider = w < 400 ? 6 : w < 600 ? 8 : w < 900 ? 10 : 12;
-    const frame = w < 400 ? 8 : w < 600 ? 10 : w < 900 ? 14 : 16;
-    const formMaxWidth = w < 400 ? 280 : w < 600 ? 340 : w < 900 ? 380 : 400;
-    const titleSize = w < 400 ? 28 : w < 600 ? 36 : 40;
-    const inputHeight = w < 400 ? 40 : 44;
-
-    // Compute which cells the form card overlaps — those stay empty
-    const cellW = (w - 2 * frame - (cols - 1) * divider) / cols;
-    const cellH = (h - 2 * frame - (rows - 1) * divider) / rows;
-    const formW = formMaxWidth + 56; // card padding
-    const formH = 460;
-    const cx = w / 2;
-    const cy = h / 2;
-
-    const formCells = new Set<number>();
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const l = frame + c * (cellW + divider);
-        const t = frame + r * (cellH + divider);
-        const rr = l + cellW;
-        const b = t + cellH;
-        if (rr > cx - formW / 2 && l < cx + formW / 2 && b > cy - formH / 2 && t < cy + formH / 2) {
-          formCells.add(r * cols + c);
-        }
-      }
-    }
-
-    return { cols, rows, total, formCells, divider, frame, formMaxWidth, titleSize, inputHeight };
-  }, [w, h]);
-}
-
 function AuthGate({ children }: { children: React.ReactNode }) {
   const { user, isLoading, isLocked, loginWithPasscode, loginWithEmail, signupWithEmail, setupPasscode, unlock } = useAuth();
   const [passcode, setPasscode] = useState('');
@@ -128,14 +63,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [mounted, setMounted] = useState(false);
 
   const hasUsersAction = useAction(api.auth.hasUsersWithPasscode);
-
-  useEffect(() => {
-    const t = setTimeout(() => setMounted(true), 100);
-    return () => clearTimeout(t);
-  }, []);
 
   // Check if this is first-time setup or returning user
   useEffect(() => {
@@ -145,61 +74,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     }).catch(() => setCheckingSetup(false));
   }, [hasUsersAction]);
 
-  // Inject shelf animations
-  useEffect(() => {
-    const style = document.createElement('style');
-    style.id = 'shelf-animations';
-    style.textContent = `
-      @keyframes cupDrop {
-        0% { opacity: 0; transform: translateY(-30px) scale(0.7) rotate(var(--rot, 0deg)); }
-        60% { opacity: 1; transform: translateY(4px) scale(1.02) rotate(var(--rot, 0deg)); }
-        80% { transform: translateY(-2px) scale(0.98) rotate(var(--rot, 0deg)); }
-        100% { opacity: 1; transform: translateY(0) scale(1) rotate(var(--rot, 0deg)); }
-      }
-      @keyframes cupFloat {
-        0%, 100% { transform: translateY(0px) rotate(var(--rot, 0deg)); }
-        50% { transform: translateY(-3px) rotate(calc(var(--rot, 0deg) + 1deg)); }
-      }
-      @keyframes cupWobble {
-        0%, 100% { transform: rotate(var(--rot, 0deg)); }
-        15% { transform: rotate(calc(var(--rot, 0deg) - 6deg)) scale(0.95); }
-        30% { transform: rotate(calc(var(--rot, 0deg) + 5deg)) scale(1.03); }
-        50% { transform: rotate(calc(var(--rot, 0deg) - 3deg)); }
-        70% { transform: rotate(calc(var(--rot, 0deg) + 2deg)); }
-        85% { transform: rotate(calc(var(--rot, 0deg) - 1deg)); }
-      }
-      @keyframes successWiggle {
-        0%, 100% { transform: rotate(var(--rot, 0deg)); }
-        15% { transform: rotate(calc(var(--rot, 0deg) - 10deg)) scale(1.05); }
-        30% { transform: rotate(calc(var(--rot, 0deg) + 8deg)) scale(1.02); }
-        45% { transform: rotate(calc(var(--rot, 0deg) - 6deg)); }
-        60% { transform: rotate(calc(var(--rot, 0deg) + 4deg)); }
-        80% { transform: rotate(calc(var(--rot, 0deg) - 2deg)); }
-      }
-      @keyframes errorShake {
-        0%, 100% { transform: translateX(0); }
-        15% { transform: translateX(-8px); }
-        30% { transform: translateX(8px); }
-        45% { transform: translateX(-6px); }
-        60% { transform: translateX(6px); }
-        75% { transform: translateX(-3px); }
-        90% { transform: translateX(3px); }
-      }
-      @keyframes formFadeIn {
-        0% { opacity: 0; transform: translateY(16px) scale(0.97); }
-        100% { opacity: 1; transform: translateY(0) scale(1); }
-      }
-      .cup-cell { cursor: pointer; -webkit-tap-highlight-color: transparent; }
-      .cup-cell .cup-wrap { transition: transform 0.15s ease; }
-      .cup-cell:active .cup-wrap { transform: rotate(-6deg) scale(0.93); }
-      .cup-cell.success .cup-img { animation: successWiggle 0.7s ease !important; }
-      .error-shake { animation: errorShake 0.5s ease; }
-      .auth-input::placeholder { color: rgba(0,0,0,0.28); }
-      .auth-input:focus { border-color: #5C8A7A !important; box-shadow: 0 0 0 3px rgba(92,138,122,0.15) !important; }
-    `;
-    document.head.appendChild(style);
-    return () => { document.getElementById('shelf-animations')?.remove(); };
-  }, []);
+  useHomeStyles();
 
   // Reset passcode when lock screen activates
   useEffect(() => {
@@ -228,14 +103,12 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     prevUser.current = user;
   }, [user, isLocked]);
 
-  const responsive = useResponsiveShelf();
-  const { formMaxWidth, titleSize } = responsive;
 
   if (isLoading) {
     return (
       <div style={{
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        minHeight: '100vh', background: '#EAE3D5',
+        minHeight: '100vh', background: '#F3F0EA',
       }}>
         <PotteryLoader />
       </div>
@@ -393,356 +266,110 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     } catch (_) {}
   };
 
-  const PAD_CUPS = SHELF_CUPS.slice(0, 10);
-  const PAD_LAYOUT = [
-    { digit: '1', cupIdx: 1 },
-    { digit: '2', cupIdx: 2 },
-    { digit: '3', cupIdx: 3 },
-    { digit: '4', cupIdx: 4 },
-    { digit: '5', cupIdx: 5 },
-    { digit: '6', cupIdx: 6 },
-    { digit: '7', cupIdx: 7 },
-    { digit: '8', cupIdx: 8 },
-    { digit: '9', cupIdx: 9 },
-    { digit: '', cupIdx: -1 },
-    { digit: '0', cupIdx: 0 },
-    { digit: 'del', cupIdx: -1 },
-  ];
-
-  const shelfSize = Math.min(formMaxWidth + 40, 360);
-
+  const KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', 'del'];
+  const keyCup = (d: string) => {
+    const mod: any = SHELF_CUPS[(Number(d) + 1) % SHELF_CUPS.length];
+    return typeof mod === 'string' ? mod : mod?.default ?? '';
+  };
   const statusText = checkingSetup ? '' :
-    isLockScreen ? 'enter passcode' :
-    authStep === 'email' ? (isSetup ? 'create your account' : 'welcome back') :
-    isSetup && !isConfirming ? 'set your passcode' :
-    isSetup && isConfirming ? 'confirm passcode' :
-    'enter passcode';
+    isLockScreen ? 'Enter your passcode' :
+    authStep === 'email' ? (isSetup ? 'Create your account' : 'Welcome back') :
+    isSetup && !isConfirming ? 'Set a 6-digit passcode' :
+    isSetup && isConfirming ? 'Once more to confirm' :
+    'Enter your passcode';
+  const linkStyle: React.CSSProperties = {
+    appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer',
+    color: '#75695F', fontSize: 14, minHeight: 44, fontFamily: 'inherit',
+  };
+  const inputStyle: React.CSSProperties = {
+    appearance: 'none', border: 0, background: 'transparent', width: '100%', fontSize: 17,
+    padding: '12px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit', color: '#1F1B17',
+  };
 
-  // ── Email step (not shown on lock screen) ──
   const renderEmailStep = () => (
-    <div style={{
-      width: formMaxWidth,
-      animation: mounted ? 'formFadeIn 0.5s ease 0.35s both' : 'none',
-    }}>
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {isSetup && (
-        <input
-          className="auth-input"
-          type="text"
-          placeholder="your name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()}
-          style={{
-            width: '100%',
-            padding: '12px 16px',
-            fontSize: 16,
-            fontFamily: 'Merchant',
-            color: '#3D3229',
-            background: 'rgba(255,255,255,0.5)',
-            border: '1.5px solid rgba(0,0,0,0.1)',
-            borderRadius: 12,
-            outline: 'none',
-            marginBottom: 10,
-            textAlign: 'center',
-            boxSizing: 'border-box' as const,
-          }}
-        />
+        <input className="auth-input" type="text" placeholder="Your name" aria-label="Your name" value={name}
+          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
       )}
-      <input
-        className="auth-input"
-        type="email"
-        placeholder="email address"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()}
-        style={{
-          width: '100%',
-          padding: '12px 16px',
-          fontSize: 16,
-          fontFamily: 'Merchant',
-          color: '#3D3229',
-          background: 'rgba(255,255,255,0.5)',
-          border: '1.5px solid rgba(0,0,0,0.1)',
-          borderRadius: 12,
-          outline: 'none',
-          marginBottom: 16,
-          textAlign: 'center',
-          boxSizing: 'border-box' as const,
-        }}
-      />
-      <div
-        onClick={handleEmailSubmit}
-        style={{
-          padding: '12px 24px',
-          background: '#5C8A7A',
-          borderRadius: 12,
-          textAlign: 'center' as const,
-          cursor: 'pointer',
-          fontFamily: 'Merchant',
-          fontSize: 16,
-          color: '#fff',
-          fontWeight: 500,
-        }}
-      >
-        continue
-      </div>
+      <input className="auth-input" type="email" placeholder="Email" aria-label="Email" value={email}
+        onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
+      <button type="button" className="bk-btn" style={{ marginTop: 20 }} onClick={handleEmailSubmit}>Continue</button>
     </div>
   );
 
-  // ── Passcode step (shown on lock screen and after email) ──
+  // Passcode keypad: your cups on three walnut shelves. Each tap clinks.
   const renderPasscodeStep = () => (
-    <>
-      {/* Passcode dots */}
-      <div style={{
-        display: 'flex',
-        gap: 14,
-        marginBottom: 24,
-        animation: mounted ? 'formFadeIn 0.5s ease 0.35s both' : 'none',
-      }}>
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div style={{ display: 'flex', gap: 14, justifyContent: 'center' }} aria-live="polite" aria-label={`${currentCode.length} of 6 digits`}>
         {Array.from({ length: 6 }, (_, i) => (
-          <div
-            key={i}
-            className={error ? 'error-shake' : ''}
-            style={{
-              width: 13,
-              height: 13,
-              borderRadius: '50%',
-              background: i < currentCode.length ? '#5C8A7A' : 'transparent',
-              border: `2px solid ${i < currentCode.length ? '#5C8A7A' : 'rgba(0,0,0,0.15)'}`,
-              transition: 'all 0.15s ease',
-              transform: i < currentCode.length ? 'scale(1.1)' : 'scale(1)',
-            }}
-          />
+          <div key={i} style={{
+            width: 10, height: 10, borderRadius: 999,
+            background: i < currentCode.length ? (error ? '#A0563F' : '#1F1B17') : 'transparent',
+            boxShadow: `inset 0 0 0 1.5px ${error ? '#A0563F' : i < currentCode.length ? '#1F1B17' : '#CFC6B8'}`,
+            transition: 'background .25s ease, box-shadow .25s ease',
+          }} />
         ))}
       </div>
-
-      {/* Shelf keypad */}
-      <div style={{
-        width: shelfSize,
-        position: 'relative',
-        animation: mounted ? 'formFadeIn 0.6s ease 0.4s both' : 'none',
-        filter: 'drop-shadow(0 12px 32px rgba(0,0,0,0.2))',
-      }}>
-        <img
-          src={SHELF_IMG}
-          alt=""
-          style={{
-            width: '100%',
-            height: 'auto',
-            display: 'block',
-            borderRadius: 4,
-          }}
-        />
-        <div style={{
-          position: 'absolute',
-          top: '3.5%',
-          left: '4%',
-          right: '4%',
-          bottom: '3%',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(3, 1fr)',
-          gridTemplateRows: 'repeat(4, 1fr)',
-          gap: '3% 2.5%',
-        }}>
-          {PAD_LAYOUT.map((cell, i) => {
-            const row = Math.floor(i / 3);
-            const col = i % 3;
-
-            if (cell.digit === '') return <div key={i} />;
-
-            if (cell.digit === 'del') {
-              return (
-                <div
-                  key={i}
-                  onClick={handleDelete}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    cursor: 'pointer',
-                    WebkitTapHighlightColor: 'transparent',
-                    userSelect: 'none' as const,
-                  }}
-                >
-                  <span style={{
-                    fontFamily: 'Merchant',
-                    fontSize: 12,
-                    color: 'rgba(255,255,255,0.75)',
-                    fontWeight: 500,
-                  }}>
-                    delete
-                  </span>
-                </div>
-              );
-            }
-
-            const cupSrc = PAD_CUPS[cell.cupIdx % PAD_CUPS.length];
-            const rot = CUP_ROTATIONS[cell.cupIdx % CUP_ROTATIONS.length];
-            const delay = 0.4 + i * 0.05;
-            const floatDuration = 3.5 + (cell.cupIdx % 4) * 0.6;
-            const floatDelay = (cell.cupIdx % 6) * 0.3;
-
-            return (
-              <div
-                key={i}
-                className={`cup-cell${success ? ' success' : ''}`}
-                onClick={() => {
-                  playCupChime(row, col);
-                  handleDigit(cell.digit);
-                }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                  padding: '6% 8% 4%',
-                  cursor: 'pointer',
-                  '--rot': `${rot}deg`,
-                } as any}
-              >
-                <div className="cup-wrap" style={{ width: '85%', height: '80%' }}>
-                  <img
-                    className="cup-img"
-                    src={cupSrc}
-                    alt=""
-                    style={{
-                      width: '100%',
-                      height: '100%',
-                      objectFit: 'contain',
-                      objectPosition: 'bottom',
-                      animation: mounted
-                        ? `cupDrop 0.5s ease ${delay}s both, cupFloat ${floatDuration}s ease-in-out ${delay + 0.6 + floatDelay}s infinite`
-                        : 'none',
-                      filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.25))',
-                      ...(success ? { animationDelay: `${cell.cupIdx * 0.06}s` } : {}),
-                    }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {[0, 1, 2, 3].map((r) => (
+          <div key={r}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', alignItems: 'end' }}>
+              {KEYS.slice(r * 3, r * 3 + 3).map((d, c) =>
+                d === '' ? <span key={c} /> : d === 'del' ? (
+                  <button key={c} type="button" onClick={handleDelete} aria-label="Delete"
+                    style={{ ...linkStyle, justifySelf: 'center', height: 56, fontSize: 13 }}>Delete</button>
+                ) : (
+                  <button key={c} type="button" className="bk-cup bk-key" aria-label={d}
+                    onClick={() => { playCupChime(r, c); handleDigit(d); }}
+                    style={{ justifySelf: 'center', width: 56, height: 56 }}>
+                    <img src={keyCup(d)} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'bottom', mixBlendMode: 'multiply' }} />
+                  </button>
+                )
+              )}
+            </div>
+            <div className="bk-plank" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', paddingTop: 8 }}>
+              {KEYS.slice(r * 3, r * 3 + 3).map((d, c) => (
+                <span key={c} style={{ textAlign: 'center', fontSize: 15, fontWeight: 500, color: '#1F1B17' }}>{d === 'del' ? '' : d}</span>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
-
-      {/* Back to email step (not on lock screen) */}
       {!isLockScreen && (
-        <div
-          onClick={() => {
-            setAuthStep('email');
-            setPasscode('');
-            setConfirmPasscode('');
-            setIsConfirming(false);
-            setError('');
-          }}
-          style={{
-            marginTop: 16,
-            fontFamily: 'DM Sans, sans-serif',
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.3)',
-            cursor: 'pointer',
-          }}
-        >
-          ← back to email
-        </div>
+        <button type="button" style={linkStyle} onClick={() => {
+          setAuthStep('email'); setPasscode(''); setConfirmPasscode(''); setIsConfirming(false); setError('');
+        }}>Back to email</button>
       )}
-    </>
+    </div>
   );
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: 0, left: 0, right: 0, bottom: 0,
-      overflow: 'hidden',
-      background: `#E8E0D0 url(${WALL_IMG}) center / cover no-repeat`,
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-    }}>
-      {/* Title */}
-      <div style={{
-        fontFamily: "'Kaitou Yokoku Gothic', serif",
-        fontSize: titleSize * 1.2,
-        color: '#5C3D2E',
-        textAlign: 'center' as const,
-        marginBottom: 8,
-        letterSpacing: 2,
-        animation: mounted ? 'formFadeIn 0.5s ease 0.2s both' : 'none',
-      }}>
-        神棚
+    <div className="bk-root" style={{ position: 'fixed', inset: 0, overflowY: 'auto' }}>
+      <style>{`.bk-key:active { top: 3px; transition-duration: .15s; }
+        .auth-input::placeholder { color: #A89E92; }`}</style>
+      <div style={{ maxWidth: 340, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '72px 24px 40px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 32 }}>
+        <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>Buckets</span>
+          <span style={{ fontSize: 15, color: '#75695F', minHeight: 20 }}>{statusText}</span>
+          {error !== '' && <span key={error} className="bk-step" style={{ fontSize: 14, color: '#A0563F' }}>{error}</span>}
+        </div>
+
+        {isLockScreen ? renderPasscodeStep() : authStep === 'email' ? renderEmailStep() : renderPasscodeStep()}
+
+        {!checkingSetup && !isLockScreen && authStep === 'email' && (
+          <button type="button" style={{ ...linkStyle, alignSelf: 'flex-start' }} onClick={() => {
+            setIsSetup(!isSetup); setIsConfirming(false); setPasscode(''); setConfirmPasscode(''); setEmail(''); setName(''); setError('');
+          }}>
+            {isSetup ? 'Already have an account? Log in' : 'New here? Sign up'}
+          </button>
+        )}
       </div>
 
-      {/* Status text */}
-      <div style={{
-        fontFamily: 'DM Sans, sans-serif',
-        fontSize: 13,
-        color: 'rgba(0,0,0,0.35)',
-        textAlign: 'center' as const,
-        marginBottom: 16,
-        animation: mounted ? 'formFadeIn 0.5s ease 0.3s both' : 'none',
-        minHeight: 18,
-      }}>
-        {statusText}
-      </div>
-
-      {/* Error message */}
-      {error !== '' && (
-        <div key={error} style={{
-          marginBottom: 16,
-          fontFamily: 'DM Sans, sans-serif',
-          fontSize: 13,
-          color: '#C0392B',
-          textAlign: 'center' as const,
-          maxWidth: formMaxWidth,
-          paddingLeft: 20,
-          paddingRight: 20,
-        }}>
-          {error}
-        </div>
-      )}
-
-      {/* Render the right step */}
-      {isLockScreen ? renderPasscodeStep() :
-       authStep === 'email' ? renderEmailStep() :
-       renderPasscodeStep()}
-
-      {/* Toggle setup / login (only on email step, not lock screen) */}
-      {!checkingSetup && !isLockScreen && authStep === 'email' && (
-        <div
-          onClick={() => {
-            setIsSetup(!isSetup);
-            setIsConfirming(false);
-            setPasscode('');
-            setConfirmPasscode('');
-            setEmail('');
-            setName('');
-            setError('');
-          }}
-          style={{
-            marginTop: 20,
-            fontFamily: 'DM Sans, sans-serif',
-            fontSize: 12,
-            color: 'rgba(0,0,0,0.3)',
-            cursor: 'pointer',
-            animation: mounted ? 'formFadeIn 0.5s ease 0.6s both' : 'none',
-          }}
-        >
-          {isSetup ? 'already have an account? tap to log in' : 'new here? tap to sign up'}
-        </div>
-      )}
-
-      {/* Loading overlay */}
       {submitting && (
-        <div style={{
-          position: 'absolute',
-          inset: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          background: 'rgba(234,227,213,0.6)',
-          zIndex: 10,
-        }}>
-          <PotteryLoader message="Entering..." />
+        <div className="bk-scrim" style={{ position: 'fixed', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(243,240,234,0.7)', zIndex: 10 }}>
+          <PotteryLoader message="Opening..." />
         </div>
       )}
     </div>

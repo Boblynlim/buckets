@@ -44,9 +44,11 @@ export const HOME_CSS = `
 .bk-plank { height: 9px; margin: 0 -4px; border-radius: 2px;
   background: linear-gradient(#7B4C2D 0 2px, #5C361E 2px 100%);
   box-shadow: 0 12px 16px -10px rgba(45,28,16,.4), 0 1px 2px rgba(45,28,16,.2); }
-.bk-cup { appearance: none; border: 0; background: transparent; cursor: pointer; padding: 0; position: relative;
-  transition: transform .6s cubic-bezier(0.16,0.9,0.4,1); }
-.bk-cup:hover { transform: translateY(-3px); }
+.bk-cup { appearance: none; border: 0; background: transparent; cursor: pointer; padding: 0; position: relative; top: 0;
+  transition: top .6s cubic-bezier(0.16,0.9,0.4,1); }
+/* Lift with "top", not transform: a transform would isolate the cup and
+   bring back the white halo the multiply blend removes. */
+.bk-cup:hover { top: -3px; }
 .bk-cup:focus-visible, .bk-row:focus-visible { outline: 2px solid ${COLORS.green}; outline-offset: 4px; border-radius: 12px; }
 .bk-cup img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: bottom; mix-blend-mode: multiply; }
 .bk-cup img.ghost { filter: grayscale(1); opacity: .18; }
@@ -54,16 +56,16 @@ export const HOME_CSS = `
 .bk-chip { appearance: none; border: 0; cursor: pointer; background: transparent; font-size: 13px; height: 34px; padding: 0 12px;
   border-radius: 999px; box-shadow: inset 0 0 0 1px #D9D2C6; transition: background .3s ease, color .3s ease; }
 .bk-chip:hover { background: ${COLORS.ink}; color: ${COLORS.wall}; }
-.bk-btn { appearance: none; border: 0; cursor: pointer; background: ${COLORS.ink}; color: ${COLORS.wall}; font-size: 16px;
+.bk-root .bk-btn, .bk-btn { appearance: none; border: 0; cursor: pointer; background: ${COLORS.ink}; color: ${COLORS.wall}; font-size: 16px;
   font-weight: 500; height: 56px; border-radius: 999px; width: 100%; transition: background .3s ease; }
-.bk-btn:hover { background: #000; }
+.bk-root .bk-btn:hover { background: #000; }
 .bk-btn:disabled { opacity: .4; cursor: default; }
 @keyframes bkSheetIn { from { opacity: 0; transform: translateY(24px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes bkFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bkStep { from { opacity: 0; transform: translateY(16px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
-.bk-sheet { animation: bkSheetIn .6s cubic-bezier(0.16,0.9,0.4,1) both; }
-.bk-scrim { animation: bkFade .4s ease both; }
-.bk-step { animation: bkStep .7s cubic-bezier(0.16,0.9,0.4,1) both; }
+.bk-sheet { animation: bkSheetIn .6s cubic-bezier(0.16,0.9,0.4,1) backwards; }
+.bk-scrim { animation: bkFade .4s ease backwards; }
+.bk-step { animation: bkStep .7s cubic-bezier(0.16,0.9,0.4,1) backwards; }
 @media (prefers-reduced-motion: reduce) {
   .bk-sheet, .bk-scrim, .bk-step { animation: none; }
   .bk-cup, .bk-cup img.glaze { transition: none; }
