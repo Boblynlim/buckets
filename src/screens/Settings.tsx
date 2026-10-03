@@ -573,42 +573,6 @@ export const Settings: React.FC<SettingsProps> = ({
             <Pressable
               style={styles.groupRow}
               onPress={() => {
-                if (onNavigateToReports) {
-                  onNavigateToReports();
-                } else {
-                  navigation?.navigate('Reports');
-                }
-              }}
-            >
-              <View style={{flex: 1}}>
-                <Text style={styles.groupRowTitle}>Reports</Text>
-              </View>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable
-              style={styles.groupRow}
-              onPress={() => {
-                if (onNavigateToLetters) {
-                  onNavigateToLetters();
-                } else {
-                  navigation?.navigate('Letters');
-                }
-              }}
-            >
-              <View style={{flex: 1}}>
-                <Text style={styles.groupRowTitle}>Letters</Text>
-              </View>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable
-              style={styles.groupRow}
-              onPress={() => {
                 if (onNavigateToReviewQueue) {
                   onNavigateToReviewQueue();
                 } else {

@@ -11,28 +11,24 @@ import { api } from './convex/_generated/api';
 import {
   PaintBucket,
   Settings as SettingsIcon,
-  PackagePlus,
   Plus,
 } from 'lucide-react';
 import { convexClient } from './src/lib/convex';
 import { AuthProvider, useAuth } from './src/lib/AuthContext';
-import { BucketsOverview } from './src/screens/BucketsOverview.web';
+import { Home } from './src/screens/home/Home.web';
+import { Checkin } from './src/screens/checkin/Checkin.web';
 import { AddBucket } from './src/screens/AddBucket';
 import { AddExpense } from './src/screens/AddExpense';
 import { Settings } from './src/screens/Settings';
-import { Reports } from './src/screens/Reports';
 import { IncomeManagement } from './src/screens/IncomeManagement';
 import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
-import { Letters } from './src/screens/Letters';
 import { ReviewQueue } from './src/screens/ReviewQueue.web';
 import { Drawer } from './src/components/Drawer';
-import { DailyPromptModal } from './src/components/DailyPromptModal';
-import { GrowthLetterOverlay } from './src/components/GrowthLetter';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
-type Screen = 'buckets' | 'settings' | 'reports' | 'letters' | 'review';
+type Screen = 'buckets' | 'settings' | 'review';
 
 // Cup images for the shelf — all 15 cups fill a 5x5 grid
 const SHELF_CUPS = [
@@ -763,37 +759,13 @@ function App() {
   const [editSuggestedAmount, setEditSuggestedAmount] = useState<number | undefined>(undefined);
   const [showEditExpense, setShowEditExpense] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState<{expense: Expense; bucket: Bucket} | null>(null);
-  const [isReportSelected, setIsReportSelected] = useState(false);
-  const [isLetterSelected, setIsLetterSelected] = useState(false);
+  const [showCheckin, setShowCheckin] = useState(false);
 
   // Register service worker for PWA functionality
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {
       registerServiceWorker();
     }
-  }, []);
-
-  // Inject noise texture overlay into DOM (outside React tree so it stays on top)
-  useEffect(() => {
-    const el = document.createElement('div');
-    el.id = 'noise-overlay';
-    el.style.cssText = `
-      position: fixed;
-      top: 0; left: 0; right: 0; bottom: 0;
-      pointer-events: none;
-      z-index: 2147483647;
-      opacity: 0.03;
-      mix-blend-mode: multiply;
-    `;
-    el.innerHTML = `<svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-      <filter id="noiseFilter">
-        <feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="4" stitchTiles="stitch"/>
-        <feColorMatrix type="saturate" values="0"/>
-      </filter>
-      <rect width="100%" height="100%" filter="url(#noiseFilter)"/>
-    </svg>`;
-    document.body.appendChild(el);
-    return () => { document.body.removeChild(el); };
   }, []);
 
   const handleSaveBucket = (bucketData: any) => {
@@ -816,36 +788,20 @@ function App() {
   const renderScreen = () => {
     switch (currentScreen) {
       case 'buckets':
-        return (
-          <BucketsOverview
-            onEditBucket={handleEditBucket}
-            onEditExpense={handleEditExpense}
-          />
-        );
+        return <Home onOpenCheckin={() => setShowCheckin(true)} />;
       case 'settings':
         return (
           <Settings
             onAddBucket={() => setShowAddBucket(true)}
             onEditBucket={handleEditBucket}
             onSetIncome={() => setShowIncomeManagement(true)}
-            onNavigateToReports={() => setCurrentScreen('reports')}
-            onNavigateToLetters={() => setCurrentScreen('letters')}
             onNavigateToReviewQueue={() => setCurrentScreen('review')}
           />
         );
       case 'review':
         return <ReviewQueue onBack={() => setCurrentScreen('settings')} />;
-      case 'reports':
-        return <Reports onReportSelected={setIsReportSelected} onBack={() => setCurrentScreen('settings')} />;
-      case 'letters':
-        return <Letters onLetterSelected={setIsLetterSelected} onBack={() => setCurrentScreen('settings')} />;
       default:
-        return (
-          <BucketsOverview
-            onEditBucket={handleEditBucket}
-            onEditExpense={handleEditExpense}
-          />
-        );
+        return <Home onOpenCheckin={() => setShowCheckin(true)} />;
     }
   };
 
@@ -857,7 +813,7 @@ function App() {
         <View style={styles.content}>{renderScreen()}</View>
 
         {/* Bottom Navigation - Left pill with icons only */}
-        {!isReportSelected && !isLetterSelected && (
+        {!showCheckin && (
           <View style={styles.navContainer}>
           <div style={{
             display: 'flex',
@@ -868,7 +824,7 @@ function App() {
             paddingLeft: 8,
             paddingRight: 8,
             borderRadius: 28,
-            background: 'rgba(92, 138, 122, 0.4)',
+            background: 'rgba(31, 27, 23, 0.78)',
             backdropFilter: 'blur(24px) saturate(180%)',
             WebkitBackdropFilter: 'blur(24px) saturate(180%)',
             border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -919,7 +875,7 @@ function App() {
               width: 56,
               height: 56,
               borderRadius: 28,
-              background: 'rgba(92, 138, 122, 0.4)',
+              background: 'rgba(31, 27, 23, 0.78)',
               backdropFilter: 'blur(24px) saturate(180%)',
               WebkitBackdropFilter: 'blur(24px) saturate(180%)',
               border: '1px solid rgba(255, 255, 255, 0.18)',
@@ -931,22 +887,7 @@ function App() {
             }} onClick={() => setShowAddExpense(true)}>
               <Plus size={24} color="#FFFFFF" strokeWidth={1.5} />
             </div>
-            <div style={{
-              width: 56,
-              height: 56,
-              borderRadius: 28,
-              background: 'rgba(92, 138, 122, 0.4)',
-              backdropFilter: 'blur(24px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }} onClick={() => setShowAddBucket(true)}>
-              <PackagePlus size={24} color="#FFFFFF" strokeWidth={1.5} />
-            </div>
+
           </View>
         </View>
         )}
@@ -1003,11 +944,7 @@ function App() {
           />
         )}
 
-        {/* Daily Prompt Modal */}
-        <DailyPromptModal />
-
-        {/* Growth Letter Overlay — appears when unread letter exists */}
-        <GrowthLetterOverlay />
+        {showCheckin && <Checkin onClose={() => setShowCheckin(false)} />}
       </View>
     </AuthGate>
     </AuthProvider>
