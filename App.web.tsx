@@ -238,79 +238,102 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     padding: '12px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit', color: '#1F1B17',
   };
 
-  const renderEmailStep = () => (
-    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+  // One wooden cubby carries through both steps. On the email step it's a
+  // quiet display (cups set in one by one, a paper name card underneath);
+  // on the passcode step the same cubby becomes the keypad.
+  const keypad = isLockScreen || authStep === 'passcode';
+  const cubbyWidth = keypad ? 300 : 236;
+
+  const cubby = (
+    <div style={{ position: 'relative', width: '100%', maxWidth: cubbyWidth, alignSelf: 'center', transition: 'max-width .8s cubic-bezier(0.16,0.9,0.4,1)', filter: 'drop-shadow(0 14px 22px rgba(45,28,16,0.18))' }}>
+      <img src={typeof CUBBY_IMG === 'string' ? CUBBY_IMG : CUBBY_IMG?.default} alt="" style={{ display: 'block', width: '100%', height: 'auto' }} />
+      <div style={{ position: 'absolute', top: '3.5%', left: '4%', right: '4%', bottom: '3%', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(4, 1fr)', gap: '3% 2.5%' }}>
+        {KEYS.map((d, i) =>
+          d === '' ? <span key={i} /> : d === 'del' ? (
+            keypad ? (
+              <button key={i} type="button" className="bk-fade" onClick={() => { playTap(); handleDelete(); }} aria-label="Delete"
+                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'rgba(255,255,255,0.85)', fontSize: 13, fontFamily: 'inherit' }}>
+                Delete
+              </button>
+            ) : <span key={i} />
+          ) : (
+            <button key={i} type="button" className="bk-key" aria-label={d} disabled={!keypad} tabIndex={keypad ? 0 : -1}
+              onClick={() => { playClink(d); handleDigit(d); }}
+              style={{ appearance: 'none', border: 0, background: 'transparent', cursor: keypad ? 'pointer' : 'default', padding: '10% 10% 4%', position: 'relative', top: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transition: 'top .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
+              <span style={{ position: 'absolute', top: '8%', left: '10%', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.8)', opacity: keypad ? 1 : 0, transition: `opacity .6s ease ${keypad ? 0.25 + i * 0.03 : 0}s` }}>{d}</span>
+              <img className="bk-set" src={keyCup(d)} alt=""
+                style={{ width: '82%', height: '78%', objectFit: 'contain', objectPosition: 'bottom', filter: 'drop-shadow(0 3px 3px rgba(40,22,10,0.35))', animationDelay: `${0.25 + i * 0.07}s` }} />
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+
+  const dots = (
+    <div className="bk-fade" style={{ display: 'flex', gap: 14, justifyContent: 'center' }} aria-live="polite" aria-label={`${currentCode.length} of 6 digits`}>
+      {Array.from({ length: 6 }, (_, i) => (
+        <div key={i} style={{
+          width: 10, height: 10, borderRadius: 999,
+          background: i < currentCode.length ? (error ? '#A0563F' : '#1F1B17') : 'transparent',
+          boxShadow: `inset 0 0 0 1.5px ${error ? '#A0563F' : i < currentCode.length ? '#1F1B17' : '#CFC6B8'}`,
+          transition: 'background .25s ease, box-shadow .25s ease',
+        }} />
+      ))}
+    </div>
+  );
+
+  // A little paper card under the cubby, like the label on a shelf.
+  const nameCard = (
+    <div className="bk-card" style={{ alignSelf: 'center', width: '100%', maxWidth: 300, background: '#FBF8F1', borderRadius: 4, padding: '18px 20px 20px', boxShadow: '0 1px 0 #E2DACB, 0 10px 24px rgba(45,28,16,0.10)', transform: 'rotate(-0.6deg)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9A8E82' }}>{isSetup ? 'New shelf for' : 'This shelf belongs to'}</span>
       {isSetup && (
         <input className="auth-input" type="text" placeholder="Your name" aria-label="Your name" value={name}
           onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
       )}
-      <input className="auth-input" type="email" placeholder="Email" aria-label="Email" value={email}
+      <input className="auth-input" type="email" placeholder="you@email.com" aria-label="Email" value={email} autoComplete="email"
         onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
-      <button type="button" className="bk-btn" style={{ marginTop: 20 }} onClick={handleEmailSubmit}>Continue</button>
-    </div>
-  );
-
-  // Passcode keypad: your cups on three walnut shelves. Each tap clinks.
-  const renderPasscodeStep = () => (
-    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-      <div style={{ display: 'flex', gap: 14, justifyContent: 'center' }} aria-live="polite" aria-label={`${currentCode.length} of 6 digits`}>
-        {Array.from({ length: 6 }, (_, i) => (
-          <div key={i} style={{
-            width: 10, height: 10, borderRadius: 999,
-            background: i < currentCode.length ? (error ? '#A0563F' : '#1F1B17') : 'transparent',
-            boxShadow: `inset 0 0 0 1.5px ${error ? '#A0563F' : i < currentCode.length ? '#1F1B17' : '#CFC6B8'}`,
-            transition: 'background .25s ease, box-shadow .25s ease',
-          }} />
-        ))}
-      </div>
-      {/* Passcode keypad: your cups in the wooden cubby, one per number. */}
-      <div style={{ position: 'relative', width: '100%', maxWidth: 300, alignSelf: 'center', filter: 'drop-shadow(0 14px 22px rgba(45,28,16,0.18))' }}>
-        <img src={typeof CUBBY_IMG === 'string' ? CUBBY_IMG : CUBBY_IMG?.default} alt="" style={{ display: 'block', width: '100%', height: 'auto' }} />
-        <div style={{ position: 'absolute', top: '3.5%', left: '4%', right: '4%', bottom: '3%', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gridTemplateRows: 'repeat(4, 1fr)', gap: '3% 2.5%' }}>
-          {KEYS.map((d, i) =>
-            d === '' ? <span key={i} /> : d === 'del' ? (
-              <button key={i} type="button" onClick={() => { playTap(); handleDelete(); }} aria-label="Delete"
-                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: 'rgba(255,255,255,0.85)', fontSize: 13, fontFamily: 'inherit' }}>
-                Delete
-              </button>
-            ) : (
-              <button key={i} type="button" className="bk-key" aria-label={d}
-                onClick={() => { playClink(d); handleDigit(d); }}
-                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '10% 10% 4%', position: 'relative', top: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transition: 'top .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
-                <span style={{ position: 'absolute', top: '8%', left: '10%', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.8)' }}>{d}</span>
-                <img src={keyCup(d)} alt="" style={{ width: '82%', height: '78%', objectFit: 'contain', objectPosition: 'bottom', filter: 'drop-shadow(0 3px 3px rgba(40,22,10,0.35))' }} />
-              </button>
-            )
-          )}
-        </div>
-      </div>
-      {!isLockScreen && (
-        <button type="button" style={linkStyle} onClick={() => {
-          setAuthStep('email'); setPasscode(''); setConfirmPasscode(''); setIsConfirming(false); setError('');
-        }}>Back to email</button>
-      )}
     </div>
   );
 
   return (
     <div className="bk-root" style={{ position: 'fixed', inset: 0, overflowY: 'auto' }}>
       <style>{`.bk-key:active { top: 3px; transition-duration: .15s; }
-        .auth-input::placeholder { color: #A89E92; }`}</style>
-      <div style={{ maxWidth: 340, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '72px 24px 40px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 32 }}>
+        .auth-input::placeholder { color: #B5ACA0; }
+        @keyframes bkSet { from { opacity: 0; transform: translateY(-14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
+        .bk-set { animation: bkSet .9s cubic-bezier(0.16,0.9,0.4,1) backwards; }
+        @keyframes bkCard { from { opacity: 0; transform: translateY(10px) rotate(-0.6deg); filter: blur(6px); } to { opacity: 1; transform: rotate(-0.6deg); filter: none; } }
+        .bk-card { animation: bkCard .8s cubic-bezier(0.16,0.9,0.4,1) .9s backwards; }
+        .bk-fade { animation: bkFade .6s ease .3s backwards; }
+        @media (prefers-reduced-motion: reduce) { .bk-set, .bk-card, .bk-fade { animation: none; } }`}</style>
+      <div style={{ maxWidth: 340, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '64px 24px 40px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28 }}>
         <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>Buckets</span>
           <span style={{ fontSize: 15, color: '#75695F', minHeight: 20 }}>{statusText}</span>
           {error !== '' && <span key={error} className="bk-step" style={{ fontSize: 14, color: '#A0563F' }}>{error}</span>}
         </div>
 
-        {isLockScreen ? renderPasscodeStep() : authStep === 'email' ? renderEmailStep() : renderPasscodeStep()}
+        {keypad && dots}
+        {cubby}
 
-        {!checkingSetup && !isLockScreen && authStep === 'email' && (
-          <button type="button" style={{ ...linkStyle, alignSelf: 'flex-start' }} onClick={() => {
-            setIsSetup(!isSetup); setIsConfirming(false); setPasscode(''); setConfirmPasscode(''); setEmail(''); setName(''); setError('');
-          }}>
-            {isSetup ? 'Already have an account? Log in' : 'New here? Sign up'}
-          </button>
+        {!keypad && (
+          <>
+            {nameCard}
+            <button type="button" className="bk-btn bk-fade" style={{ animationDelay: '1.1s' }} onClick={handleEmailSubmit}>Continue</button>
+            {!checkingSetup && (
+              <button type="button" style={{ ...linkStyle, alignSelf: 'center' }} onClick={() => {
+                setIsSetup(!isSetup); setIsConfirming(false); setPasscode(''); setConfirmPasscode(''); setEmail(''); setName(''); setError('');
+              }}>
+                {isSetup ? 'Already have an account? Log in' : 'New here? Sign up'}
+              </button>
+            )}
+          </>
+        )}
+
+        {keypad && !isLockScreen && (
+          <button type="button" style={linkStyle} onClick={() => {
+            setAuthStep('email'); setPasscode(''); setConfirmPasscode(''); setIsConfirming(false); setError('');
+          }}>Back to email</button>
         )}
       </div>
 
