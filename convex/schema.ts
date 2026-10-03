@@ -144,6 +144,39 @@ export default defineSchema({
     .index("by_category", ["userId", "category"])
     .index("by_merchant", ["userId", "merchant"]),
 
+  // Where money sits, grouped by when it can be used: now (cash), soon
+  // (fixed deposits), later (investments, CPF, insurance, property).
+  accounts: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    group: v.union(v.literal("now"), v.literal("soon"), v.literal("later")),
+    order: v.number(),
+    isActive: v.boolean(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // One balance per account per month (filled in the payday check-in).
+  balanceSnapshots: defineTable({
+    userId: v.id("users"),
+    accountId: v.id("accounts"),
+    month: v.string(), // "2026-10"
+    amount: v.number(), // what it's worth now
+    amountIn: v.optional(v.number()), // what went in, for investments
+    updatedAt: v.number(),
+  })
+    .index("by_user_month", ["userId", "month"])
+    .index("by_account_month", ["accountId", "month"]),
+
+  // Cash with a job but not moved anywhere, e.g. "Reno backup". Shown as
+  // saved, never as yours-to-spend.
+  earmarks: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    amount: v.number(),
+    goalBucketId: v.optional(v.id("buckets")),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // Learned filing rules: one per merchant key (see convex/lib/merchantKey.ts).
   // bucketId set = file into that cup; ignore = not spending (card bills,
   // transfers between my own accounts).
