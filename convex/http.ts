@@ -55,6 +55,12 @@ const importEmail = httpAction(async (ctx, request) => {
       receivedAt: e.receivedAt,
     };
     const parsed = parseBankEmail(raw);
+    // Heads-up emails (e.g. "upcoming recurring transfer") aren't transactions;
+    // the real alert arrives when the money moves.
+    if (parsed.skip) {
+      results.push({ status: "skipped_notice" });
+      continue;
+    }
     const dedupeKey = dedupeKeyFor(e.messageId, parsed);
     const rawSource = e.body.slice(0, 4000); // cap stored raw text
 

@@ -19,6 +19,9 @@ export type ParsedTxn = {
   merchant?: string; // merchant or transaction description (used as the note)
   date: number; // ms timestamp
   last4?: string; // card last-4, when the alert exposes it
+  // A heads-up, not a transaction (e.g. OCBC's "upcoming recurring transfer"
+  // reminder). The real alert follows when the money moves, so skip these.
+  skip?: boolean;
 };
 
 export type RawEmail = {
@@ -98,7 +101,11 @@ function parseDate(text: string, fallback?: number): number {
 
 function clean(s: string | undefined): string | undefined {
   if (!s) return undefined;
-  const out = s.replace(/\s+/g, " ").replace(/[.\s]+$/, "").trim();
+  let out = s.replace(/\s+/g, " ").replace(/[.\s]+$/, "").trim();
+  // Masked PayNow names arrive cut off mid-bracket ("TAN AH KOW (TAN").
+  // Drop an unclosed trailing bracket rather than keep half of it.
+  const open = out.lastIndexOf("(");
+  if (open > 0 && out.indexOf(")", open) === -1) out = out.slice(0, open).trim();
   return out.length ? out : undefined;
 }
 
@@ -134,14 +141,18 @@ function parseDbs(text: string): Omit<ParsedTxn, "bank"> | null {
     (text.match(/From:\s*([A-Za-z][A-Za-z .'\-]{1,40}?)\s+To:/) || [])[1]
   );
   const sentTo = clean(
-    (text.match(/(?:paid|sent) to ([A-Za-z0-9 &'._\-]{2,40}?)(?: using| on|\.)/i) ||
+    (text.match(/(?:paid|sent) to ([A-Za-z0-9 &'._\-]{2,40}?)(?: using| on| via|\.)/i) ||
+      [])[1]
+  );
+  const toField = clean(
+    (text.match(/\bTo:\s*([A-Za-z0-9][A-Za-z0-9 &'._\-]{1,40}?)\s+(?:If |Didn|Please|Thank|$)/) ||
       [])[1]
   );
   return {
     direction,
     amount: amt.amount,
     currency: amt.currency,
-    merchant: direction === "in" ? payer : sentTo,
+    merchant: direction === "in" ? payer : sentTo ?? toField,
     date: parseDate(text),
     last4: last4From(text),
   };
@@ -152,9 +163,41 @@ function parseDbs(text: string): Omit<ParsedTxn, "bank"> | null {
 function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
   const amt = findAmount(text);
   if (!amt) return null;
+
+  // "To account : House (-222222) at UNITED OVERSEAS BANK LTD" -> "House"
+  const toAccount = clean(
+    (text.match(/To account\s*:\s*(.+?)\s*\(-?\d+\)/i) || [])[1]
+  );
+
+  // Reminder ahead of a scheduled transfer: not a transaction itself.
+  if (/upcoming recurring funds transfer|we will make the following transfer/i.test(text)) {
+    return {
+      direction: "out",
+      amount: amt.amount,
+      currency: amt.currency,
+      merchant: toAccount,
+      date: parseDate(text),
+      skip: true,
+    };
+  }
+
+  // "We have received your request to make the following transfer" is money
+  // OUT; the word "received" here must not flip it to income.
+  if (/funds transfer request|make the following transfer/i.test(text)) {
+    return {
+      direction: "out",
+      amount: amt.amount,
+      currency: amt.currency,
+      merchant: toAccount,
+      date: parseDate(text),
+    };
+  }
+
   const direction = detectDirection(text);
   const sentTo = clean(
-    (text.match(/sent to ([A-Za-z0-9 &'._\-]{2,40}?)(?: using| on|\.)/i) || [])[1]
+    (text.match(
+      /(?:sent to|transfer has been made to|sent money to) ([A-Za-z0-9 &'._\-()]{2,60}?)(?: using| on|\.)/i
+    ) || [])[1]
   );
   const receivedFrom = clean(
     (text.match(/received .*?from ([A-Za-z0-9 &'._\-]{2,40}?)(?: using| on|\.)/i) ||
@@ -187,7 +230,7 @@ function parseHsbc(text: string): Omit<ParsedTxn, "bank"> | null {
   if (!amt) return null;
   const description = clean(
     (text.match(
-      /Description\s+([A-Za-z0-9 ,&'._\/\-]+?)\s+(?:You can also|Yours|$)/i
+      /Description\s+([A-Za-z0-9 ,&'._\/\-*#+]+?)\s+(?:You can also|Yours|$)/i
     ) || [])[1]
   );
   return {
@@ -272,6 +315,7 @@ export function parseBankEmail(email: RawEmail): ParsedTxn {
   }
 
   if (parsed && Number.isFinite(parsed.amount) && parsed.amount > 0) {
+    // (parsed.skip, when set, rides along so the caller can drop reminders.)
     // Stamp the date fallback now that we know receivedAt.
     return {
       bank: resolvedBank,
