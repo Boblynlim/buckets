@@ -144,6 +144,18 @@ export default defineSchema({
     .index("by_category", ["userId", "category"])
     .index("by_merchant", ["userId", "merchant"]),
 
+  // Learned filing rules: one per merchant key (see convex/lib/merchantKey.ts).
+  // bucketId set = file into that cup; ignore = not spending (card bills,
+  // transfers between my own accounts).
+  merchantRules: defineTable({
+    userId: v.id("users"),
+    key: v.string(),
+    bucketId: v.optional(v.id("buckets")),
+    ignore: v.optional(v.boolean()),
+    example: v.optional(v.string()), // a raw bank name, for display
+    updatedAt: v.number(),
+  }).index("by_user_key", ["userId", "key"]),
+
   // Parsed bank-alert emails awaiting user review before becoming real expenses.
   // Populated by the /import-email HTTP action; drained by the in-app review queue.
   pendingTransactions: defineTable({
@@ -167,6 +179,9 @@ export default defineSchema({
     // Message-ID when available, else a hash of (bank, amount, date, merchant).
     dedupeKey: v.string(),
     rawSource: v.optional(v.string()), // original email text, for re-parsing/debugging
+    // True when a learned merchant rule filed (or dismissed) this row without
+    // asking. Shown in the payday check-in's "Filed for you" list.
+    autoFiled: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

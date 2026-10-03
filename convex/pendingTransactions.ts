@@ -6,6 +6,7 @@ import {
 } from "./_generated/server";
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
+import { learn, autoFile } from "./merchantRules";
 
 /**
  * Resolve which user imported transactions belong to.
@@ -79,7 +80,10 @@ export const ingest = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
-    return { status: "created" as const, id };
+    // File it straight away if this merchant has been filed before.
+    const row = await ctx.db.get(id);
+    const filed = row ? await autoFile(ctx, row) : "asked";
+    return { status: filed === "asked" ? ("created" as const) : (filed as "filed" | "ignored"), id };
   },
 });
 
@@ -265,6 +269,8 @@ export const confirm = mutation({
       confirmedExpenseId: expenseId,
       updatedAt: Date.now(),
     });
+    // One filing is enough: next time this merchant files itself.
+    await learn(ctx, pending.userId, pending.merchant, { bucketId: args.bucketId });
     return expenseId;
   },
 });
