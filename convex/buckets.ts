@@ -120,7 +120,7 @@ export const getByUser = query({
           if (args.monthStart !== undefined && args.monthEnd !== undefined) {
             const allExpenses = await expensesQuery.collect();
             const filteredExpenses = allExpenses.filter(
-              e => e.date >= args.monthStart! && e.date <= args.monthEnd!
+              e => !e.superseded && e.date >= args.monthStart! && e.date <= args.monthEnd!
             );
             const spentAmount = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
@@ -131,7 +131,7 @@ export const getByUser = query({
             };
           } else {
             // No month filter - get all expenses
-            const expenses = await expensesQuery.collect();
+            const expenses = (await expensesQuery.collect()).filter(e => !e.superseded);
             const spentAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
 
             return {

@@ -1,0 +1,130 @@
+import { v } from "convex/values";
+import { internalMutation, query } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
+
+// One clean, read-only spending history across the old sheet, the app and
+// bank emails, labelled with today's cups.
+
+/**
+ * One-off: import the old money sheet. Rows arrive at run time (none of the
+ * data lives in the repo). For months the sheet covers, app-logged expenses
+ * are marked superseded (kept, never counted). Idempotent via importKey.
+ */
+export const importSheet = internalMutation({
+  args: {
+    userId: v.id("users"),
+    dryRun: v.boolean(),
+    sheetMonths: v.array(v.string()), // "2025-08", ...
+    rows: v.array(
+      v.object({
+        date: v.number(),
+        item: v.string(),
+        amount: v.number(),
+        cup: v.string(), // target cup name; a retired cup is created if missing
+        oneOff: v.optional(v.boolean()),
+      })
+    ),
+    incomes: v.array(v.object({ month: v.string(), amount: v.number(), note: v.string() })),
+  },
+  handler: async (ctx, { userId, dryRun, sheetMonths, rows, incomes }) => {
+    const log: string[] = [];
+    const buckets = await ctx.db.query("buckets").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const cupId = new Map<string, Id<"buckets">>();
+    for (const b of buckets) if (b.isActive || !cupId.has(b.name)) cupId.set(b.name, b._id);
+
+    // Retired cups for history-only labels (e.g. "Wedding").
+    for (const name of new Set(rows.map((r) => r.cup))) {
+      if (cupId.has(name)) continue;
+      log.push(`retired cup for history: "${name}"`);
+      if (!dryRun) {
+        cupId.set(
+          name,
+          await ctx.db.insert("buckets", {
+            userId, name, bucketMode: "spend", allocationType: "amount", plannedAmount: 0,
+            alertThreshold: 20, color: "#A89E92", createdAt: Date.now(), isActive: false,
+          })
+        );
+      }
+    }
+
+    const monthOf = (t: number) => new Date(t).toISOString().slice(0, 7);
+    const existing = await ctx.db.query("expenses").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const seen = new Set(existing.map((e) => e.importKey).filter(Boolean));
+
+    // Supersede app rows in sheet months.
+    let superseded = 0;
+    for (const e of existing) {
+      if (e.source === "sheet" || e.superseded || !sheetMonths.includes(monthOf(e.date))) continue;
+      superseded++;
+      if (!dryRun) await ctx.db.patch(e._id, { superseded: true });
+    }
+    log.push(`${superseded} app-logged expenses in sheet months marked superseded (kept, not counted)`);
+
+    let added = 0, oneOffs = 0;
+    const perCup = new Map<string, number>();
+    for (const [i, r] of rows.entries()) {
+      const key = `sheet:${new Date(r.date).toISOString().slice(0, 10)}:${r.amount}:${r.item.toLowerCase()}:${i}`;
+      if (seen.has(key)) continue;
+      added++;
+      if (r.oneOff) oneOffs++;
+      perCup.set(r.cup, (perCup.get(r.cup) ?? 0) + r.amount);
+      if (!dryRun) {
+        await ctx.db.insert("expenses", {
+          userId,
+          bucketId: cupId.get(r.cup)!,
+          amount: r.amount,
+          date: r.date,
+          note: r.item,
+          source: "sheet",
+          importKey: key,
+          oneOff: r.oneOff || undefined,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        });
+      }
+    }
+    log.push(`${added} sheet expenses (${oneOffs} one-offs)`);
+    for (const [cup, total] of [...perCup.entries()].sort((a, b) => b[1] - a[1])) log.push(`  ${cup}: $${Math.round(total)}`);
+
+    // Income per month from the sheet replaces whatever was recorded.
+    for (const inc of incomes) {
+      const rowsThere = await ctx.db
+        .query("monthlyIncome")
+        .withIndex("by_user_month", (q) => q.eq("userId", userId).eq("month", inc.month))
+        .collect();
+      const had = rowsThere.reduce((s, r) => s + r.amount, 0);
+      log.push(`income ${inc.month}: $${Math.round(had)} -> $${Math.round(inc.amount)}`);
+      if (!dryRun) {
+        for (const r of rowsThere) await ctx.db.delete(r._id);
+        await ctx.db.insert("monthlyIncome", {
+          userId, month: inc.month, amount: inc.amount, note: inc.note, isConfirmed: true, confirmedAt: Date.now(),
+        });
+      }
+    }
+    return { dryRun, changes: log };
+  },
+});
+
+/** Spending per cup per month (one-offs split out), for "this year vs last". */
+export const spendingByMonth = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const buckets = await ctx.db.query("buckets").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const name = new Map(buckets.map((b) => [b._id, b.name]));
+    const expenses = await ctx.db.query("expenses").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const out: Record<string, { cups: Record<string, number>; oneOffs: number; total: number }> = {};
+    for (const e of expenses) {
+      if (e.superseded || e.isAutoGenerated) continue;
+      const m = new Date(e.date).toISOString().slice(0, 7);
+      const row = (out[m] ??= { cups: {}, oneOffs: 0, total: 0 });
+      if (e.oneOff) {
+        row.oneOffs += e.amount;
+        continue;
+      }
+      const cup = name.get(e.bucketId) ?? "Other";
+      row.cups[cup] = (row.cups[cup] ?? 0) + e.amount;
+      row.total += e.amount;
+    }
+    return Object.entries(out).sort(([a], [b]) => a.localeCompare(b)).map(([month, v]) => ({ month, ...v }));
+  },
+});

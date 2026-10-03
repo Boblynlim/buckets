@@ -136,6 +136,15 @@ export default defineSchema({
     // same (bucket, month) because the user-overridden row is already the
     // payment of record.
     userOverridden: v.optional(v.boolean()),
+    // History import (Oct 2026 replan). source "sheet" rows come from the old
+    // money spreadsheet; importKey makes the import idempotent.
+    source: v.optional(v.string()),
+    importKey: v.optional(v.string()),
+    // A big one-off (wedding, a lent sum) left out of averages.
+    oneOff: v.optional(v.boolean()),
+    // An app-logged row replaced by the sheet for the same month. Kept, not
+    // deleted, but never counted.
+    superseded: v.optional(v.boolean()),
   })
     .index("by_user", ["userId"])
     .index("by_bucket", ["bucketId"])

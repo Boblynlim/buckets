@@ -23,6 +23,7 @@ import type * as expenses from "../expenses.js";
 import type * as freshStart from "../freshStart.js";
 import type * as groups from "../groups.js";
 import type * as growthLetters from "../growthLetters.js";
+import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as importRepair from "../importRepair.js";
 import type * as lib_bucketMath from "../lib/bucketMath.js";
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   freshStart: typeof freshStart;
   groups: typeof groups;
   growthLetters: typeof growthLetters;
+  history: typeof history;
   http: typeof http;
   importRepair: typeof importRepair;
   "lib/bucketMath": typeof lib_bucketMath;
