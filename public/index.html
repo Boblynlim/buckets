@@ -8,7 +8,7 @@
 
     <!-- PWA Configuration -->
     <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#E8E0D0" />
+    <meta name="theme-color" content="#F3F0EA" />
 
     <!-- iOS PWA Support -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -26,7 +26,7 @@
     <!-- Space Mono Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet" />
 
     <style>
       @font-face {
@@ -107,7 +107,7 @@
 
       html {
         min-height: calc(100% + env(safe-area-inset-top));
-        background: #E8E0D0 url('/wall.jpg') center / cover no-repeat fixed;
+        background: #F3F0EA;
       }
 
       html, body, #root {
@@ -117,7 +117,8 @@
       }
 
       body {
-        font-family: 'Merchant', 'Space Mono', sans-serif;
+        font-family: 'Schibsted Grotesk', system-ui, sans-serif;
+        color: #1F1B17;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
         background: transparent;
@@ -129,17 +130,17 @@
       }
 
       ::-webkit-scrollbar-track {
-        background: rgba(92, 138, 122, 0.04);
+        background: transparent;
         border-radius: 10px;
       }
 
       ::-webkit-scrollbar-thumb {
-        background: rgba(92, 138, 122, 0.15);
+        background: rgba(31, 27, 23, 0.12);
         border-radius: 10px;
       }
 
       ::-webkit-scrollbar-thumb:hover {
-        background: rgba(92, 138, 122, 0.25);
+        background: rgba(31, 27, 23, 0.22);
       }
 
       /* Animations */

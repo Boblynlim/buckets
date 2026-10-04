@@ -3,8 +3,7 @@ import { Platform } from 'react-native';
 // Font family helper for cross-platform consistency
 export const getFontFamily = (weight: 'regular' | 'bold' = 'regular', italic: boolean = false) => {
   if (Platform.OS === 'web') {
-    // Web uses Google Fonts Space Mono
-    return 'Space Mono, monospace';
+    return "'Schibsted Grotesk', system-ui, sans-serif";
   }
 
   // Native platforms use linked fonts

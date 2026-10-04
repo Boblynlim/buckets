@@ -60,6 +60,16 @@ export const HOME_CSS = `
   font-weight: 500; height: 56px; border-radius: 999px; width: 100%; transition: background .3s ease; }
 .bk-root .bk-btn:hover { background: #000; }
 .bk-btn:disabled { opacity: .4; cursor: default; }
+.bk-nav { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 1000;
+  display: flex; justify-content: space-between; align-items: center; max-width: 440px; margin: 0 auto; padding: 0 20px; box-sizing: border-box; pointer-events: none; }
+.bk-nav > * { pointer-events: auto; }
+.bk-nav-pill { display: flex; gap: 4px; padding: 6px; border-radius: 999px; background: rgba(31,27,23,0.82);
+  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 8px 24px rgba(31,27,23,0.18); }
+.bk-nav button { appearance: none; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #F3F0EA; }
+.bk-nav-pill button { width: 44px; height: 44px; border-radius: 999px; background: transparent; opacity: .6; transition: opacity .3s ease, background .3s ease; }
+.bk-nav-pill button.on { opacity: 1; background: rgba(243,240,234,0.14); }
+.bk-nav-add { width: 56px; height: 56px; border-radius: 999px; background: rgba(31,27,23,0.82);
+  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 8px 24px rgba(31,27,23,0.18); }
 @keyframes bkSheetIn { from { opacity: 0; transform: translateY(24px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes bkFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bkStep { from { opacity: 0; transform: translateY(16px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }

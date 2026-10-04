@@ -409,84 +409,23 @@ function App() {
       <View style={styles.container}>
         <View style={styles.content}>{renderScreen()}</View>
 
-        {/* Bottom Navigation - Left pill with icons only */}
+        {/* Bottom bar: Home, Settings, and + to log something by hand. */}
         {!showCheckin && (
-          <View style={styles.navContainer}>
-          <div style={{
-            display: 'flex',
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            height: 56,
-            paddingLeft: 8,
-            paddingRight: 8,
-            borderRadius: 28,
-            background: 'rgba(31, 27, 23, 0.78)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-            border: '1px solid rgba(255, 255, 255, 0.18)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-          }}>
-            <TouchableOpacity
-              style={styles.tab}
-              onPress={() => setCurrentScreen('buckets')}
-            >
-              <View
-                style={[
-                  styles.iconWrapper,
-                  currentScreen === 'buckets' && styles.tabActive,
-                ]}
-              >
-                <PaintBucket
-                  size={22}
-                  color="#FFFFFF"
-                  strokeWidth={1.5}
-                  style={{ opacity: currentScreen === 'buckets' ? 1 : 0.7 }}
-                />
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.tab}
-              onPress={() => setCurrentScreen('settings')}
-            >
-              <View
-                style={[
-                  styles.iconWrapper,
-                  currentScreen === 'settings' && styles.tabActive,
-                ]}
-              >
-                <SettingsIcon
-                  size={22}
-                  color="#FFFFFF"
-                  strokeWidth={1.5}
-                  style={{ opacity: currentScreen === 'settings' ? 1 : 0.7 }}
-                />
-              </View>
-            </TouchableOpacity>
-          </div>
-
-          {/* Two Circular Action Buttons on the right */}
-          <View style={styles.actionButtons}>
-            <div style={{
-              width: 56,
-              height: 56,
-              borderRadius: 28,
-              background: 'rgba(31, 27, 23, 0.78)',
-              backdropFilter: 'blur(24px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-              border: '1px solid rgba(255, 255, 255, 0.18)',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }} onClick={() => setShowAddExpense(true)}>
-              <Plus size={24} color="#FFFFFF" strokeWidth={1.5} />
+          <nav className="bk-nav" aria-label="Main">
+            <div className="bk-nav-pill">
+              <button type="button" aria-label="Home" aria-current={currentScreen === 'buckets' ? 'page' : undefined}
+                className={currentScreen === 'buckets' ? 'on' : ''} onClick={() => setCurrentScreen('buckets')}>
+                <PaintBucket size={20} strokeWidth={1.6} />
+              </button>
+              <button type="button" aria-label="Settings" aria-current={currentScreen !== 'buckets' ? 'page' : undefined}
+                className={currentScreen !== 'buckets' ? 'on' : ''} onClick={() => setCurrentScreen('settings')}>
+                <SettingsIcon size={20} strokeWidth={1.6} />
+              </button>
             </div>
-
-          </View>
-        </View>
+            <button type="button" className="bk-nav-add" aria-label="Add a spend" onClick={() => setShowAddExpense(true)}>
+              <Plus size={22} strokeWidth={1.6} />
+            </button>
+          </nav>
         )}
 
         {/* Add Bucket Modal */}
