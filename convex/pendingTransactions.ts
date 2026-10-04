@@ -74,6 +74,7 @@ export const ingest = internalMutation({
     last4: v.optional(v.string()),
     dedupeKey: v.string(),
     rawSource: v.optional(v.string()),
+    direction: v.optional(v.union(v.literal("in"), v.literal("out"))),
   },
   handler: async (ctx, args) => {
     const userId = await resolveImportUserId(ctx);
@@ -96,7 +97,7 @@ export const ingest = internalMutation({
     const id = await ctx.db.insert("pendingTransactions", {
       userId: userId as any,
       bank: args.bank,
-      direction: "out",
+      direction: args.direction ?? "out",
       amount: args.amount,
       currency: args.currency,
       merchant: args.merchant,

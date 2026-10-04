@@ -64,8 +64,24 @@ const importEmail = httpAction(async (ctx, request) => {
     const dedupeKey = dedupeKeyFor(e.messageId, parsed);
     const rawSource = e.body.slice(0, 4000); // cap stored raw text
 
-    // Money received (PayNow in, refunds) isn't a spend — capture it as income
-    // straight away rather than queueing it as an expense.
+    // Money in. Pay (a large deposit, e.g. the monthly salary via Wise) is
+    // income straight away. Anything smaller (insurance refunds, friends
+    // paying back) goes to the queue to ask: money in, or not spending.
+    if (parsed.direction === "in" && parsed.amount < 3000) {
+      const res = await ctx.runMutation(internal.pendingTransactions.ingest, {
+        bank: parsed.bank,
+        amount: parsed.amount,
+        currency: parsed.currency,
+        merchant: parsed.merchant,
+        date: parsed.date,
+        last4: parsed.last4,
+        dedupeKey,
+        rawSource,
+        direction: "in",
+      });
+      results.push({ status: res.status });
+      continue;
+    }
     if (parsed.direction === "in") {
       const res = await ctx.runMutation(
         internal.pendingTransactions.ingestIncome,

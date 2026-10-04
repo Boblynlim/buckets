@@ -48,9 +48,11 @@ export async function autoFile(
   ctx: MutationCtx,
   row: Doc<"pendingTransactions">
 ): Promise<"filed" | "ignored" | "asked"> {
-  if (row.status !== "pending" || (row.direction ?? "out") !== "out") return "asked";
+  if (row.status !== "pending") return "asked";
   const rule = await ruleFor(ctx, row.userId, row.merchant);
   if (!rule) return "asked";
+  // Money in only ever matches a "not spending" rule (e.g. an insurer's refunds).
+  if ((row.direction ?? "out") === "in" && !rule.ignore) return "asked";
   const now = Date.now();
   if (rule.ignore) {
     await ctx.db.patch(row._id, { status: "dismissed", autoFiled: true, updatedAt: now });
