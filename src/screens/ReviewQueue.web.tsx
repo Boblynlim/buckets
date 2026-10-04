@@ -154,6 +154,7 @@ export function ReviewQueue({ onBack }: Props) {
                   onFile={(cup, memo, amount) => fileTo(row, cup, memo, amount)}
                   onNotSpending={() => leaveOut(row)}
                   onIncome={() => moneyIn(row)}
+                  onPaidBack={(msg: string) => finish(row, async () => {}, msg)}
                   onUnsure={(note?: string, amount?: number) => unsure(row, note, amount)}
                   onRemove={() => removeOne(row)}
                 />
@@ -177,13 +178,61 @@ function SameDay({ pendingId }: { pendingId: any }) {
   );
 }
 
-function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onUnsure, onRemove }: {
+// Money in: what was it? Pay, a refund, or someone paying me back.
+function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncome: () => void; onNotSpending: () => void; onDone: (msg: string) => void }) {
+  const [picking, setPicking] = useState(false);
+  const candidates = useQuery(api.pendingTransactions.paybackCandidates, picking ? { pendingId: row._id } : 'skip');
+  const applyPayback = useMutation(api.pendingTransactions.applyPayback);
+  const opt: React.CSSProperties = { ...PLAIN_BTN, display: 'flex', flexDirection: 'column', gap: 2, padding: '12px 0', minHeight: 56, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` };
+  if (picking) {
+    return (
+      <div className="bk-fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 6 }}>Which spend was this paying back?</span>
+        {candidates === undefined && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>Looking…</span>}
+        {candidates?.length === 0 && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>No spends in the 60 days before this.</span>}
+        {candidates?.map((c: any) => (
+          <button key={c.id} type="button" style={{ ...opt, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+            onClick={async () => {
+              const r = await applyPayback({ pendingId: row._id, expenseId: c.id });
+              onDone(r.removed ? `${c.note} is paid back in full, so it's off ${c.cup}.` : `${moneyExact(row.amount)} taken off ${c.note}. ${moneyExact(r.left)} stays in ${c.cup}.`);
+            }}>
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+              <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.note}</span>
+              <span style={{ fontSize: 13, color: COLORS.muted }}>{new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {c.cup}</span>
+            </span>
+            <span style={{ fontSize: 15, flexShrink: 0 }}>{moneyExact(c.amount)}</span>
+          </button>
+        ))}
+        <button type="button" onClick={() => setPicking(false)} style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44, alignSelf: 'flex-start' }}>Back</button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <button type="button" style={opt} onClick={() => setPicking(true)}>
+        <span style={{ fontSize: 15 }}>Paid back</span>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>Someone paying me back. Takes it off what I spent.</span>
+      </button>
+      <button type="button" style={opt} onClick={onNotSpending}>
+        <span style={{ fontSize: 15 }}>A refund</span>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>Like an insurance claim. Not income. I'll remember {row.merchant ?? 'this sender'}.</span>
+      </button>
+      <button type="button" style={opt} onClick={onIncome}>
+        <span style={{ fontSize: 15 }}>Income</span>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>Pay or other earnings. Counts toward the month it funds.</span>
+      </button>
+    </div>
+  );
+}
+
+function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onUnsure, onRemove, onPaidBack }: {
   row: any; cups: any[]; open: boolean; leaving: boolean;
   onOpen: () => void;
   onFile: (cup: any, memo: string, amount?: number) => void;
   onNotSpending: () => void;
   onIncome: () => void;
   onUnsure: (note?: string, amount?: number) => void;
+  onPaidBack: (msg: string) => void;
   onRemove: () => void;
 }) {
   const [memo, setMemo] = useState('');
@@ -282,6 +331,9 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
         </label>
       </div>
 
+      {isIn ? (
+        <InChoices row={row} onIncome={onIncome} onNotSpending={onNotSpending} onDone={onPaidBack} />
+      ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
         {targets.map((c) => (
           <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : c.id === 'in' ? 'Money in' : `File to ${c.name}`}
@@ -305,12 +357,13 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
           </button>
         ))}
       </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -8 }}>
-        <button type="button" onClick={() => onUnsure(fileMemo(memo).trim() || undefined, editedAmount)}
+        {!isIn && <button type="button" onClick={() => onUnsure(fileMemo(memo).trim() || undefined, editedAmount)}
           style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.ink, minHeight: 44 }}>
           Can't remember
-        </button>
+        </button>}
         <button type="button" onClick={onRemove}
           style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44 }}>
           Remove just this one

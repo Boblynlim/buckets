@@ -385,7 +385,7 @@ function App() {
   const renderScreen = () => {
     switch (currentScreen) {
       case 'buckets':
-        return <Home onOpenCheckin={() => setShowCheckin(true)} onEditExpense={handleEditExpense} />;
+        return <Home onOpenCheckin={() => setShowCheckin(true)} onOpenQueue={() => setCurrentScreen('review')} onEditExpense={handleEditExpense} />;
       case 'settings':
         return (
           <Settings
@@ -398,7 +398,7 @@ function App() {
       case 'review':
         return <ReviewQueue onBack={() => setCurrentScreen('settings')} />;
       default:
-        return <Home onOpenCheckin={() => setShowCheckin(true)} onEditExpense={handleEditExpense} />;
+        return <Home onOpenCheckin={() => setShowCheckin(true)} onOpenQueue={() => setCurrentScreen('review')} onEditExpense={handleEditExpense} />;
     }
   };
 

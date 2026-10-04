@@ -139,7 +139,7 @@ function MonthPicker({ month, thisMonth, onChange }: { month: string; thisMonth:
   );
 }
 
-export function Home({ onOpenCheckin, onEditExpense }: { onOpenCheckin: () => void; onEditExpense?: (expense: any, bucket: any) => void }) {
+export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenCheckin: () => void; onOpenQueue?: () => void; onEditExpense?: (expense: any, bucket: any) => void }) {
   useHomeStyles();
   const { user } = useAuth();
   const thisMonth = currentMonth();
@@ -179,11 +179,18 @@ export function Home({ onOpenCheckin, onEditExpense }: { onOpenCheckin: () => vo
           <span key={month + 'c'} className="bk-step" style={{ fontSize: 15, color: COLORS.muted }}>{past ? `spent from your cups in ${monthLabel(month)}` : 'yours to spend this month'}</span>
         </section>
 
-        {!past && data.pendingCount > 0 && (
+        {!past && data.pendingCount - (data.moneyInCount ?? 0) > 0 && (
           <button type="button" className="bk-row" onClick={onOpenCheckin}
             style={{ appearance: 'none', border: 0, background: '#FFFFFF', borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15 }}>
-            <span>{data.pendingCount} to file</span>
+            <span>{data.pendingCount - (data.moneyInCount ?? 0)} to file</span>
             <span style={{ color: COLORS.muted, fontSize: 13 }}>Open check-in</span>
+          </button>
+        )}
+        {!past && (data.moneyInCount ?? 0) > 0 && onOpenQueue && (
+          <button type="button" className="bk-row" onClick={onOpenQueue}
+            style={{ appearance: 'none', border: 0, background: '#FFFFFF', borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, marginTop: -32 }}>
+            <span>{data.moneyInCount} money in to sort</span>
+            <span style={{ color: COLORS.muted, fontSize: 13 }}>Paid back, refund or income</span>
           </button>
         )}
 

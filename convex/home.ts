@@ -87,7 +87,8 @@ export const summary = query({
       earmarks: earmarks.map((e) => ({ name: e.name, amount: e.amount, goalBucketId: e.goalBucketId })),
       netWorth,
       accountsCount: accounts.filter((a) => a.isActive).length,
-      pendingCount: pending.filter((p) => (p.direction ?? "out") === "out").length,
+      pendingCount: pending.length,
+      moneyInCount: pending.filter((p) => p.direction === "in").length,
       prevMonth: prevMonth(month),
     };
   },
