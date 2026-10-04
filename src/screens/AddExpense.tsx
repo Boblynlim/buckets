@@ -3,7 +3,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { DatePicker } from '../components/DatePicker';
-import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
+import { COLORS, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
 
 // Add a spend by hand. Same feel as the check-in's "Which cup?" step:
 // amount, what it was, when, then tap a cup. Only spendable cups are offered
@@ -227,11 +227,11 @@ export function ExpenseSheet({
             <span style={{ fontSize: 13, color: COLORS.rust, textAlign: 'center' }}>{error}</span>
           ) : cup && over > 0 ? (
             <span className="bk-step" style={{ fontSize: 13, color: COLORS.muted, textAlign: 'center' }}>
-              {money(over)} more than {cup.name} has left. It carries into next month.
+              {moneyExact(over)} more than {cup.name} has left. It carries into next month.
             </span>
           ) : null}
           <button type="button" className="bk-btn" disabled={!valid || saving} onClick={save}>
-            {saving ? 'Saving' : cup && value > 0 ? `${saveLabel} ${money(value)} to ${cup.name}` : saveLabel}
+            {saving ? 'Saving' : cup && value > 0 ? `${saveLabel} ${moneyExact(value)} to ${cup.name}` : saveLabel}
           </button>
         </div>
       </div>

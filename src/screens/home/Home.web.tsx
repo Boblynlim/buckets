@@ -75,18 +75,77 @@ function Bar({ pct, color = COLORS.ink }: { pct: number; color?: string }) {
   );
 }
 
+const FIRST_MONTH = '2025-08'; // the money sheet starts here
+
+function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  let [y, m] = from.split('-').map(Number);
+  const [ty, tm] = to.split('-').map(Number);
+  while (y < ty || (y === ty && m <= tm)) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`);
+    m += 1;
+    if (m === 13) { m = 1; y += 1; }
+  }
+  return out;
+}
+
+const shortMonth = (mm: string) => new Date(Number(mm.slice(0, 4)), Number(mm.slice(5)) - 1, 1).toLocaleString('en-GB', { month: 'short' });
+
+// A quiet pill with the month. Tap it and a strip of months slides open; an
+// ink highlight glides to the one you pick, then the strip folds away.
+function MonthPicker({ month, thisMonth, onChange }: { month: string; thisMonth: string; onChange: (m: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const stripRef = React.useRef<HTMLDivElement>(null);
+  const chipRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const [ind, setInd] = useState<{ left: number; width: number } | null>(null);
+  const months = monthsBetween(FIRST_MONTH, thisMonth);
+  const year = month.slice(0, 4) !== thisMonth.slice(0, 4) ? ` ${month.slice(0, 4)}` : '';
+
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    const el = chipRefs.current[month];
+    const strip = stripRef.current;
+    if (!el || !strip) return;
+    setInd({ left: el.offsetLeft, width: el.offsetWidth });
+    strip.scrollTo({ left: el.offsetLeft - strip.clientWidth / 2 + el.offsetWidth / 2, behavior: ind ? 'smooth' : 'auto' });
+  }, [open, month]);
+
+  const pick = (m: string) => {
+    onChange(m);
+    setTimeout(() => setOpen(false), 420);
+  };
+
+  return (
+    <div style={{ position: 'relative', height: 40, display: 'flex', alignItems: 'center' }}>
+      {!open ? (
+        <button type="button" className="bk-month-pill bk-fade-in" onClick={() => { setInd(null); setOpen(true); }} aria-expanded={false} aria-label={`Showing ${monthLabel(month)}${year}. Change month`}>
+          {monthLabel(month)}{year}
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 4l2.5 2.5L7.5 4" /></svg>
+        </button>
+      ) : (
+        <div ref={stripRef} className="bk-month-strip bk-scroll bk-fade-in" role="listbox" aria-label="Choose a month">
+          {ind && <span className="bk-month-ind" style={{ left: ind.left, width: ind.width }} />}
+          {months.map((mm) => (
+            <button key={mm} type="button" role="option" aria-selected={mm === month}
+              ref={(el) => { chipRefs.current[mm] = el; }}
+              className={mm === month ? 'on' : ''} onClick={() => pick(mm)}>
+              {mm === thisMonth ? 'Now' : shortMonth(mm)}
+              {mm.slice(5) === '01' || mm === FIRST_MONTH ? <span className="yr">{mm.slice(2, 4)}</span> : null}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Home({ onOpenCheckin, onEditExpense }: { onOpenCheckin: () => void; onEditExpense?: (expense: any, bucket: any) => void }) {
   useHomeStyles();
   const { user } = useAuth();
   const thisMonth = currentMonth();
   const [month, setMonth] = useState(thisMonth);
   const past = month !== thisMonth;
-  const step = (d: number) => {
-    const [y, m] = month.split('-').map(Number);
-    const t = new Date(y, m - 1 + d, 1);
-    const next = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
-    if (next <= thisMonth) setMonth(next);
-  };
+
   const fresh = useQuery(api.home.summary, user ? { userId: user._id, month } : 'skip');
   // Keep showing the last month while the next one loads (no blank flash).
   const [last, setLast] = useState<typeof fresh>(undefined);
@@ -113,33 +172,11 @@ export function Home({ onOpenCheckin, onEditExpense }: { onOpenCheckin: () => vo
     <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
       <div style={{ maxWidth: 440, margin: '0 auto', padding: '64px 24px 140px', display: 'flex', flexDirection: 'column', gap: 44 }}>
         <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {/* Tap the month to step back; arrows move either way. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginLeft: -10 }}>
-            <button type="button" onClick={() => step(-1)} aria-label="Previous month"
-              style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: COLORS.muted }}>
-              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3L5 7l4 4" /></svg>
-            </button>
-            <button type="button" onClick={() => step(-1)} aria-label={`${monthLabel(month)}. Tap for the month before`}
-              style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontSize: 14, color: COLORS.muted, padding: '8px 2px', fontFamily: 'inherit' }}>
-              {monthLabel(month)}{month.slice(0, 4) !== thisMonth.slice(0, 4) ? ` ${month.slice(0, 4)}` : ''}
-            </button>
-            {past && (
-              <button type="button" onClick={() => step(1)} aria-label="Next month"
-                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', color: COLORS.muted }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 3l4 4-4 4" /></svg>
-              </button>
-            )}
-            {past && (
-              <button type="button" onClick={() => setMonth(thisMonth)}
-                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontSize: 13, color: COLORS.green, padding: '8px 6px', fontFamily: 'inherit' }}>
-                Back to {monthLabel(thisMonth)}
-              </button>
-            )}
-          </div>
-          <span style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>
+          <MonthPicker month={month} thisMonth={thisMonth} onChange={setMonth} />
+          <span key={month} className="bk-step" style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>
             {past ? money(data.shelves.reduce((s, sh) => s + sh.cups.reduce((t, c) => t + c.spent, 0), 0)) : money(data.spendable)}
           </span>
-          <span style={{ fontSize: 15, color: COLORS.muted }}>{past ? `spent from your cups in ${monthLabel(month)}` : 'yours to spend this month'}</span>
+          <span key={month + 'c'} className="bk-step" style={{ fontSize: 15, color: COLORS.muted }}>{past ? `spent from your cups in ${monthLabel(month)}` : 'yours to spend this month'}</span>
         </section>
 
         {!past && data.pendingCount > 0 && (

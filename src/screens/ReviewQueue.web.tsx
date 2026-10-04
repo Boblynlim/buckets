@@ -43,6 +43,7 @@ export function ReviewQueue({ onBack }: Props) {
   const dismiss = useMutation(api.pendingTransactions.dismiss);
   const notSpending = useMutation(api.merchantRules.markNotSpending);
   const markAsIncome = useMutation(api.pendingTransactions.markAsIncome);
+  const fileUnsure = useMutation(api.pendingTransactions.fileUnsure);
 
   const cups = useMemo(() => summary?.shelves.flatMap((s: any) => s.cups) ?? [], [summary]);
 
@@ -104,6 +105,9 @@ export function ReviewQueue({ onBack }: Props) {
   const moneyIn = (row: any) =>
     finish(row, () => markAsIncome({ pendingId: row._id }), `Counted as money in. Pay near month end goes to next month.`);
 
+  const unsure = (row: any, note?: string, amount?: number) =>
+    finish(row, () => fileUnsure({ pendingId: row._id, note: note || undefined, amount }), 'Filed under Not sure. It still counts, nothing learned.');
+
   const removeOne = (row: any) => finish(row, () => dismiss({ pendingId: row._id }), 'Removed. Nothing learned.');
 
   const count = visible.length;
@@ -150,6 +154,7 @@ export function ReviewQueue({ onBack }: Props) {
                   onFile={(cup, memo, amount) => fileTo(row, cup, memo, amount)}
                   onNotSpending={() => leaveOut(row)}
                   onIncome={() => moneyIn(row)}
+                  onUnsure={(note?: string, amount?: number) => unsure(row, note, amount)}
                   onRemove={() => removeOne(row)}
                 />
               ))}
@@ -161,12 +166,24 @@ export function ReviewQueue({ onBack }: Props) {
   );
 }
 
-function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onRemove }: {
+// Other spends that day, to help remember what this one was.
+function SameDay({ pendingId }: { pendingId: any }) {
+  const items = useQuery(api.pendingTransactions.sameDay, { pendingId });
+  if (!items || items.length === 0) return null;
+  return (
+    <span className="bk-fade-in" style={{ fontSize: 13, color: COLORS.muted, lineHeight: 1.5 }}>
+      Same day: {items.map((i: any) => `${i.what} ${moneyExact(i.amount)}`).join(' · ')}
+    </span>
+  );
+}
+
+function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onUnsure, onRemove }: {
   row: any; cups: any[]; open: boolean; leaving: boolean;
   onOpen: () => void;
   onFile: (cup: any, memo: string, amount?: number) => void;
   onNotSpending: () => void;
   onIncome: () => void;
+  onUnsure: (note?: string, amount?: number) => void;
   onRemove: () => void;
 }) {
   const [memo, setMemo] = useState('');
@@ -203,7 +220,7 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
             {row.needsAttention ? 'Check this one' : whenLabel(row).split(' · ').slice(0, 2).join(' · ')}
           </span>
         </span>
-        <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink, flexShrink: 0 }}>
+        <span style={{ fontSize: 15, color: isIn ? COLORS.green : COLORS.ink, flexShrink: 0 }}>
           {isIn ? '+' : ''}{moneyExact(row.amount)}
         </span>
       </button>
@@ -223,11 +240,12 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
               style={{ ...INPUT, boxShadow: 'none', fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', padding: '2px 0' }} />
           </label>
         ) : (
-          <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink }}>
+          <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', color: isIn ? COLORS.green : COLORS.ink }}>
             {isIn ? '+' : ''}{moneyExact(row.amount)}
           </span>
         )}
         <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
+        <SameDay pendingId={row._id} />
         {!isIn && (
           shareAmount != null ? (
             <span style={{ fontSize: 14, color: COLORS.green }}>
@@ -288,10 +306,16 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
         ))}
       </div>
 
-      <button type="button" onClick={onRemove}
-        style={{ ...PLAIN_BTN, alignSelf: 'center', textAlign: 'center', fontSize: 14, color: COLORS.muted, minHeight: 44, marginTop: -8 }}>
-        Remove just this one
-      </button>
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 24, marginTop: -8 }}>
+        <button type="button" onClick={() => onUnsure(fileMemo(memo).trim() || undefined, editedAmount)}
+          style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.ink, minHeight: 44 }}>
+          Can't remember
+        </button>
+        <button type="button" onClick={onRemove}
+          style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44 }}>
+          Remove just this one
+        </button>
+      </div>
     </div>
   );
 }

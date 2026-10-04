@@ -75,6 +75,23 @@ export const HOME_CSS = `
 .bk-nav-pill button.on { opacity: 1; background: rgba(243,240,234,0.14); }
 .bk-nav-add { width: 56px; height: 56px; border-radius: 999px; background: rgba(31,27,23,0.82);
   backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 8px 24px rgba(31,27,23,0.18); }
+.bk-month-pill { appearance: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
+  margin-left: -2px; border-radius: 999px; background: #FFFFFF; color: ${COLORS.ink}; font: inherit; font-size: 14px;
+  box-shadow: inset 0 0 0 1px ${COLORS.hairline}; transition: box-shadow .3s ease; }
+.bk-month-pill:hover { box-shadow: inset 0 0 0 1px #CFC6B8; }
+.bk-month-pill svg { color: ${COLORS.muted}; }
+.bk-month-strip { position: relative; display: flex; gap: 2px; height: 36px; padding: 0; margin: 0 -24px; padding: 0 24px; overflow-x: auto;
+  scrollbar-width: none; scroll-snap-type: x proximity; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+.bk-month-strip button { position: relative; z-index: 1; flex: 0 0 auto; appearance: none; border: 0; background: transparent; cursor: pointer;
+  height: 36px; padding: 0 14px; border-radius: 999px; font: inherit; font-size: 14px; color: ${COLORS.muted}; scroll-snap-align: center;
+  transition: color .45s cubic-bezier(0.16,0.9,0.4,1); }
+.bk-month-strip button.on { color: ${COLORS.wall}; }
+.bk-month-strip button .yr { font-size: 10px; margin-left: 3px; opacity: .6; }
+.bk-month-ind { position: absolute; top: 0; height: 36px; border-radius: 999px; background: ${COLORS.ink}; z-index: 0;
+  transition: left .5s cubic-bezier(0.16,0.9,0.4,1), width .5s cubic-bezier(0.16,0.9,0.4,1); }
+@keyframes bkFadeIn { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: none; } }
+.bk-fade-in { animation: bkFadeIn .45s cubic-bezier(0.16,0.9,0.4,1) backwards; }
+@media (prefers-reduced-motion: reduce) { .bk-month-ind, .bk-month-strip button { transition: none; } .bk-fade-in { animation: none; } }
 @keyframes bkSheetIn { from { opacity: 0; transform: translateY(24px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
 @keyframes bkFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bkStep { from { opacity: 0; transform: translateY(16px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }

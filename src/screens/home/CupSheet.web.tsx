@@ -77,7 +77,7 @@ export function CupSheet({ cup, month, allCups, onClose, onEdit, past }: { cup: 
                       : new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (t.autoFiled ? ' · filed for you. Tap to move' : '')}
                   </span>
                 </span>
-                <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{moneyExact(t.amount)}</span>
+                <span style={{ fontSize: 15 }}>{moneyExact(t.amount)}</span>
               </button>
               {open === t.id && (
                 <div className="bk-sheet" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 12 }}>
