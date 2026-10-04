@@ -92,7 +92,8 @@ export const HOME_CSS = `
 @keyframes bkFadeIn { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: none; } }
 .bk-fade-in { animation: bkFadeIn .45s cubic-bezier(0.16,0.9,0.4,1) backwards; }
 @media (prefers-reduced-motion: reduce) { .bk-month-ind, .bk-month-strip button { transition: none; } .bk-fade-in { animation: none; } }
-@keyframes bkSheetIn { from { opacity: 0; transform: translateY(24px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
+/* No blur on the sheet: blurring a full-screen layer drops frames on phones. */
+@keyframes bkSheetIn { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
 @keyframes bkFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes bkStep { from { opacity: 0; transform: translateY(16px); filter: blur(8px); } to { opacity: 1; transform: none; filter: none; } }
 .bk-sheet { animation: bkSheetIn .6s cubic-bezier(0.16,0.9,0.4,1) backwards; }

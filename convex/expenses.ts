@@ -127,13 +127,11 @@ export const update = mutation({
   handler: async (ctx, args) => {
     try {
       const { expenseId, ...updates } = args;
-      console.log('Updating expense:', expenseId, updates);
 
       const expense = await ctx.db.get(expenseId);
       if (!expense) {
         throw new Error("Expense not found");
       }
-      console.log('Found expense:', expense);
 
     // If amount or bucket changed, validate new expense against bucket funding
     if (updates.amount !== undefined || updates.bucketId !== undefined) {
@@ -176,12 +174,10 @@ export const update = mutation({
       (updates as any).userOverridden = true;
     }
 
-    console.log('Updating expense with:', updates);
     await ctx.db.patch(expenseId, {
       ...updates,
       updatedAt: Date.now(),
     });
-    console.log('Expense updated successfully');
     } catch (error) {
       console.error('Error updating expense:', error);
       throw new Error(`Failed to update expense: ${error instanceof Error ? error.message : String(error)}`);
@@ -397,20 +393,16 @@ export const getNecessaryNotes = query({
 export const toggleWorthIt = mutation({
   args: { expenseId: v.id("expenses") },
   handler: async (ctx, args) => {
-    console.log("toggleWorthIt called with:", args.expenseId);
     try {
       const expense = await ctx.db.get(args.expenseId);
-      console.log("Found expense:", expense?._id, "current worthIt:", expense?.worthIt);
       if (!expense) {
         throw new Error("Expense not found");
       }
       const newValue = !(expense.worthIt ?? false);
-      console.log("Setting worthIt to:", newValue);
       await ctx.db.patch(args.expenseId, {
         worthIt: newValue,
         updatedAt: Date.now(),
       });
-      console.log("toggleWorthIt success");
     } catch (error) {
       console.error("toggleWorthIt error:", error);
       throw error;
