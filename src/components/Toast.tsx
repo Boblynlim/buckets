@@ -1,6 +1,5 @@
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, Animated } from 'react-native';
-import { CheckCircle, XCircle, Loader } from 'lucide-react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { COLORS, useHomeStyles } from '../screens/home/homeStyles';
 
 interface ToastProps {
   visible: boolean;
@@ -10,141 +9,81 @@ interface ToastProps {
   duration?: number;
 }
 
-export const Toast: React.FC<ToastProps> = ({
-  visible,
-  message,
-  type,
-  onHide,
-  duration = 3000,
-}) => {
-  const translateY = React.useRef(new Animated.Value(-100)).current;
-  const opacity = React.useRef(new Animated.Value(0)).current;
+// A small ink pill at the top. Blur-fades in and out; no slide, no bounce.
+const CSS = `
+@keyframes bkToastIn { from { opacity: 0; transform: translate(-50%, -6px); filter: blur(6px); } to { opacity: 1; transform: translate(-50%, 0); filter: none; } }
+@keyframes bkToastOut { from { opacity: 1; filter: none; } to { opacity: 0; filter: blur(6px); } }
+@keyframes bkToastBreathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.bk-toast { animation: bkToastIn .5s cubic-bezier(0.16,0.9,0.4,1) backwards; }
+.bk-toast.out { animation: bkToastOut .3s ease forwards; }
+.bk-toast-dot.loading { animation: bkToastBreathe 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .bk-toast, .bk-toast.out, .bk-toast-dot.loading { animation: none; }
+}
+`;
+
+let injected = false;
+function useToastCss() {
+  if (injected || typeof document === 'undefined') return;
+  injected = true;
+  const style = document.createElement('style');
+  style.textContent = CSS;
+  document.head.appendChild(style);
+}
+
+const DOT: Record<ToastProps['type'], string> = {
+  success: '#8DB8A8',
+  error: '#D98C73',
+  loading: '#A89E92',
+};
+
+export const Toast: React.FC<ToastProps> = ({ visible, message, type, onHide, duration = 3000 }) => {
+  useHomeStyles();
+  useToastCss();
+  const [phase, setPhase] = useState<'in' | 'out' | null>(visible ? 'in' : null);
+  const hideRef = useRef(onHide);
+  hideRef.current = onHide;
 
   useEffect(() => {
     if (visible) {
-      // Slide in
-      Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-      ]).start();
-
-      // Auto hide for non-loading toasts
+      setPhase('in');
       if (type !== 'loading' && duration > 0) {
-        const timer = setTimeout(() => {
-          hideToast();
-        }, duration);
-        return () => clearTimeout(timer);
+        const t = setTimeout(() => setPhase('out'), duration);
+        return () => clearTimeout(t);
       }
     } else {
-      hideToast();
+      setPhase((p) => (p === 'in' ? 'out' : p));
     }
-  }, [visible, type, duration]);
+  }, [visible, type, duration, message]);
 
-  const hideToast = () => {
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: -100,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(opacity, {
-        toValue: 0,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start(() => {
-      onHide();
-    });
-  };
+  // Leave on a timer rather than animationend, so reduced motion still closes.
+  useEffect(() => {
+    if (phase !== 'out') return;
+    const t = setTimeout(() => {
+      setPhase(null);
+      hideRef.current();
+    }, 300);
+    return () => clearTimeout(t);
+  }, [phase]);
 
-  if (!visible) return null;
-
-  const getIcon = () => {
-    switch (type) {
-      case 'success':
-        return <CheckCircle size={20} color="#10B981" strokeWidth={2} />;
-      case 'error':
-        return <XCircle size={20} color="#EF4444" strokeWidth={2} />;
-      case 'loading':
-        return <Loader size={20} color="#5C8A7A" strokeWidth={2} />;
-    }
-  };
-
-  const getBackgroundColor = () => {
-    switch (type) {
-      case 'success':
-        return '#ECFDF5';
-      case 'error':
-        return '#FEF2F2';
-      case 'loading':
-        return '#EEF2FF';
-    }
-  };
-
-  const getBorderColor = () => {
-    switch (type) {
-      case 'success':
-        return '#10B981';
-      case 'error':
-        return '#EF4444';
-      case 'loading':
-        return '#5C8A7A';
-    }
-  };
+  if (!phase) return null;
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          transform: [{ translateY }],
-          opacity,
-          backgroundColor: getBackgroundColor(),
-          borderColor: getBorderColor(),
-        },
-      ]}
+    <div
+      role="status"
+      aria-live="polite"
+      className={`bk-toast${phase === 'out' ? ' out' : ''}`}
+      style={{
+        position: 'fixed', top: 'calc(env(safe-area-inset-top, 0px) + 16px)', left: '50%', transform: 'translate(-50%, 0)',
+        zIndex: 9999, maxWidth: 'calc(100% - 32px)', boxSizing: 'border-box',
+        display: 'flex', alignItems: 'center', gap: 10, padding: '11px 18px', borderRadius: 999,
+        background: 'rgba(31,27,23,0.9)', color: COLORS.wall,
+        backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+        fontFamily: "'Schibsted Grotesk', system-ui, sans-serif", fontSize: 14, lineHeight: 1.35,
+      }}
     >
-      <View style={styles.iconContainer}>{getIcon()}</View>
-      <Text style={styles.message}>{message}</Text>
-    </Animated.View>
+      <span className={`bk-toast-dot ${type}`} style={{ width: 6, height: 6, borderRadius: 999, background: DOT[type], flexShrink: 0 }} />
+      <span>{message}</span>
+    </div>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute' as any,
-    top: 20,
-    left: 20,
-    right: 20,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    zIndex: 9999,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  iconContainer: {
-    marginRight: 12,
-  },
-  message: {
-    flex: 1,
-    fontSize: 17,
-    fontWeight: '500',
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-  },
-});

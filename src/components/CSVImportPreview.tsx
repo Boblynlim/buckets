@@ -1,18 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  Pressable,
-  Image,
-} from 'react-native';
-import { X, ChevronDown, AlertCircle, CheckCircle } from 'lucide-react-native';
+import { Modal } from 'react-native';
 import type { Bucket } from '../types';
 import type { CSVExpense } from '../utils/csvExport';
-import { getCupForBucketId } from '../constants/bucketIcons';
+import { COLORS, useHomeStyles } from '../screens/home/homeStyles';
 
 interface CSVImportPreviewProps {
   visible: boolean;
@@ -22,6 +12,15 @@ interface CSVImportPreviewProps {
   onConfirmImport: (expenses: CSVExpense[]) => void;
 }
 
+const H1: React.CSSProperties = { fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: 0 };
+const PLAIN_BTN: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0 };
+
+function shortDate(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  if (!y || !m || !d) return iso;
+  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
   visible,
   parsedExpenses,
@@ -29,448 +28,109 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
   onClose,
   onConfirmImport,
 }) => {
+  useHomeStyles();
   const [expenses, setExpenses] = useState<CSVExpense[]>(parsedExpenses);
-  const [showDropdownForIndex, setShowDropdownForIndex] = useState<number | null>(null);
+  const [openIndex, setOpenIndex] = useState<number | null>(null);
 
-  // Update local state when parsedExpenses prop changes
   useEffect(() => {
-    console.log('CSVImportPreview: parsedExpenses changed, count:', parsedExpenses.length);
     setExpenses(parsedExpenses);
   }, [parsedExpenses]);
 
-  // Check which buckets don't exist (normalize with lowercase and trim)
-  const bucketNameMap = new Map(availableBuckets.map(b => [b.name.toLowerCase().trim(), b.name]));
+  // Match cup names loosely (case and spaces).
+  const bucketNameMap = new Map(availableBuckets.map((b) => [b.name.toLowerCase().trim(), b.name]));
+  const invalid = expenses.map((exp) => !bucketNameMap.has(exp.bucket.toLowerCase().trim()));
+  const errorCount = invalid.filter(Boolean).length;
 
-  const validationErrors = expenses.map((exp, idx) => {
-    const normalizedBucketName = exp.bucket.toLowerCase().trim();
-    const bucketExists = bucketNameMap.has(normalizedBucketName);
-    if (!bucketExists) {
-      console.log(`Bucket not found: "${exp.bucket}" (normalized: "${normalizedBucketName}")`);
-      console.log('Available buckets:', Array.from(bucketNameMap.keys()));
-    }
-    return bucketExists ? null : `Bucket "${exp.bucket}" not found`;
-  });
-
-  const hasErrors = validationErrors.some(e => e !== null);
-  const errorCount = validationErrors.filter(e => e !== null).length;
-
-  // Float invalid rows to the top so the user can fix them without scrolling.
-  // Each row keeps its original index so bucket edits patch the right expense.
+  // Rows that need a cup float to the top. Each keeps its original index so
+  // edits patch the right expense.
   const orderedRows = expenses
-    .map((expense, originalIndex) => ({
-      expense,
-      originalIndex,
-      error: validationErrors[originalIndex],
-    }))
-    .sort((a, b) => {
-      if ((a.error !== null) === (b.error !== null)) return a.originalIndex - b.originalIndex;
-      return a.error !== null ? -1 : 1;
-    });
+    .map((expense, i) => ({ expense, i, bad: invalid[i] }))
+    .sort((a, b) => (a.bad === b.bad ? a.i - b.i : a.bad ? -1 : 1));
 
-  const handleBucketChange = (index: number, newBucketName: string) => {
-    const newExpenses = [...expenses];
-    newExpenses[index] = { ...newExpenses[index], bucket: newBucketName };
-    setExpenses(newExpenses);
-    setShowDropdownForIndex(null);
+  const setBucket = (index: number, name: string) => {
+    setExpenses((prev) => prev.map((e, i) => (i === index ? { ...e, bucket: name } : e)));
+    setOpenIndex(null);
   };
 
-  const handleImport = () => {
-    onConfirmImport(expenses);
-  };
+  const n = expenses.length;
 
   return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={false}
-      onRequestClose={onClose}
-    >
-      <View style={styles.container}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <X size={24} color="#2D2D2D" strokeWidth={2} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Review Import</Text>
-          <View style={{ width: 24 }} />
-        </View>
+    <Modal visible={visible} animationType="none" transparent onRequestClose={onClose}>
+      <div className="bk-root" style={{ position: 'fixed', inset: 0, display: 'flex', flexDirection: 'column' }}>
+        <div className="bk-scroll" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' as any }}>
+          <div className="bk-step" style={{ maxWidth: 440, margin: '0 auto', padding: '28px 24px 24px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: 14, color: COLORS.muted }}>Import</span>
+              <button type="button" onClick={onClose} aria-label="Close import"
+                style={{ ...PLAIN_BTN, width: 44, height: 44, marginRight: -12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.ink} strokeWidth="1.5" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13" /></svg>
+              </button>
+            </div>
 
-        {/* Status Banner */}
-        <View style={[styles.statusBanner, hasErrors ? styles.errorBanner : styles.successBanner]}>
-          {hasErrors ? (
-            <>
-              <AlertCircle size={18} color="#DC2626" strokeWidth={2} />
-              <Text style={styles.statusText}>
-                {errorCount} {errorCount === 1 ? 'transaction has' : 'transactions have'} invalid bucket{errorCount === 1 ? '' : 's'}. Fix {errorCount === 1 ? 'it' : 'them'} below.
-              </Text>
-            </>
-          ) : (
-            <>
-              <CheckCircle size={18} color="#10B981" strokeWidth={2} />
-              <Text style={styles.statusText}>
-                All {expenses.length} transaction{expenses.length === 1 ? '' : 's'} ready to import
-              </Text>
-            </>
-          )}
-        </View>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: -12 }}>
+              <h1 style={H1}>
+                {errorCount
+                  ? `${errorCount} ${errorCount === 1 ? 'needs' : 'need'} a cup.`
+                  : `${n} ${n === 1 ? 'spend' : 'spends'} ready.`}
+              </h1>
+              <span style={{ fontSize: 15, color: COLORS.muted, lineHeight: 1.5 }}>
+                {errorCount
+                  ? 'Their cup names do not match yours. Pick one for each.'
+                  : 'Check the cups, then bring them in.'}
+              </span>
+            </div>
 
-        {/* Scrollable Content Wrapper */}
-        <View style={styles.scrollWrapper}>
-          <ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={true}
-          >
-          {orderedRows.map(({ expense, originalIndex, error }) => {
-            const index = originalIndex;
-            const hasError = error !== null;
-            const isDropdownOpen = showDropdownForIndex === index;
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {orderedRows.map(({ expense, i, bad }) => {
+                const open = openIndex === i;
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', minHeight: 56 }}>
+                      <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                        <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{expense.note || 'No note'}</span>
+                        <span style={{ fontSize: 13, color: COLORS.muted }}>{shortDate(expense.date)}</span>
+                      </span>
+                      <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
+                        <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>${expense.amount.toFixed(2)}</span>
+                        <button type="button" className="bk-row" onClick={() => setOpenIndex(open ? null : i)}
+                          aria-expanded={open}
+                          style={{ ...PLAIN_BTN, fontSize: 13, color: bad ? COLORS.rust : COLORS.muted, minHeight: 28, display: 'flex', alignItems: 'center', gap: 4 }}>
+                          {bad ? `No cup called ${expense.bucket || 'that'}` : expense.bucket}
+                          <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"
+                            style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .4s cubic-bezier(0.16,0.9,0.4,1)' }}>
+                            <path d="M2 3.5l3 3 3-3" />
+                          </svg>
+                        </button>
+                      </span>
+                    </div>
+                    {open && (
+                      <div className="bk-step" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 14 }}>
+                        {availableBuckets.map((b) => (
+                          <button key={b._id} type="button" className="bk-chip" onClick={() => setBucket(i, b.name)}
+                            style={b.name === expense.bucket ? { background: COLORS.ink, color: COLORS.wall } : undefined}>
+                            {b.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
 
-            return (
-              <View key={index} style={styles.expenseRow}>
-                <View style={styles.expenseHeader}>
-                  <Text style={styles.expenseDate}>{expense.date}</Text>
-                  <Text style={styles.expenseAmount}>${expense.amount.toFixed(2)}</Text>
-                </View>
-
-                <Text style={styles.expenseNote}>{expense.note}</Text>
-
-                {/* Tags */}
-                <View style={styles.tagsRow}>
-                  {expense.isNecessary ? (
-                    <View style={styles.necessaryTag}>
-                      <Text style={styles.necessaryTagText}>NECESSARY</Text>
-                    </View>
-                  ) : (
-                    <View style={expense.worthIt ? styles.worthItTag : styles.notWorthItTag}>
-                      <Text style={expense.worthIt ? styles.worthItTagText : styles.notWorthItTagText}>
-                        {expense.worthIt ? 'WORTH IT' : 'NOT WORTH IT'}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-
-                {/* Bucket Selector */}
-                <View style={styles.bucketSelector}>
-                  <Text style={styles.bucketLabel}>Bucket:</Text>
-                  <Pressable
-                    style={[
-                      styles.bucketPill,
-                      hasError && styles.bucketPillError,
-                    ]}
-                    onPress={() => setShowDropdownForIndex(isDropdownOpen ? null : index)}
-                  >
-                    <Text style={[styles.bucketText, hasError && styles.bucketTextError]}>
-                      {expense.bucket}
-                    </Text>
-                    <ChevronDown
-                      size={14}
-                      color={hasError ? '#DC2626' : '#8A8478'}
-                      strokeWidth={2}
-                    />
-                  </Pressable>
-                </View>
-
-                {hasError && (
-                  <Text style={styles.errorText}>{validationErrors[index]}</Text>
-                )}
-
-                {/* Dropdown */}
-                {isDropdownOpen && (
-                  <View style={styles.dropdown}>
-                    {availableBuckets.map((bucket) => (
-                      <TouchableOpacity
-                        key={bucket._id}
-                        style={styles.dropdownItem}
-                        onPress={() => handleBucketChange(index, bucket.name)}
-                      >
-                        <Image
-                          source={getCupForBucketId(bucket._id, bucket.icon)}
-                          style={styles.bucketCup}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.dropdownItemText}>{bucket.name}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                )}
-              </View>
-            );
-          })}
-          </ScrollView>
-        </View>
-
-        {/* Footer Actions */}
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.cancelButton} onPress={onClose}>
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.importButton, hasErrors && styles.importButtonDisabled]}
-            onPress={handleImport}
-            disabled={hasErrors}
-          >
-            <Text style={styles.importButtonText}>
-              Import {expenses.length} Transaction{expenses.length === 1 ? '' : 's'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+        <div style={{ flexShrink: 0, background: COLORS.wall, boxShadow: `inset 0 1px 0 ${COLORS.hairline}` }}>
+          <div style={{ maxWidth: 440, margin: '0 auto', padding: '16px 24px calc(env(safe-area-inset-bottom, 0px) + 16px)', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <button type="button" className="bk-btn" disabled={errorCount > 0} onClick={() => onConfirmImport(expenses)}>
+              {errorCount ? `Pick ${errorCount === 1 ? 'a cup' : 'cups'} first` : `Import ${n} ${n === 1 ? 'spend' : 'spends'}`}
+            </button>
+            <button type="button" onClick={onClose} style={{ ...PLAIN_BTN, color: COLORS.muted, fontSize: 14, minHeight: 44 }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
     </Modal>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#EAE3D5',
-    height: '100vh' as any,
-    display: 'flex' as any,
-    flexDirection: 'column',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-    flexShrink: 0,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 19,
-    fontWeight: '500',
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-  },
-  statusBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    gap: 10,
-    flexShrink: 0,
-  },
-  errorBanner: {
-    backgroundColor: '#FEF2F2',
-  },
-  successBanner: {
-    backgroundColor: '#ECFDF5',
-  },
-  statusText: {
-    flex: 1,
-    fontSize: 17,
-    fontFamily: 'Merchant',
-    color: '#2D2D2D',
-    lineHeight: 21,
-  },
-  scrollWrapper: {
-    flex: 1,
-    overflow: 'hidden' as any,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 300,
-    overflow: 'visible' as any,
-  },
-  expenseRow: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    overflow: 'visible' as any,
-  },
-  expenseHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  expenseDate: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#8A8478',
-  },
-  expenseAmount: {
-    fontSize: 22,
-    fontFamily: 'Merchant Copy',
-    color: '#2D2D2D',
-    fontWeight: '500',
-    letterSpacing: 0,
-  },
-  expenseNote: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: '#2D2D2D',
-    marginBottom: 12,
-    lineHeight: 22,
-  },
-  tagsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginBottom: 10,
-  },
-  worthItTag: {
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: '#a0d0c0',
-    borderWidth: 1,
-    borderColor: '#8ac4b2',
-  },
-  worthItTagText: {
-    fontSize: 11,
-    fontFamily: 'Merchant',
-    fontWeight: '600',
-    letterSpacing: 0.6,
-    color: '#245045',
-  },
-  notWorthItTag: {
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(212,184,154,0.3)',
-    borderWidth: 1,
-    borderColor: '#c9a882',
-  },
-  notWorthItTagText: {
-    fontSize: 11,
-    fontFamily: 'Merchant',
-    fontWeight: '600',
-    letterSpacing: 0.6,
-    color: '#a08060',
-  },
-  necessaryTag: {
-    paddingVertical: 3,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    borderWidth: 1,
-    borderColor: 'rgba(61,50,41,0.15)',
-  },
-  necessaryTagText: {
-    fontSize: 11,
-    fontFamily: 'Merchant',
-    fontWeight: '600',
-    letterSpacing: 0.6,
-    color: 'rgba(61,50,41,0.4)',
-  },
-  bucketSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  bucketLabel: {
-    fontSize: 17,
-    fontFamily: 'Merchant',
-    color: '#8A8478',
-  },
-  bucketPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 18,
-    gap: 6,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  bucketPillError: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#DC2626',
-  },
-  bucketText: {
-    fontSize: 17,
-    fontFamily: 'Merchant',
-    color: '#2D2D2D',
-  },
-  bucketTextError: {
-    color: '#DC2626',
-  },
-  errorText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#DC2626',
-    marginTop: 10,
-    fontStyle: 'italic',
-  },
-  dropdown: {
-    marginTop: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#F3F4F6',
-    overflow: 'hidden',
-  },
-  dropdownItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    gap: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
-  },
-  bucketCup: {
-    width: 28,
-    height: 28,
-  },
-  dropdownItemText: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: '#2D2D2D',
-  },
-  footer: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 20,
-    gap: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-    backgroundColor: '#EAE3D5',
-    flexShrink: 0,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    backgroundColor: '#E8E6E3',
-  },
-  cancelButtonText: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    color: '#8A8478',
-  },
-  importButton: {
-    flex: 2,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    backgroundColor: '#5C8A7A',
-  },
-  importButtonDisabled: {
-    opacity: 0.5,
-  },
-  importButtonText: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    color: '#FFFFFF',
-  },
-});

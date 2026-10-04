@@ -6,8 +6,13 @@ import {
   Animated,
   PanResponder,
   Dimensions,
+  Easing,
   TouchableWithoutFeedback,
 } from 'react-native';
+
+// Sheet styling matches the home CupSheet: white, 24px top corners, a light
+// warm scrim, deceleration-only motion (no spring, so no overshoot).
+const EASE_OUT = Easing.bezier(0.16, 0.9, 0.4, 1);
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD = 50;
@@ -27,23 +32,21 @@ export const Drawer: React.FC<DrawerProps> = ({
   fullScreen = false,
 }) => {
   const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const scrim = useRef(new Animated.Value(0)).current;
   const dragOffset = useRef(0);
   const [isGestureFromHandle, setIsGestureFromHandle] = useState(false);
 
   useEffect(() => {
     if (visible) {
-      Animated.spring(translateY, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 50,
-        friction: 10,
-      }).start();
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: 0, duration: 550, easing: EASE_OUT, useNativeDriver: true }),
+        Animated.timing(scrim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      ]).start();
     } else {
-      Animated.timing(translateY, {
-        toValue: SCREEN_HEIGHT,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: SCREEN_HEIGHT, duration: 300, useNativeDriver: true }),
+        Animated.timing(scrim, { toValue: 0, duration: 300, useNativeDriver: true }),
+      ]).start();
     }
   }, [visible]);
 
@@ -77,12 +80,12 @@ export const Drawer: React.FC<DrawerProps> = ({
             onClose();
           });
         } else {
-          // Snap back to open position
-          Animated.spring(translateY, {
+          // Settle back to the open position
+          Animated.timing(translateY, {
             toValue: 0,
+            duration: 400,
+            easing: EASE_OUT,
             useNativeDriver: true,
-            tension: 50,
-            friction: 10,
           }).start(() => {
             dragOffset.current = 0;
           });
@@ -99,7 +102,7 @@ export const Drawer: React.FC<DrawerProps> = ({
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={onClose}>
-        <View style={styles.backdrop} />
+        <Animated.View style={[styles.backdrop, { opacity: scrim }]} />
       </TouchableWithoutFeedback>
 
       <Animated.View
@@ -134,38 +137,35 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(31,27,23,0.2)',
   },
   drawer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
+    maxWidth: 480,
+    marginHorizontal: 'auto' as any,
     height: '75%',
-    backgroundColor: '#EAE3D5',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 10,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: 'hidden',
   },
   fullScreen: {
     height: '92%',
   },
   handleContainer: {
     alignItems: 'center',
-    paddingVertical: 12,
-    backgroundColor: '#EAE3D5',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    paddingTop: 10,
+    paddingBottom: 14,
+    backgroundColor: '#FFFFFF',
   },
   handle: {
-    width: 40,
-    height: 5,
-    backgroundColor: '#C4BAA8',
-    borderRadius: 3,
+    width: 36,
+    height: 4,
+    backgroundColor: '#E4DFD6',
+    borderRadius: 2,
   },
   content: {
     flex: 1,

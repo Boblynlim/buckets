@@ -1,522 +1,249 @@
 import React, { useMemo, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  StyleSheet,
-} from 'react-native';
 import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
-import { theme } from '../theme';
-import { type } from '../theme/fonts';
+import { isPaymentCompany } from '../../convex/lib/merchantKey';
+import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
 
-type Props = {
-  onBack?: () => void;
+// Bank transactions waiting for a cup. Same feel as the check-in's
+// "Which cup?" step: one card open at a time, tap a cup to file it. Filing a
+// merchant teaches the app; "Not spending" teaches it to leave that one out.
+
+type Props = { onBack?: () => void };
+
+const BANK_LABELS: Record<string, string> = { dbs: 'DBS', ocbc: 'OCBC', hsbc: 'HSBC', amex: 'Amex' };
+
+const H1: React.CSSProperties = { fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: 0 };
+const PLAIN_BTN: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, textAlign: 'left' };
+const INPUT: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0',
+  boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit', color: COLORS.ink, width: '100%',
 };
 
-const BANK_LABELS: Record<string, string> = {
-  dbs: 'DBS / POSB',
-  ocbc: 'OCBC',
-  hsbc: 'HSBC',
-  amex: 'Amex',
-  unknown: 'Unrecognised',
-};
-
-function formatDate(ms: number): string {
-  try {
-    return new Date(ms).toLocaleDateString(undefined, {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
-  } catch {
-    return '—';
-  }
+function whenLabel(row: any): string {
+  const d = new Date(row.date);
+  const day = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+  const time = d.toLocaleTimeString('en-GB', { hour: 'numeric', minute: '2-digit', hour12: true }).replace(' ', '').toLowerCase();
+  const bank = BANK_LABELS[row.bank] ?? (row.bank && row.bank !== 'unknown' ? String(row.bank).toUpperCase() : '');
+  return [day, time, bank, row.last4 ? `card ${row.last4}` : ''].filter(Boolean).join(' · ');
 }
 
-// "2026-06" → "June 2026". Used as the month-section header.
-function monthLabel(key: string): string {
-  const [y, m] = key.split('-').map(Number);
-  try {
-    return new Date(y, m - 1, 1).toLocaleDateString(undefined, {
-      month: 'long',
-      year: 'numeric',
-    });
-  } catch {
-    return key;
-  }
+function monthHeading(ms: number): string {
+  return new Date(ms).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
 }
-
-// Calendar-month key ("YYYY-MM") for a timestamp, local time — matches how the
-// rest of the app buckets months.
-function monthKeyOf(ms: number): string {
-  const d = new Date(ms);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-type RowEdit = {
-  amount: string;
-  note: string;
-  bucketId?: string;
-  worthIt: boolean;
-  isNecessary: boolean;
-};
 
 export function ReviewQueue({ onBack }: Props) {
-  const { user: currentUser } = useAuth();
-  const userId = currentUser?._id;
+  useHomeStyles();
+  const { user } = useAuth();
+  const userId = user?._id;
 
-  const pending = useQuery(
-    api.pendingTransactions.listPending,
-    userId ? { userId } : 'skip'
-  );
-  const buckets = useQuery(
-    api.buckets.getByUser,
-    userId ? { userId } : 'skip'
-  );
+  const pending = useQuery(api.pendingTransactions.listPending, userId ? { userId } : 'skip') as any[] | undefined;
+  const summary = useQuery(api.home.summary, userId ? { userId, month: currentMonth() } : 'skip');
   const confirm = useMutation(api.pendingTransactions.confirm);
   const dismiss = useMutation(api.pendingTransactions.dismiss);
+  const notSpending = useMutation(api.merchantRules.markNotSpending);
 
-  // Per-row editable state, keyed by pending id.
-  const [edits, setEdits] = useState<Record<string, RowEdit>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
-  // Which month sections are collapsed, keyed by "YYYY-MM".
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const cups = useMemo(() => summary?.shelves.flatMap((s: any) => s.cups) ?? [], [summary]);
 
-  // Group pending rows into month sections, newest month first. Within a month
-  // we keep the queue's ordering (needs-attention rows first, then newest), so
-  // the items that need fixing still float to the top of their month.
-  const monthGroups = useMemo(() => {
-    if (!pending) return [];
-    const map = new Map<string, any[]>();
-    for (const row of pending) {
-      const key = monthKeyOf(row.date);
-      const list = map.get(key);
-      if (list) list.push(row);
-      else map.set(key, [row]);
-    }
-    return [...map.keys()]
-      .sort((a, b) => (a < b ? 1 : -1)) // newest month first
-      .map((key) => {
-        const rows = map.get(key)!.slice().sort((a, b) => {
-          if (a.needsAttention !== b.needsAttention) {
-            return a.needsAttention ? -1 : 1;
-          }
-          return b.date - a.date;
-        });
-        const total = rows.reduce((s, r) => s + (r.amount || 0), 0);
-        const currency = rows[0]?.currency ?? '';
-        return { key, rows, total, currency };
-      });
+  // Rows that need fixing first, then newest. Month headings only when the
+  // queue spans more than one month.
+  const rows = useMemo(() => {
+    const list = (pending ?? []).slice();
+    list.sort((a, b) => (a.needsAttention !== b.needsAttention ? (a.needsAttention ? -1 : 1) : b.date - a.date));
+    return list;
   }, [pending]);
-
-  const toggleMonth = (key: string) =>
-    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  const defaultsFor = (row: any): RowEdit => ({
-    amount: String(row.amount ?? ''),
-    note: row.merchant ?? '',
-    bucketId: undefined,
-    worthIt: false,
-    isNecessary: false,
-  });
-
-  const getEdit = (row: any): RowEdit => edits[row._id] ?? defaultsFor(row);
-
-  // Seed the fallback from the row's own values, not empty strings — otherwise
-  // the first interaction on a card (e.g. tapping a bucket pill before editing
-  // amount/note) would wipe the pre-filled amount and merchant.
-  const setEdit = (row: any, patch: Partial<RowEdit>) =>
-    setEdits((prev) => ({
-      ...prev,
-      [row._id]: { ...(prev[row._id] ?? defaultsFor(row)), ...patch },
+  const multiMonth = new Set(rows.map((r) => monthHeading(r.date))).size > 1;
+  const byMonth = useMemo(() => {
+    if (!multiMonth) return [{ label: '', rows }];
+    const map = new Map<string, any[]>();
+    for (const r of rows.slice().sort((a, b) => b.date - a.date)) {
+      const k = monthHeading(r.date);
+      map.set(k, [...(map.get(k) ?? []), r]);
+    }
+    return [...map.entries()].map(([label, rs]) => ({
+      label,
+      rows: rs.sort((a, b) => (a.needsAttention !== b.needsAttention ? (a.needsAttention ? -1 : 1) : b.date - a.date)),
     }));
+  }, [rows, multiMonth]);
 
-  const handleConfirm = async (row: any) => {
-    const e = getEdit(row);
-    if (!e.bucketId) return;
-    const amount = parseFloat(e.amount);
-    if (!isFinite(amount) || amount <= 0) return;
-    setBusyId(row._id);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<Record<string, true>>({});
+  const [toast, setToast] = useState('');
+  const visible = rows.filter((r) => !leaving[r._id]);
+  const activeId = openId && visible.some((r) => r._id === openId) ? openId : visible[0]?._id ?? null;
+
+  // Fade the card out, then write. The live query drops the row when done.
+  const finish = async (row: any, write: () => Promise<unknown>, message: string) => {
+    setLeaving((l) => ({ ...l, [row._id]: true }));
+    setOpenId(null);
     try {
-      await confirm({
-        pendingId: row._id,
-        bucketId: e.bucketId as any,
-        amount,
-        note: e.note.trim() || undefined,
-        worthIt: e.worthIt,
-        isNecessary: e.isNecessary,
+      await write();
+      setToast(message);
+    } catch {
+      setLeaving((l) => {
+        const { [row._id]: _, ...rest } = l;
+        return rest;
       });
-    } finally {
-      setBusyId(null);
+      setToast('That did not save. Try again.');
     }
   };
 
-  const handleDismiss = async (row: any) => {
-    setBusyId(row._id);
-    try {
-      await dismiss({ pendingId: row._id });
-    } finally {
-      setBusyId(null);
-    }
-  };
-
-  const renderCard = (row: any) => {
-    const e = getEdit(row);
-    const isBusy = busyId === row._id;
-    const notWorth = !e.worthIt && !e.isNecessary;
-    return (
-          <View
-            key={row._id}
-            style={[styles.card, row.needsAttention && styles.cardAttention]}
-          >
-            {row.needsAttention && (
-              <View style={styles.attentionBanner}>
-                <Text style={styles.attentionText}>
-                  ⚠ Couldn’t fully read this one — check the amount and details
-                </Text>
-              </View>
-            )}
-            <View style={styles.cardTop}>
-              <View style={styles.bankBadge}>
-                <Text style={styles.bankBadgeText}>
-                  {BANK_LABELS[row.bank] ?? row.bank}
-                </Text>
-              </View>
-              <Text style={styles.dateText}>
-                {formatDate(row.date)}
-                {row.last4 ? `  ·  ····${row.last4}` : ''}
-              </Text>
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.label}>Amount ({row.currency})</Text>
-              <TextInput
-                style={styles.input}
-                value={e.amount}
-                onChangeText={(t) => setEdit(row, { amount: t })}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                placeholderTextColor={theme.colors.textTertiary}
-              />
-            </View>
-
-            <View style={styles.fieldRow}>
-              <Text style={styles.label}>Note</Text>
-              <TextInput
-                style={styles.input}
-                value={e.note}
-                onChangeText={(t) => setEdit(row, { note: t })}
-                placeholder="Merchant / description"
-                placeholderTextColor={theme.colors.textTertiary}
-              />
-            </View>
-
-            <Text style={styles.label}>Bucket</Text>
-            <View style={styles.bucketRow}>
-              {(buckets ?? []).map((b: any) => {
-                const selected = e.bucketId === b._id;
-                return (
-                  <TouchableOpacity
-                    key={b._id}
-                    onPress={() => setEdit(row, { bucketId: b._id })}
-                    style={[
-                      styles.bucketChip,
-                      selected && styles.bucketChipSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.bucketChipText,
-                        selected && styles.bucketChipTextSelected,
-                      ]}
-                    >
-                      {b.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            {/* Worth It / Necessary — mirrors the Add Expense flow */}
-            <View style={styles.worthItRow}>
-              <TouchableOpacity
-                style={[styles.worthItBtn, notWorth && styles.worthItBtnNotWorth]}
-                onPress={() => setEdit(row, { worthIt: false, isNecessary: false })}
-              >
-                <Text style={[styles.worthItBtnText, notWorth && styles.worthItBtnTextNotWorth]}>
-                  NOT WORTH IT
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.worthItBtn, e.worthIt && styles.worthItBtnWorth]}
-                onPress={() => setEdit(row, { worthIt: true, isNecessary: false })}
-              >
-                <Text style={[styles.worthItBtnText, e.worthIt && styles.worthItBtnTextWorth]}>
-                  WORTH IT
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.worthItBtn, e.isNecessary && styles.worthItBtnNecessary]}
-                onPress={() => setEdit(row, { isNecessary: true, worthIt: false })}
-              >
-                <Text style={[styles.worthItBtnText, e.isNecessary && styles.worthItBtnTextNecessary]}>
-                  NECESSARY
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.actions}>
-              <TouchableOpacity
-                onPress={() => handleDismiss(row)}
-                disabled={isBusy}
-                style={[styles.dismissBtn, isBusy && styles.btnDisabled]}
-              >
-                <Text style={styles.dismissText}>Dismiss</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => handleConfirm(row)}
-                disabled={isBusy || !e.bucketId}
-                style={[styles.confirmBtn, (isBusy || !e.bucketId) && styles.btnDisabled]}
-              >
-                <Text style={styles.confirmText}>
-                  {isBusy ? 'Saving…' : 'Confirm'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
+  const fileTo = (row: any, cup: any, memo: string, amount?: number) =>
+    finish(
+      row,
+      () => confirm({ pendingId: row._id, bucketId: cup.id, note: memo.trim() || undefined, amount }),
+      isPaymentCompany(row.merchant)
+        ? `Filed to ${cup.name}. ${row.merchant} is a payment company many shops use, so I will keep asking.`
+        : `Filed to ${cup.name}. Next time ${row.merchant ?? 'this'} files itself.`
     );
-  };
+
+  const leaveOut = (row: any) =>
+    finish(row, () => notSpending({ pendingId: row._id }), `Got it. ${row.merchant ?? 'That'} stays out of your cups.`);
+
+  const removeOne = (row: any) => finish(row, () => dismiss({ pendingId: row._id }), 'Removed. Nothing learned.');
+
+  const count = visible.length;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.header}>
+    <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: '20px 24px 140px', display: 'flex', flexDirection: 'column', gap: 28 }}>
         {onBack && (
-          <TouchableOpacity onPress={onBack} style={styles.backBtn}>
-            <Text style={styles.backText}>‹ Back</Text>
-          </TouchableOpacity>
+          <button type="button" onClick={onBack}
+            style={{ ...PLAIN_BTN, alignSelf: 'flex-start', minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, color: COLORS.muted, marginLeft: -2 }}>
+            <svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M6.5 1L1.5 6l5 5" /></svg>
+            Settings
+          </button>
         )}
-        <Text style={styles.title}>Review queue</Text>
-        <Text style={styles.subtitle}>
-          {pending === undefined
-            ? 'Loading…'
-            : pending.length === 0
-            ? 'Nothing to review — imported transactions will appear here.'
-            : `${pending.length} transaction${pending.length === 1 ? '' : 's'} to confirm`}
-        </Text>
-      </View>
 
-      {monthGroups.map((group) => {
-        const isCollapsed = collapsed[group.key];
-        return (
-          <View key={group.key} style={styles.monthSection}>
-            <TouchableOpacity
-              style={styles.monthHeader}
-              onPress={() => toggleMonth(group.key)}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.monthChevron}>{isCollapsed ? '▸' : '▾'}</Text>
-              <Text style={styles.monthTitle}>{monthLabel(group.key)}</Text>
-              <Text style={styles.monthMeta}>
-                {group.rows.length} · {group.currency} {group.total.toFixed(2)}
-              </Text>
-            </TouchableOpacity>
-            {!isCollapsed && group.rows.map((row: any) => renderCard(row))}
-          </View>
-        );
-      })}
-    </ScrollView>
+        <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={{ fontSize: 14, color: COLORS.muted }}>
+            {pending === undefined ? 'Review queue' : count ? `${count} to file` : 'Review queue'}
+          </span>
+          <h1 style={H1}>{pending === undefined ? ' ' : count ? 'Which cup?' : 'Nothing to file.'}</h1>
+          {pending !== undefined && !count && (
+            <span style={{ fontSize: 15, color: COLORS.muted, lineHeight: 1.5 }}>New bank emails file themselves when they can.</span>
+          )}
+        </div>
+
+        {toast && (
+          <span key={toast} className="bk-step" role="status" style={{ fontSize: 14, color: toast.startsWith('That did not') ? COLORS.rust : COLORS.green, lineHeight: 1.45, marginTop: -12 }}>
+            {toast}
+          </span>
+        )}
+
+        {byMonth.map((g) => {
+          return (
+            <section key={g.label || 'all'} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {g.label && <span style={{ fontSize: 13, color: COLORS.muted }}>{g.label}</span>}
+              {g.rows.map((row) => (
+                <QueueCard
+                  key={row._id}
+                  row={row}
+                  cups={cups}
+                  open={leaving[row._id] ? true : activeId === row._id}
+                  leaving={!!leaving[row._id]}
+                  onOpen={() => setOpenId(row._id)}
+                  onFile={(cup, memo, amount) => fileTo(row, cup, memo, amount)}
+                  onNotSpending={() => leaveOut(row)}
+                  onRemove={() => removeOne(row)}
+                />
+              ))}
+            </section>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
-const styles = StyleSheet.create({
-  // Transparent so the app's textured wallpaper (set on <body>) shows through,
-  // matching every other screen. A solid fill here painted over the texture and
-  // made the page look flat/different from the rest of the app — and showed as
-  // a two-tone "block" where the fill ended above the wallpaper.
-  //
-  // maxHeight: 100vh + overflow: auto are required for the ScrollView to
-  // actually scroll on react-native-web. Without a bounded height it grows to
-  // fit every card and the ancestor clips the overflow, leaving you stuck on
-  // the first cards. Mirrors BucketsOverview.web's working pattern.
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    maxHeight: '100vh' as any,
-    overflow: 'auto' as any,
-  },
-  content: { paddingHorizontal: 20, paddingTop: 44, paddingBottom: 120 },
-  header: { marginBottom: 20 },
-  monthSection: { marginBottom: 8 },
-  monthHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    marginBottom: 6,
-  },
-  monthChevron: {
-    ...type.caption,
-    color: theme.colors.textSecondary,
-    width: 14,
-  },
-  monthTitle: {
-    ...type.eyebrow,
-    color: theme.colors.text,
-    flex: 1,
-  },
-  monthMeta: {
-    ...type.caption,
-    color: theme.colors.textSecondary,
-  },
-  backBtn: { marginBottom: 10 },
-  backText: { ...type.button, color: theme.colors.primary },
-  title: {
-    ...type.screenTitle,
-    color: theme.colors.text,
-  },
-  subtitle: {
-    ...type.caption,
-    fontSize: 14,
-    color: theme.colors.textSecondary,
-    marginTop: 4,
-  },
-  card: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  cardAttention: {
-    borderColor: theme.colors.honeyed,
-    borderWidth: 1.5,
-  },
-  attentionBanner: {
-    backgroundColor: 'rgba(184,152,106,0.14)',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 14,
-  },
-  attentionText: {
-    color: theme.colors.honeyed,
-    fontSize: 12,
-    fontFamily: 'Merchant Copy',
-  },
-  cardTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 14,
-  },
-  bankBadge: {
-    backgroundColor: 'rgba(92,138,122,0.14)',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 999,
-  },
-  bankBadgeText: {
-    ...type.eyebrow,
-    color: theme.colors.primary,
-  },
-  dateText: { ...type.caption, color: theme.colors.textSecondary },
-  fieldRow: { marginBottom: 14 },
-  label: {
-    ...type.label,
-    color: theme.colors.textSecondary,
-    marginBottom: 6,
-  },
-  input: {
-    ...type.body,
-    backgroundColor: theme.colors.backgroundLight,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: theme.colors.text,
-  },
-  bucketRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  bucketChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 999,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: 'rgba(61,50,41,0.12)',
-  },
-  bucketChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  bucketChipText: {
-    ...type.button,
-    color: theme.colors.textSecondary,
-  },
-  bucketChipTextSelected: { color: theme.colors.textOnPrimary },
-  worthItRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 18,
-  },
-  worthItBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: 'rgba(61,50,41,0.1)',
-    alignItems: 'center',
-  },
-  worthItBtnNotWorth: {
-    backgroundColor: 'rgba(212,184,154,0.3)',
-    borderColor: '#c9a882',
-  },
-  worthItBtnWorth: {
-    backgroundColor: '#a0d0c0',
-    borderColor: '#8ac4b2',
-  },
-  worthItBtnNecessary: {
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    borderColor: 'rgba(61,50,41,0.15)',
-  },
-  worthItBtnText: {
-    ...type.button,
-    color: 'rgba(61,50,41,0.3)',
-  },
-  worthItBtnTextNotWorth: { color: '#a08060' },
-  worthItBtnTextWorth: { color: '#245045' },
-  worthItBtnTextNecessary: { color: 'rgba(61,50,41,0.4)' },
-  actions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
-  dismissBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: 'rgba(61,50,41,0.12)',
-  },
-  dismissText: { ...type.button, color: theme.colors.textSecondary },
-  confirmBtn: {
-    paddingHorizontal: 24,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: theme.colors.primary,
-  },
-  confirmText: { ...type.button, color: '#FFFFFF' },
-  btnDisabled: { opacity: 0.45 },
-});
+function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onRemove }: {
+  row: any; cups: any[]; open: boolean; leaving: boolean;
+  onOpen: () => void;
+  onFile: (cup: any, memo: string, amount?: number) => void;
+  onNotSpending: () => void;
+  onRemove: () => void;
+}) {
+  const [memo, setMemo] = useState('');
+  const [amountText, setAmountText] = useState(String(row.amount ?? ''));
+  const amount = parseFloat(amountText);
+  const amountOk = isFinite(amount) && amount > 0;
+  const editedAmount = row.needsAttention && amountOk && amount !== row.amount ? amount : undefined;
+  const isIn = row.direction === 'in';
+
+  const shell: React.CSSProperties = {
+    background: COLORS.sheet, borderRadius: 18, display: 'flex', flexDirection: 'column',
+    opacity: leaving ? 0 : 1, filter: leaving ? 'blur(6px)' : 'none',
+    transition: 'opacity .45s ease, filter .45s ease',
+    pointerEvents: leaving ? 'none' : undefined,
+  };
+
+  if (!open) {
+    return (
+      <button type="button" className="bk-row" onClick={onOpen} style={{ ...PLAIN_BTN, ...shell, padding: '14px 18px', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 60 }}>
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+          <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.merchant ?? 'Unnamed'}</span>
+          <span style={{ fontSize: 13, color: row.needsAttention ? COLORS.rust : COLORS.muted }}>
+            {row.needsAttention ? 'Check this one' : whenLabel(row).split(' · ').slice(0, 2).join(' · ')}
+          </span>
+        </span>
+        <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink, flexShrink: 0 }}>
+          {isIn ? '+' : ''}{money(row.amount)}
+        </span>
+      </button>
+    );
+  }
+
+  const targets = [...cups, { id: 'none', name: 'Not spending' }];
+
+  return (
+    <div className="bk-step" style={{ ...shell, padding: 20, gap: 22 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>{whenLabel(row)}</span>
+        {row.needsAttention ? (
+          <label style={{ display: 'flex', alignItems: 'baseline', gap: 2, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
+            <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>$</span>
+            <input value={amountText} onChange={(e) => setAmountText(e.target.value)} inputMode="decimal" aria-label="Amount"
+              style={{ ...INPUT, boxShadow: 'none', fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', padding: '2px 0' }} />
+          </label>
+        ) : (
+          <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink }}>
+            {isIn ? '+' : ''}{money(row.amount)}
+          </span>
+        )}
+        <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
+        {row.needsAttention && (
+          <span style={{ fontSize: 13, color: COLORS.rust }}>I could not read all of this one. Check the amount.</span>
+        )}
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 10 }}>
+          <span style={{ fontSize: 13, color: COLORS.muted }}>What was it? Optional</span>
+          <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. lunch at the hawker" style={INPUT} />
+        </label>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
+        {targets.map((c) => (
+          <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : `File to ${c.name}`}
+            disabled={!amountOk}
+            onClick={() => (c.id === 'none' ? onNotSpending() : onFile(c, memo, editedAmount))}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64, opacity: amountOk ? 1 : 0.4 }}>
+            <span style={{ position: 'relative', width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+              {c.id === 'none' ? (
+                <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
+                </span>
+              ) : (
+                <img src={cupSrc(c.name)} alt="" />
+              )}
+            </span>
+            <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: 'nowrap' }}>{c.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <button type="button" onClick={onRemove}
+        style={{ ...PLAIN_BTN, alignSelf: 'center', textAlign: 'center', fontSize: 14, color: COLORS.muted, minHeight: 44, marginTop: -8 }}>
+        Remove just this one
+      </button>
+    </div>
+  );
+}

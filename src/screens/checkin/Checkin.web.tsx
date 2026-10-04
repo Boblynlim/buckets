@@ -282,9 +282,9 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
   const pick = (ci: number) => {
     if (fly || !row) return;
     const target = targets[ci];
-    const col = ci % 5;
-    const r = Math.floor(ci / 5);
-    setFly({ x: (col - 2) * 68, y: 236 + r * 78 });
+    const col = ci % 4;
+    const r = Math.floor(ci / 4);
+    setFly({ x: (col - 1.5) * 86, y: 236 + r * 78 });
     setTimeout(async () => {
       const name = memo.trim();
       if (target.id === 'none') {
@@ -332,7 +332,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
                 style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
             </label>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
             {targets.map((c, ci) => (
               <button key={c.id} type="button" onClick={() => pick(ci)} aria-label={c.name}
                 style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64 }}>
