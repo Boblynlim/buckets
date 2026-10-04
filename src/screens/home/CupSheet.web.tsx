@@ -25,7 +25,7 @@ const RULES: Record<string, string> = {
 };
 const NOTES: Record<string, string> = { 'Self care': 'Already paid for. Enjoy it.' };
 
-export function CupSheet({ cup, month, allCups, onClose, onEdit }: { cup: Cup; month: string; allCups: Cup[]; onClose: () => void; onEdit?: (t: { id: string; note: string; amount: number; date: number }) => void }) {
+export function CupSheet({ cup, month, allCups, onClose, onEdit, past }: { cup: Cup; month: string; allCups: Cup[]; onClose: () => void; past?: boolean; onEdit?: (t: { id: string; note: string; amount: number; date: number }) => void }) {
   const txns = useQuery(api.home.cupTransactions, { bucketId: cup.id as any, month });
   const refile = useMutation(api.merchantRules.refile);
   const [open, setOpen] = useState<string | null>(null);
@@ -51,12 +51,16 @@ export function CupSheet({ cup, month, allCups, onClose, onEdit }: { cup: Cup; m
           </button>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          <span style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>{money(cup.left)} left</span>
+          <span style={{ fontSize: 44, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>
+            {past ? `${money((cup as any).spent ?? 0)} spent` : `${money(cup.left)} left`}
+          </span>
           <span style={{ fontSize: 15, color: COLORS.muted }}>
-            {cup.carry > 0 ? `${money(cup.funded)} this month, plus ${money(cup.carry)} carried over` : `of ${money(cup.funded)} this month`}
+            {past
+              ? `in ${new Date(Number(month.slice(0, 4)), Number(month.slice(5)) - 1, 1).toLocaleString('en-GB', { month: 'long' })}`
+              : cup.carry > 0 ? `${money(cup.funded)} this month, plus ${money(cup.carry)} carried over` : `of ${money(cup.funded)} this month`}
           </span>
         </div>
-        {NOTES[cup.name] && <span style={{ fontSize: 15, color: COLORS.green }}>{NOTES[cup.name]}</span>}
+        {!past && NOTES[cup.name] && <span style={{ fontSize: 15, color: COLORS.green }}>{NOTES[cup.name]}</span>}
         {RULES[cup.name] && <span style={{ fontSize: 13, color: COLORS.muted }}>{RULES[cup.name]}</span>}
 
         <div className="bk-scroll" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' as any }}>

@@ -173,8 +173,19 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
   const [amountText, setAmountText] = useState(String(row.amount ?? ''));
   const amount = parseFloat(amountText);
   const amountOk = isFinite(amount) && amount > 0;
-  const editedAmount = row.needsAttention && amountOk && amount !== row.amount ? amount : undefined;
   const isIn = row.direction === 'in';
+  // Shared bills: only my share goes into the cup.
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [share, setShare] = useState<number | null>(null);
+  const [customShare, setCustomShare] = useState('');
+  const base = row.needsAttention && amountOk ? amount : row.amount;
+  const custom = parseFloat(customShare);
+  const shareAmount =
+    share === -1 ? (isFinite(custom) && custom > 0 ? custom : null) : share ? Math.round((base / share) * 100) / 100 : null;
+  const editedAmount =
+    shareAmount != null ? shareAmount : row.needsAttention && amountOk && amount !== row.amount ? amount : undefined;
+  const fileMemo = (m: string) =>
+    shareAmount != null && !m.trim() ? `${row.merchant ?? 'Shared'} (my share of ${moneyExact(base)})` : m;
 
   const shell: React.CSSProperties = {
     background: COLORS.sheet, borderRadius: 18, display: 'flex', flexDirection: 'column',
@@ -217,6 +228,33 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
           </span>
         )}
         <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
+        {!isIn && (
+          shareAmount != null ? (
+            <span style={{ fontSize: 14, color: COLORS.green }}>
+              Your share: {moneyExact(shareAmount)} of {moneyExact(base)}.{' '}
+              <button type="button" onClick={() => { setShare(null); setCustomShare(''); setSplitOpen(false); }}
+                style={{ ...PLAIN_BTN, color: COLORS.muted, textDecoration: 'underline', fontSize: 14, padding: 0 }}>Undo</button>
+            </span>
+          ) : splitOpen ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center', paddingTop: 2 }}>
+              <span style={{ fontSize: 13, color: COLORS.muted, width: '100%' }}>Split with friends. Only your share goes in the cup.</span>
+              <button type="button" className="bk-chip" onClick={() => setShare(2)}>Half</button>
+              <button type="button" className="bk-chip" onClick={() => setShare(3)}>A third</button>
+              <button type="button" className="bk-chip" onClick={() => setShare(4)}>A quarter</button>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 2, fontSize: 13, color: COLORS.muted }}>
+                Mine $
+                <input inputMode="decimal" aria-label="My share" value={customShare} placeholder="0.00"
+                  onChange={(e) => { setCustomShare(e.target.value); setShare(-1); }}
+                  style={{ ...INPUT, width: 72, fontSize: 15, padding: '6px 0' }} />
+              </label>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setSplitOpen(true)}
+              style={{ ...PLAIN_BTN, alignSelf: 'flex-start', color: COLORS.ink, fontSize: 14, textDecoration: 'underline', textUnderlineOffset: 3, padding: 0, minHeight: 32 }}>
+              Split it
+            </button>
+          )
+        )}
         {row.needsAttention && (
           <span style={{ fontSize: 13, color: COLORS.rust }}>I could not read all of this one. Check the amount.</span>
         )}
@@ -229,8 +267,8 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
         {targets.map((c) => (
           <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : c.id === 'in' ? 'Money in' : `File to ${c.name}`}
-            disabled={!amountOk}
-            onClick={() => (c.id === 'none' ? onNotSpending() : c.id === 'in' ? onIncome() : onFile(c, memo, editedAmount))}
+            disabled={!amountOk || (share === -1 && shareAmount == null)}
+            onClick={() => (c.id === 'none' ? onNotSpending() : c.id === 'in' ? onIncome() : onFile(c, fileMemo(memo), editedAmount))}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64, opacity: amountOk ? 1 : 0.4 }}>
             <span style={{ position: 'relative', width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
               {c.id === 'none' ? (
