@@ -25,6 +25,11 @@ export function cupSrc(name: string): string {
 export const money = (n: number) =>
   (n < 0 ? '-$' : '$') + Math.round(Math.abs(n)).toLocaleString('en-US');
 
+// Exact, with cents: for individual transactions ($4.57, $1,128.00).
+// Balances and totals stay in whole dollars (money).
+export const moneyExact = (n: number) =>
+  (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 export const COLORS = {
   wall: '#F3F0EA',
   ink: '#1F1B17',

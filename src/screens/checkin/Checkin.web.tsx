@@ -4,7 +4,7 @@ import { api } from '../../../convex/_generated/api';
 import { useAuth } from '../../lib/AuthContext';
 import { isPaymentCompany } from '../../../convex/lib/merchantKey';
 import { CupArt } from '../home/Home.web';
-import { COLORS, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from '../home/homeStyles';
+import { COLORS, cupSrc, currentMonth, money, moneyExact, monthLabel, useHomeStyles } from '../home/homeStyles';
 
 // Payday check-in: recap -> balances -> filed for you -> the few it couldn't
 // file -> done (numbers count up, cups fill). Skipping is always fine.
@@ -90,46 +90,39 @@ export function Checkin({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Last month: what each cup actually spent. (What carried over isn't shown:
+// opening balances were set fresh in October, so "left" would mislead.)
 function Recap({ recap, prevLabel, onNext }: { recap: any[]; prevLabel: string; onNext: () => void }) {
-  const [drained, setDrained] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setDrained(true), 500);
-    return () => clearTimeout(t);
-  }, []);
-  const left = recap.reduce((s, sh) => s + sh.left, 0);
-  let k = 0;
+  const total = recap.reduce((s, sh) => s + sh.cups.reduce((t: number, c: any) => t + c.spent, 0), 0);
   return (
     <div className="bk-step" style={INNER}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={LABEL}>{prevLabel}</span>
-        <h1 style={H1}>{money(left)} left in your cups. It stays there for next month.</h1>
+        <h1 style={H1}>You spent {money(total)} from your cups.</h1>
       </div>
       {recap.filter((sh) => sh.cups.length).map((sh) => {
         const cols = `repeat(${sh.cups.length}, minmax(0, 1fr))`;
+        const shelfSpent = sh.cups.reduce((t: number, c: any) => t + c.spent, 0);
         return (
           <div key={sh.name} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: COLORS.muted }}>
               <span>{sh.name}</span>
-              <span>{money(sh.left)} stays</span>
+              <span>{money(shelfSpent)} spent</span>
             </div>
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: cols, alignItems: 'end' }}>
-                {sh.cups.map((c: any) => {
-                  const i = k++;
-                  const pct = c.had > 0 ? (Math.max(0, c.left) / c.had) * 100 : 0;
-                  return (
-                    <div key={c.id} className="bk-cup" style={{ justifySelf: 'center', width: 44, height: 44, cursor: 'default' }}>
-                      <CupArt name={c.name} pct={drained ? pct : 100} size={44} delay={0.1 * i} />
-                    </div>
-                  );
-                })}
+                {sh.cups.map((c: any) => (
+                  <img key={c.id} src={cupSrc(c.name)} alt=""
+                    style={{ justifySelf: 'center', width: 44, height: 44, objectFit: 'contain', objectPosition: 'bottom', mixBlendMode: 'multiply', opacity: c.spent > 0 ? 1 : 0.35 }} />
+                ))}
               </div>
               <div className="bk-plank" />
-              <div style={{ display: 'grid', gridTemplateColumns: cols, paddingTop: 6 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: cols, paddingTop: 8 }}>
                 {sh.cups.map((c: any) => (
-                  <span key={c.id} style={{ fontSize: 12, textAlign: 'center', color: c.left > 0 ? COLORS.ink : '#B5ACA0', opacity: drained ? 1 : 0, transition: 'opacity .8s ease 1.2s' }}>
-                    {c.left > 0 ? money(c.left) : '–'}
-                  </span>
+                  <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                    <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: 'nowrap' }}>{c.name}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: c.spent > 0 ? COLORS.ink : '#B5ACA0' }}>{c.spent > 0 ? money(c.spent) : '–'}</span>
+                  </div>
                 ))}
               </div>
             </div>
@@ -238,7 +231,7 @@ function FiledForYou({ groups, cups, onNext }: { groups: any[]; cups: any[]; onN
                 style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '12px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, textAlign: 'left', minHeight: 56 }}>
                 <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                   <span style={{ fontSize: 15 }}>{g.merchant}</span>
-                  <span style={{ fontSize: 13, color: COLORS.muted }}>{g.count > 1 ? `${g.count} times · ` : ''}{money(g.total)}</span>
+                  <span style={{ fontSize: 13, color: COLORS.muted }}>{g.count > 1 ? `${g.count} times · ` : ''}{moneyExact(g.total)}</span>
                 </span>
                 <span style={{ fontSize: 15, color: moved[g.merchant] ? COLORS.green : COLORS.muted, whiteSpace: 'nowrap' }}>{cupName}</span>
               </button>
@@ -262,6 +255,7 @@ function FiledForYou({ groups, cups, onNext }: { groups: any[]; cups: any[]; onN
 function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: () => void }) {
   const confirm = useMutation(api.pendingTransactions.confirm);
   const notSpending = useMutation(api.merchantRules.markNotSpending);
+  const markAsIncome = useMutation(api.pendingTransactions.markAsIncome);
   const queue = useRef(rows).current; // freeze the order while filing
   const [i, setI] = useState(0);
   const [memo, setMemo] = useState('');
@@ -269,7 +263,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
   const [fly, setFly] = useState<{ x: number; y: number } | null>(null);
   const [landed, setLanded] = useState<number | null>(null);
   const row = queue[i];
-  const targets = useMemo(() => [...cups, { id: 'none', name: 'Not spending' }], [cups]);
+  const targets = useMemo(() => [...cups, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }], [cups]);
 
   useEffect(() => {
     if (!row && queue.length > 0) {
@@ -287,7 +281,10 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
     setFly({ x: (col - 1.5) * 86, y: 236 + r * 78 });
     setTimeout(async () => {
       const name = memo.trim();
-      if (target.id === 'none') {
+      if (target.id === 'in') {
+        await markAsIncome({ pendingId: row._id });
+        setToast('Counted as money in. Pay near month end goes to next month.');
+      } else if (target.id === 'none') {
         await notSpending({ pendingId: row._id });
         setToast('Got it. Left out of your cups.');
       } else {
@@ -324,7 +321,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
             transition: 'transform .7s cubic-bezier(0.55,0,0.7,0.4), opacity .7s ease, filter .7s ease',
           }}>
             <span style={{ fontSize: 13, color: COLORS.muted }}>{when}</span>
-            <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>{money(row.amount)}</span>
+            <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>{moneyExact(row.amount)}</span>
             <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 8 }}>
               <span style={{ fontSize: 13, color: COLORS.muted }}>What was it? Optional</span>
@@ -337,7 +334,11 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
               <button key={c.id} type="button" onClick={() => pick(ci)} aria-label={c.name}
                 style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64 }}>
                 <div style={{ width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transform: landed === ci ? 'translateY(3px) scale(1.08)' : 'none', transition: 'transform .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
-                  {c.id === 'none' ? (
+                  {c.id === 'in' ? (
+                    <div style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.green} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 11V3M3.5 6.5L7 3l3.5 3.5" /></svg>
+                    </div>
+                  ) : c.id === 'none' ? (
                     <div style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                     </div>

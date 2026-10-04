@@ -7,6 +7,34 @@ import {
 import { api } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { learn, autoFile } from "./merchantRules";
+import { incomeMonthFor } from "./lib/incomeMonth";
+import { MutationCtx } from "./_generated/server";
+
+/**
+ * Record money in for the month it funds. If that month already has an entry
+ * for about the same amount (e.g. a salary typed in by hand), the bank alert
+ * confirms it instead of adding it twice.
+ */
+export async function recordIncome(
+  ctx: MutationCtx,
+  userId: Id<"users">,
+  amount: number,
+  date: number,
+  note: string
+): Promise<Id<"monthlyIncome">> {
+  const month = incomeMonthFor(date);
+  const rows = await ctx.db
+    .query("monthlyIncome")
+    .withIndex("by_user_month", (q) => q.eq("userId", userId).eq("month", month))
+    .collect();
+  const same = rows.find((r) => Math.abs(r.amount - amount) < 1);
+  const now = Date.now();
+  if (same) {
+    await ctx.db.patch(same._id, { isConfirmed: true, confirmedAt: now });
+    return same._id;
+  }
+  return await ctx.db.insert("monthlyIncome", { userId, month, amount, note, isConfirmed: true, confirmedAt: now });
+}
 
 /**
  * Resolve which user imported transactions belong to.
@@ -120,22 +148,13 @@ export const ingestIncome = internalMutation({
       return { status: "duplicate" as const, id: existing._id };
     }
 
-    // Month bucket from the transfer date (stored at UTC noon by the parser).
-    const d = new Date(args.date);
-    const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    const month = incomeMonthFor(args.date);
     const note = args.merchant
       ? `Received from ${args.merchant}`
       : `Received via ${args.bank.toUpperCase()}`;
 
     const now = Date.now();
-    const incomeId = await ctx.db.insert("monthlyIncome", {
-      userId: userId as any,
-      month,
-      amount: args.amount,
-      note,
-      isConfirmed: true, // it's already in the account
-      confirmedAt: now,
-    });
+    const incomeId = await recordIncome(ctx, userId as any, args.amount, args.date, note);
 
     const id = await ctx.db.insert("pendingTransactions", {
       userId: userId as any,
@@ -285,5 +304,24 @@ export const dismiss = mutation({
       status: "dismissed",
       updatedAt: Date.now(),
     });
+  },
+});
+
+/** "This is money in": a queued row that was really income (e.g. salary). */
+export const markAsIncome = mutation({
+  args: { pendingId: v.id("pendingTransactions") },
+  handler: async (ctx, { pendingId }) => {
+    const row = await ctx.db.get(pendingId);
+    if (!row) throw new Error("Pending transaction not found");
+    if (row.status !== "pending") throw new Error(`Transaction already ${row.status}`);
+    const note = row.merchant ? `Received from ${row.merchant}` : `Received via ${row.bank.toUpperCase()}`;
+    const incomeId = await recordIncome(ctx, row.userId, row.amount, row.date, note);
+    await ctx.db.patch(pendingId, {
+      direction: "in",
+      status: "confirmed",
+      confirmedIncomeId: incomeId,
+      updatedAt: Date.now(),
+    });
+    return { month: incomeMonthFor(row.date) };
   },
 });

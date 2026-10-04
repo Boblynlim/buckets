@@ -3,7 +3,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { isPaymentCompany } from '../../convex/lib/merchantKey';
-import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
+import { COLORS, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
 
 // Bank transactions waiting for a cup. Same feel as the check-in's
 // "Which cup?" step: one card open at a time, tap a cup to file it. Filing a
@@ -42,6 +42,7 @@ export function ReviewQueue({ onBack }: Props) {
   const confirm = useMutation(api.pendingTransactions.confirm);
   const dismiss = useMutation(api.pendingTransactions.dismiss);
   const notSpending = useMutation(api.merchantRules.markNotSpending);
+  const markAsIncome = useMutation(api.pendingTransactions.markAsIncome);
 
   const cups = useMemo(() => summary?.shelves.flatMap((s: any) => s.cups) ?? [], [summary]);
 
@@ -100,6 +101,9 @@ export function ReviewQueue({ onBack }: Props) {
   const leaveOut = (row: any) =>
     finish(row, () => notSpending({ pendingId: row._id }), `Got it. ${row.merchant ?? 'That'} stays out of your cups.`);
 
+  const moneyIn = (row: any) =>
+    finish(row, () => markAsIncome({ pendingId: row._id }), `Counted as money in. Pay near month end goes to next month.`);
+
   const removeOne = (row: any) => finish(row, () => dismiss({ pendingId: row._id }), 'Removed. Nothing learned.');
 
   const count = visible.length;
@@ -145,6 +149,7 @@ export function ReviewQueue({ onBack }: Props) {
                   onOpen={() => setOpenId(row._id)}
                   onFile={(cup, memo, amount) => fileTo(row, cup, memo, amount)}
                   onNotSpending={() => leaveOut(row)}
+                  onIncome={() => moneyIn(row)}
                   onRemove={() => removeOne(row)}
                 />
               ))}
@@ -156,11 +161,12 @@ export function ReviewQueue({ onBack }: Props) {
   );
 }
 
-function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onRemove }: {
+function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onRemove }: {
   row: any; cups: any[]; open: boolean; leaving: boolean;
   onOpen: () => void;
   onFile: (cup: any, memo: string, amount?: number) => void;
   onNotSpending: () => void;
+  onIncome: () => void;
   onRemove: () => void;
 }) {
   const [memo, setMemo] = useState('');
@@ -187,13 +193,13 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
           </span>
         </span>
         <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink, flexShrink: 0 }}>
-          {isIn ? '+' : ''}{money(row.amount)}
+          {isIn ? '+' : ''}{moneyExact(row.amount)}
         </span>
       </button>
     );
   }
 
-  const targets = [...cups, { id: 'none', name: 'Not spending' }];
+  const targets = [...cups, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }];
 
   return (
     <div className="bk-step" style={{ ...shell, padding: 20, gap: 22 }}>
@@ -207,7 +213,7 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
           </label>
         ) : (
           <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', fontVariantNumeric: 'tabular-nums', color: isIn ? COLORS.green : COLORS.ink }}>
-            {isIn ? '+' : ''}{money(row.amount)}
+            {isIn ? '+' : ''}{moneyExact(row.amount)}
           </span>
         )}
         <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
@@ -222,14 +228,18 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
         {targets.map((c) => (
-          <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : `File to ${c.name}`}
+          <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : c.id === 'in' ? 'Money in' : `File to ${c.name}`}
             disabled={!amountOk}
-            onClick={() => (c.id === 'none' ? onNotSpending() : onFile(c, memo, editedAmount))}
+            onClick={() => (c.id === 'none' ? onNotSpending() : c.id === 'in' ? onIncome() : onFile(c, memo, editedAmount))}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64, opacity: amountOk ? 1 : 0.4 }}>
             <span style={{ position: 'relative', width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
               {c.id === 'none' ? (
                 <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
+                </span>
+              ) : c.id === 'in' ? (
+                <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.green} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 11V3M3.5 6.5L7 3l3.5 3.5" /></svg>
                 </span>
               ) : (
                 <img src={cupSrc(c.name)} alt="" />

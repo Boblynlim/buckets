@@ -193,6 +193,17 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
     };
   }
 
+  // "A deposit was made in your account ... Reference: from WANDERING STUD"
+  if (/deposit was made in your account|deposit in your account/i.test(text)) {
+    return {
+      direction: "in",
+      amount: amt.amount,
+      currency: amt.currency,
+      merchant: clean((text.match(/Reference:\s*(?:from\s+)?([A-Za-z0-9 &'._\-]{2,40}?)(?:\s+For assistance|\s+If |\.|$)/i) || [])[1]),
+      date: parseDate(text),
+    };
+  }
+
   const direction = detectDirection(text);
   const sentTo = clean(
     (text.match(

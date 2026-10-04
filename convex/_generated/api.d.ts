@@ -29,6 +29,7 @@ import type * as http from "../http.js";
 import type * as importRepair from "../importRepair.js";
 import type * as lib_bucketMath from "../lib/bucketMath.js";
 import type * as lib_emailParsers from "../lib/emailParsers.js";
+import type * as lib_incomeMonth from "../lib/incomeMonth.js";
 import type * as lib_merchantKey from "../lib/merchantKey.js";
 import type * as lib_recurring from "../lib/recurring.js";
 import type * as memories from "../memories.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   importRepair: typeof importRepair;
   "lib/bucketMath": typeof lib_bucketMath;
   "lib/emailParsers": typeof lib_emailParsers;
+  "lib/incomeMonth": typeof lib_incomeMonth;
   "lib/merchantKey": typeof lib_merchantKey;
   "lib/recurring": typeof lib_recurring;
   memories: typeof memories;

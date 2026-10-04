@@ -91,6 +91,22 @@ describe('HSBC descriptions with payment-processor prefixes', () => {
   });
 });
 
+describe('OCBC money in', () => {
+  it('reads a deposit alert as income from the sender', () => {
+    const r = parseBankEmail({
+      from: 'x@forwarded.example',
+      subject: 'Fwd: OCBC Alert: Deposit in your account',
+      body:
+        'Subject: OCBC Alert: Deposit in your account Dear Valued Customer, A deposit was made in ' +
+        'your account. Here are the details: Time of deposit: 11:10 AM Amount: SGD 6,400.00 Account ' +
+        'that money was deposited in: (-000000) Reference: from Wandering Stud For assistance at any time',
+    });
+    expect(r.direction).toBe('in');
+    expect(r.amount).toBe(6400);
+    expect(r.merchant).toBe('Wandering Stud');
+  });
+});
+
 describe('DBS / POSB / PayLah', () => {
   const dbs = (body: string, subject = 'digibank Alerts') =>
     parseBankEmail({ from: 'ibanking.alert@dbs.com', subject, body });

@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
-import { COLORS, money } from './homeStyles';
+import { COLORS, money, moneyExact } from './homeStyles';
 
 type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number };
 
@@ -73,7 +73,7 @@ export function CupSheet({ cup, month, allCups, onClose, onEdit }: { cup: Cup; m
                       : new Date(t.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + (t.autoFiled ? ' · filed for you. Tap to move' : '')}
                   </span>
                 </span>
-                <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{money(t.amount)}</span>
+                <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>{moneyExact(t.amount)}</span>
               </button>
               {open === t.id && (
                 <div className="bk-sheet" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 12 }}>
