@@ -1,34 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  SafeAreaView,
-  ScrollView,
-  TouchableOpacity,
-  Pressable,
-  ActivityIndicator,
-  Modal,
-  Switch,
-  Alert,
-  Image,
-  TextInput,
-} from 'react-native';
-import {
-  ChevronRight,
-  Heart,
-  X,
-  FolderPlus,
-} from 'lucide-react-native';
+import React, { useEffect, useState } from 'react';
 import { useQuery, useMutation, useAction, useConvex } from 'convex/react';
 import { useAuth } from '../lib/AuthContext';
 import { api } from '../../convex/_generated/api';
-import { theme } from '../theme';
 import type { Bucket } from '../types';
 import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIcons';
-import { PotteryLoader } from '../components/PotteryLoader';
-import { SwipeableRow } from '../components/SwipeableRow';
-import { Toast } from '../components/Toast';
 import { CSVImportPreview } from '../components/CSVImportPreview';
 import {
   exportExpensesToCSV,
@@ -43,6 +18,10 @@ import {
   unsubscribeFromPush,
   isSubscribed as checkPushSubscribed,
 } from '../utils/pushNotifications';
+import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
+import {
+  BODY, Check, Field, Group, LABEL, Page, Row, Switch, Toast, useSettingsStyles, type ToastState,
+} from './settings/parts';
 
 interface SettingsProps {
   navigation?: any;
@@ -54,95 +33,115 @@ interface SettingsProps {
   onNavigateToReviewQueue?: () => void;
 }
 
+type View = 'main' | 'cups' | 'newGroup' | 'editGroup' | 'notifications' | 'import' | 'export' | 'passcode' | 'reset';
+
+const RESET_WORD = 'reset';
+
+// The cup photo for a bucket: its named pottery if it has one, otherwise the
+// cup it was assigned by id (so unnamed cups still look different).
+function bucketCup(b: Bucket): string {
+  const named = cupSrc(b.name);
+  if (named !== cupSrc('\u0000')) return named;
+  const mod: any = getCupForBucketId(b._id, b.icon);
+  return typeof mod === 'string' ? mod : mod?.default ?? mod?.uri ?? named;
+}
+
+function bucketLine(b: Bucket): string {
+  const goal = `goal ${money(b.targetAmount || 0)}`;
+  if (b.bucketMode === 'save') {
+    if (b.contributionType === 'percentage') return `${b.contributionPercent || 0}% of pay · ${goal}`;
+    return b.contributionAmount ? `${money(b.contributionAmount)} a month · ${goal}` : goal;
+  }
+  return b.allocationType === 'percentage'
+    ? `${b.plannedPercent || 0}% a month`
+    : `${money(b.plannedAmount || 0)} a month`;
+}
+
+function CupThumb({ bucket, size = 36 }: { bucket: Bucket; size?: number }) {
+  return (
+    <span className="st-cups" style={{ width: size, height: size, flexShrink: 0, display: 'flex' }}>
+      <img src={bucketCup(bucket)} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', objectPosition: 'bottom' }} />
+    </span>
+  );
+}
+
 export const Settings: React.FC<SettingsProps> = ({
   navigation,
   onAddBucket,
   onEditBucket,
   onSetIncome,
-  onNavigateToReports,
-  onNavigateToLetters,
   onNavigateToReviewQueue,
 }) => {
-  const [showNotifications, setShowNotifications] = useState(false);
-  const [showExport, setShowExport] = useState(false);
-  const [showImport, setShowImport] = useState(false);
+  useHomeStyles();
+  useSettingsStyles();
+
+  const [view, setView] = useState<View>('main');
+  const [toast, setToast] = useState<ToastState>(null);
+  const showToast = (message: string, tone: 'ok' | 'error' | 'busy' = 'ok') => setToast({ message, tone });
+
+  // CSV import
   const [showImportPreview, setShowImportPreview] = useState(false);
-  const [showManageBuckets, setShowManageBuckets] = useState(false);
   const [parsedExpenses, setParsedExpenses] = useState<CSVExpense[]>([]);
+
+  // Groups
+  const [groupName, setGroupName] = useState('');
+  const [groupSelected, setGroupSelected] = useState<Set<string>>(new Set());
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
-  const [editingGroupName, setEditingGroupName] = useState('');
-  const [creatingGroup, setCreatingGroup] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupSelectedIds, setNewGroupSelectedIds] = useState<Set<string>>(new Set());
-  // For editing group membership
-  const [editingGroupMembership, setEditingGroupMembership] = useState<string | null>(null);
-  const [editMembershipSelectedIds, setEditMembershipSelectedIds] = useState<Set<string>>(new Set());
+  const [groupSaving, setGroupSaving] = useState(false);
 
-  // Toast state
-  const [toastVisible, setToastVisible] = useState(false);
-  const [toastMessage, setToastMessage] = useState('');
-  const [toastType, setToastType] = useState<'success' | 'error' | 'loading'>(
-    'success',
-  );
-
-  // Change passcode state
-  const [showChangePasscode, setShowChangePasscode] = useState(false);
+  // Change passcode
   const [currentPc, setCurrentPc] = useState('');
   const [newPc, setNewPc] = useState('');
   const [confirmPc, setConfirmPc] = useState('');
   const [pcError, setPcError] = useState('');
   const [pcSubmitting, setPcSubmitting] = useState(false);
 
-  // Push notification state
+  // Reset
+  const [resetWord, setResetWord] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  // Push notifications
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushLoading, setPushLoading] = useState(false);
   const [pushSupported, setPushSupported] = useState(false);
   const convex = useConvex();
 
-  // Get current user and buckets from Convex
   const { user: currentUser, sessionToken, logout } = useAuth();
   const changePasscodeAction = useAction(api.auth.changePasscode);
-  const buckets = useQuery(
-    api.buckets.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
-  );
-  const expenses = useQuery(
-    api.expenses.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
-  );
+  const buckets = useQuery(api.buckets.getByUser, currentUser ? { userId: currentUser._id } : 'skip');
+  const expenses = useQuery(api.expenses.getByUser, currentUser ? { userId: currentUser._id } : 'skip');
   const reviewPendingCount = useQuery(
     api.pendingTransactions.pendingCount,
     currentUser ? { userId: currentUser._id } : 'skip',
   );
-  const currentMonthStr = (() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  })();
   const incomeEntries = useQuery(
     api.monthlyIncome.getByMonth,
-    currentUser ? { userId: currentUser._id, month: currentMonthStr } : 'skip',
+    currentUser ? { userId: currentUser._id, month: currentMonth() } : 'skip',
   );
-  const groups = useQuery(
-    api.groups.getByUser,
-    currentUser ? { userId: currentUser._id } : 'skip',
-  );
+  const groups = useQuery(api.groups.getByUser, currentUser ? { userId: currentUser._id } : 'skip');
   const bulkImport = useMutation(api.expenses.bulkImport);
   const generateReport = useAction(api.reportsNew.generateMonthlyReport);
   const resetAllData = useMutation(api.reset.deleteAllUserData);
-  const removeBucket = useMutation(api.buckets.remove);
-  const calculateDistribution = useMutation(
-    api.distribution.calculateDistribution,
-  );
   const createGroup = useMutation(api.groups.create);
   const updateGroup = useMutation(api.groups.update);
   const removeGroup = useMutation(api.groups.remove);
   const assignBucketToGroup = useMutation(api.groups.assignBucket);
 
-  // Check push notification status
   useEffect(() => {
     setPushSupported(isPushSupported());
     checkPushSubscribed().then(setPushEnabled);
   }, []);
+
+  const allBuckets: Bucket[] = (buckets as Bucket[] | undefined) || [];
+  const allExpenses = expenses || [];
+  const allGroups = groups || [];
+  registerCupAssignments(allBuckets.map(b => b._id));
+
+  const monthlyIncome = (incomeEntries || []).reduce((sum, income) => sum + income.amount, 0);
+  const totalAllocation = allBuckets.reduce(
+    (sum, b) => sum + (b.bucketMode === 'save' ? b.contributionAmount || 0 : b.plannedAmount || 0),
+    0,
+  );
 
   const handleTogglePush = async (value: boolean) => {
     if (!currentUser) return;
@@ -151,149 +150,99 @@ export const Settings: React.FC<SettingsProps> = ({
       if (value) {
         const success = await subscribeToPush(currentUser._id, convex);
         setPushEnabled(success);
-        if (!success) {
-          Alert.alert('Permission Denied', 'Please enable notifications in your browser settings.');
-        }
+        if (!success) showToast('Allow notifications in your browser settings first.', 'error');
       } else {
         await unsubscribeFromPush(convex);
         setPushEnabled(false);
       }
     } catch (error) {
       console.error('Push toggle error:', error);
+      showToast('Could not change notifications.', 'error');
     }
     setPushLoading(false);
   };
 
-  const allBuckets = buckets || [];
-  const allExpenses = expenses || [];
-  const allIncomeEntries = incomeEntries || [];
-
-  registerCupAssignments(allBuckets.map(b => b._id));
-
-  // Calculate total monthly income from per-month entries
-  const monthlyIncome = allIncomeEntries
-    .reduce((sum, income) => sum + income.amount, 0);
-
   const handleExportCSV = () => {
     if (!currentUser || allBuckets.length === 0 || allExpenses.length === 0) {
-      Alert.alert('No Data', 'No expenses to export');
+      showToast('Nothing to export yet.', 'error');
       return;
     }
-
     try {
       const csv = exportExpensesToCSV(allExpenses, allBuckets);
-      const filename = `buckets_expenses_${
-        new Date().toISOString().split('T')[0]
-      }.csv`;
-
+      const filename = `buckets_expenses_${new Date().toISOString().split('T')[0]}.csv`;
       downloadCSV(csv, filename);
-      Alert.alert(
-        'Success',
-        `Exported ${allExpenses.length} expenses to ${filename}`,
-      );
-      setShowExport(false);
+      showToast(`Exported ${allExpenses.length} spend${allExpenses.length !== 1 ? "s" : ""}.`);
     } catch (error) {
-      Alert.alert('Error', 'Failed to export data');
       console.error('Export error:', error);
+      showToast('Export failed. Try again.', 'error');
     }
-  };
-
-  const showToast = (
-    message: string,
-    type: 'success' | 'error' | 'loading',
-  ) => {
-    setToastMessage(message);
-    setToastType(type);
-    setToastVisible(true);
   };
 
   const handleDownloadTemplate = () => {
     try {
-      const template = generateCSVTemplate(allBuckets || []);
-      downloadCSV(template, 'buckets_import_template.csv');
-      showToast('Downloaded CSV template with your bucket names', 'success');
+      downloadCSV(generateCSVTemplate(allBuckets), 'buckets_import_template.csv');
+      showToast('Template downloaded, with your cup names.');
     } catch (error) {
-      showToast('Failed to download template', 'error');
       console.error('Template error:', error);
+      showToast('Could not download the template.', 'error');
     }
   };
 
-  const handleImportCSV = async (csvText: string) => {
-    console.log(
-      'handleImportCSV called with CSV text length:',
-      csvText?.length,
-    );
-
+  const handleImportCSV = (csvText: string) => {
     if (!currentUser || allBuckets.length === 0) {
-      showToast('Please create buckets first', 'error');
+      showToast('Add a cup first.', 'error');
       return;
     }
-
     try {
-      // Parse CSV
-      console.log('Parsing CSV with', allBuckets.length, 'buckets');
       const parsed = parseCSVToExpenses(csvText, allBuckets);
-      console.log('Parsed expenses:', parsed.length);
-
       if (parsed.length === 0) {
-        showToast('No valid expenses found in CSV', 'error');
+        showToast('No spends found in that file.', 'error');
         return;
       }
-
-      // Show preview modal
       setParsedExpenses(parsed);
-      setShowImport(false);
       setShowImportPreview(true);
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error occurred';
       console.error('Import error:', error);
-      showToast(errorMessage, 'error');
+      showToast((error as Error).message || 'Could not read that file.', 'error');
     }
   };
 
-  const handleConfirmImport = async (expenses: CSVExpense[]) => {
+  const pickCSV = () => {
+    if (typeof document === 'undefined') return;
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.csv';
+    input.onchange = (e: any) => {
+      const file = e.target?.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = event => handleImportCSV(event.target?.result as string);
+      reader.onerror = error => {
+        console.error('FileReader error:', error);
+        showToast('Could not read that file.', 'error');
+      };
+      reader.readAsText(file);
+    };
+    input.click();
+  };
+
+  const handleConfirmImport = async (rows: CSVExpense[]) => {
     if (!currentUser) return;
-
     try {
-      // Show loading toast
-      showToast('Importing transactions...', 'loading');
-
-      // Convert to format expected by bulkImport mutation
-      // Create bucket name map with normalized keys (lowercase, trimmed)
-      const bucketNameMap = new Map(
-        allBuckets.map(b => [b.name.toLowerCase().trim(), b._id]),
-      );
-
-      const expensesToImport = expenses.map(exp => {
-        const normalizedBucketName = exp.bucket.toLowerCase().trim();
-        const bucketId = bucketNameMap.get(normalizedBucketName);
-
-        if (!bucketId) {
-          console.error(
-            `Cannot find bucket ID for: "${exp.bucket}" (normalized: "${normalizedBucketName}")`,
-          );
-          console.error('Available buckets:', Array.from(bucketNameMap.keys()));
-          throw new Error(`Unknown bucket: ${exp.bucket}`);
-        }
-
+      showToast('Importing…', 'busy');
+      const bucketNameMap = new Map(allBuckets.map(b => [b.name.toLowerCase().trim(), b._id]));
+      const expensesToImport = rows.map(exp => {
+        const bucketId = bucketNameMap.get(exp.bucket.toLowerCase().trim());
+        if (!bucketId) throw new Error(`Unknown cup: ${exp.bucket}`);
+        // Parse YYYY-MM-DD as local noon so month boundaries match manual spends.
+        const parts = exp.date.split('-');
+        const date = parts.length === 3
+          ? new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0).getTime()
+          : new Date(exp.date).getTime();
         return {
           bucketId,
           amount: exp.amount,
-          date: (() => {
-            // Parse YYYY-MM-DD as local time (noon) to match how manual expenses
-            // use local time and how month filters use local boundaries.
-            // new Date("YYYY-MM-DD") parses as UTC which causes month-boundary mismatches.
-            const parts = exp.date.split('-');
-            if (parts.length === 3) {
-              return new Date(
-                parseInt(parts[0], 10),
-                parseInt(parts[1], 10) - 1,
-                parseInt(parts[2], 10),
-                12, 0, 0,
-              ).getTime();
-            }
-            return new Date(exp.date).getTime();
-          })(),
+          date,
           note: exp.note,
           worthIt: exp.worthIt ?? false,
           category: exp.category,
@@ -301,989 +250,418 @@ export const Settings: React.FC<SettingsProps> = ({
           needsVsWants: exp.needsVsWants,
         };
       });
-
-      // Import via mutation
-      const results = await bulkImport({
-        userId: currentUser._id,
-        expenses: expensesToImport,
-      });
-
-      // Show success/error based on results
+      const results = await bulkImport({ userId: currentUser._id, expenses: expensesToImport as any });
       if (results.failed === 0) {
-        showToast(
-          `Imported ${results.success} transactions! Generating report...`,
-          'success',
-        );
+        showToast(`Imported ${results.success} spends.`);
       } else {
-        showToast(
-          `Imported ${results.success}, failed ${results.failed}. Check console for errors.`,
-          'error',
-        );
         console.error('Import errors:', results.errors);
+        showToast(`Imported ${results.success}. ${results.failed} failed.`, 'error');
       }
-
       setShowImportPreview(false);
-
-      // Auto-generate monthly report after successful import
-      if (currentUser && results.success > 0) {
+      if (results.success > 0) {
         try {
           await generateReport({ userId: currentUser._id });
-          showToast('Monthly report generated!', 'success');
         } catch (reportError) {
           console.error('Report generation failed:', reportError);
-          // Don't show error toast - import succeeded, report is secondary
         }
       }
     } catch (error) {
-      const errorMessage = (error as Error).message || 'Unknown error occurred';
       console.error('Import error:', error);
-      showToast(errorMessage, 'error');
+      showToast((error as Error).message || 'Import failed.', 'error');
     }
   };
 
   const handleAddBucket = () => {
-    if (onAddBucket) {
-      onAddBucket();
-    } else {
-      alert('Use the + button at the bottom to add a bucket');
-    }
+    if (onAddBucket) onAddBucket();
+    else alert('Use the + button at the bottom to add a cup');
   };
 
   const handleEditBucket = (bucket: Bucket) => {
-    if (onEditBucket) {
-      onEditBucket(bucket);
-    } else {
-      alert(
-        `Edit bucket: ${bucket.name}\n\n(Edit functionality coming soon for web!)`,
-      );
-    }
+    if (onEditBucket) onEditBucket(bucket);
+    else alert(`Editing ${bucket.name} is not available here yet.`);
   };
 
   const handleSetIncome = () => {
-    if (onSetIncome) {
-      onSetIncome();
-    } else {
-      alert(
-        'Income management coming soon for web!\n\nFor now, use the native app to set income.',
-      );
-    }
+    if (onSetIncome) onSetIncome();
+    else alert('Income can be set from the native app for now.');
   };
 
-  const handleDeleteBucket = async (bucket: Bucket) => {
-    if (!currentUser) return;
-
-    const hasBalance = (bucket.currentBalance || 0) > 0;
-    const confirmMessage = hasBalance
-      ? `Delete "${bucket.name}"?\n\nThis bucket has $${(
-          bucket.currentBalance || 0
-        ).toFixed(2)} remaining.\n\nThis action cannot be undone.`
-      : `Delete "${bucket.name}"?\n\nThis action cannot be undone.`;
-
-    const confirmed = confirm(confirmMessage);
-    if (!confirmed) return;
-
-    try {
-      await removeBucket({ bucketId: bucket._id as any });
-    } catch (error: any) {
-      console.error('Failed to delete bucket:', error);
-      alert(
-        `Error: ${
-          error?.message || 'Failed to delete bucket. Please try again.'
-        }`,
-      );
-    }
+  const openReview = () => {
+    if (onNavigateToReviewQueue) onNavigateToReviewQueue();
+    else navigation?.navigate('ReviewQueue');
   };
 
-  const handleChangePasscode = async () => {
+  const openPasscode = () => {
     setPcError('');
-    if (!currentPc || !newPc || !confirmPc) {
-      setPcError('Please fill in all fields');
-      return;
-    }
-    if (newPc.length !== 6 || !/^\d{6}$/.test(newPc)) {
-      setPcError('Passcode must be exactly 6 digits');
-      return;
-    }
-    if (newPc !== confirmPc) {
-      setPcError('New passcodes do not match');
-      return;
-    }
+    setCurrentPc('');
+    setNewPc('');
+    setConfirmPc('');
+    setView('passcode');
+  };
+
+  const handleChangePasscode = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setPcError('');
+    if (!currentPc || !newPc || !confirmPc) return setPcError('Fill in all three.');
+    if (!/^\d{6}$/.test(newPc)) return setPcError('Your new passcode needs 6 digits.');
+    if (newPc !== confirmPc) return setPcError('The new passcodes don’t match.');
     if (!sessionToken) return;
     setPcSubmitting(true);
     try {
-      await changePasscodeAction({
-        sessionToken,
-        currentPasscode: currentPc,
-        newPasscode: newPc,
-      });
-      setCurrentPc('');
-      setNewPc('');
-      setConfirmPc('');
-      setShowChangePasscode(false);
-      setToastMessage('Passcode changed successfully');
-      setToastType('success');
-      setToastVisible(true);
+      await changePasscodeAction({ sessionToken, currentPasscode: currentPc, newPasscode: newPc });
+      setView('main');
+      showToast('Passcode changed.');
     } catch (err: any) {
-      const msg = err?.data || err?.message || 'Failed to change passcode';
+      const msg = err?.data || err?.message || 'Could not change your passcode.';
       const clean = typeof msg === 'string' && msg.includes('Uncaught Error:')
         ? msg.split('Uncaught Error:').pop()!.split('\n')[0].trim()
-        : typeof msg === 'string' ? msg : 'Failed to change passcode';
+        : typeof msg === 'string' ? msg : 'Could not change your passcode.';
       setPcError(clean);
     } finally {
       setPcSubmitting(false);
     }
   };
 
-  const handleResetAllData = async () => {
-    if (!currentUser) return;
-
-    const confirmed = confirm(
-      '⚠️ WARNING: This will permanently delete ALL your data including:\n\n' +
-        '• All buckets\n' +
-        '• All income entries\n' +
-        '• All expenses\n' +
-        '• All recurring expenses\n' +
-        '• All chat history\n' +
-        '• All memories\n\n' +
-        'This action CANNOT be undone!\n\n' +
-        'Are you absolutely sure you want to continue?',
-    );
-
-    if (!confirmed) return;
-
-    // Double confirmation
-    const doubleConfirm = confirm(
-      'This is your last chance!\n\n' +
-        'Type "DELETE" in your mind and click OK to proceed with deleting ALL data.',
-    );
-
-    if (!doubleConfirm) return;
-
+  const handleResetAllData = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!currentUser || resetWord.trim().toLowerCase() !== RESET_WORD) return;
+    setResetting(true);
     try {
-      const result = await resetAllData({ userId: currentUser._id });
-
-      alert(
-        `✅ All data has been deleted!\n\n` +
-          `Deleted:\n` +
-          `• ${result.deletedCounts.buckets} buckets\n` +
-          `• ${result.deletedCounts.income} income entries\n` +
-          `• ${result.deletedCounts.expenses} expenses\n` +
-          `• ${result.deletedCounts.conversations} conversations\n` +
-          `• ${result.deletedCounts.memories} memories\n\n` +
-          `Your app has been reset to a clean slate.`,
-      );
-
-      // Reload the page to refresh the UI
+      await resetAllData({ userId: currentUser._id });
       window.location.reload();
     } catch (error: any) {
       console.error('Failed to reset data:', error);
-      alert(
-        `Error: ${error?.message || 'Failed to reset data. Please try again.'}`,
-      );
+      showToast(error?.message || 'Reset failed. Nothing was deleted.', 'error');
+      setResetting(false);
     }
   };
 
-  // Show loading state
+  // Groups
+  const openNewGroup = () => {
+    setGroupName('');
+    setGroupSelected(new Set());
+    setView('newGroup');
+  };
+
+  const openEditGroup = (groupId: string) => {
+    const g = allGroups.find(x => x._id === groupId);
+    setEditingGroupId(groupId);
+    setGroupName(g?.name ?? '');
+    setGroupSelected(new Set(allBuckets.filter(b => b.groupId === groupId).map(b => b._id)));
+    setView('editGroup');
+  };
+
+  const toggleSelected = (id: string) => {
+    const next = new Set(groupSelected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setGroupSelected(next);
+  };
+
+  const saveNewGroup = async () => {
+    if (!currentUser || !groupName.trim() || groupSelected.size === 0) return;
+    setGroupSaving(true);
+    try {
+      const groupId = await createGroup({ userId: currentUser._id, name: groupName.trim() });
+      for (const bucketId of groupSelected) {
+        await assignBucketToGroup({ bucketId: bucketId as any, groupId });
+      }
+      setView('cups');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not make that group.', 'error');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
+
+  const saveEditGroup = async () => {
+    const group = allGroups.find(g => g._id === editingGroupId);
+    if (!group) return;
+    setGroupSaving(true);
+    try {
+      const trimmed = groupName.trim();
+      if (trimmed && trimmed !== group.name) await updateGroup({ groupId: group._id, name: trimmed });
+      for (const bucket of allBuckets) {
+        const shouldBeIn = groupSelected.has(bucket._id);
+        const isIn = bucket.groupId === group._id;
+        if (shouldBeIn && !isIn) await assignBucketToGroup({ bucketId: bucket._id as any, groupId: group._id });
+        else if (!shouldBeIn && isIn) await assignBucketToGroup({ bucketId: bucket._id as any, groupId: undefined });
+      }
+      setView('cups');
+    } catch (err) {
+      console.error(err);
+      showToast('Could not save the group.', 'error');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
+
+  const deleteGroup = async () => {
+    const group = allGroups.find(g => g._id === editingGroupId);
+    if (!group) return;
+    const count = allBuckets.filter(b => b.groupId === group._id).length;
+    const msg = count > 0
+      ? `Delete the group “${group.name}”? Its ${count} cup${count > 1 ? 's' : ''} stay, just ungrouped.`
+      : `Delete the group “${group.name}”?`;
+    if (!confirm(msg)) return;
+    await removeGroup({ groupId: group._id });
+    setView('cups');
+  };
+
   if (currentUser === undefined || buckets === undefined) {
-    return (
-      <SafeAreaView style={styles.loadingWrapper}>
-        <PotteryLoader message="Loading settings..." />
-      </SafeAreaView>
-    );
+    return <div className="bk-root" style={{ minHeight: '100vh' }} />;
   }
 
-  const totalAllocation = allBuckets.reduce(
-    (sum, bucket) => {
-      if (bucket.bucketMode === 'save') {
-        // For save buckets, show monthly contribution, not total goal
-        return sum + (bucket.contributionAmount || 0);
-      }
-      // For spend/recurring buckets, show planned monthly amount
-      return sum + (bucket.plannedAmount || 0);
-    },
-    0,
+  const pending = reviewPendingCount ?? 0;
+
+  // Picking cups for a group (new or existing).
+  const cupPicker = (ownGroupId: string | null) => (
+    <Group label="Cups in this group">
+      {allBuckets.map(b => {
+        const other = b.groupId && b.groupId !== ownGroupId ? allGroups.find(g => g._id === b.groupId) : null;
+        const on = groupSelected.has(b._id);
+        return (
+          <Row
+            key={b._id}
+            leading={<><Check on={on} dim={!!other} /><span style={{ opacity: other ? 0.4 : 1, display: 'flex' }}><CupThumb bucket={b} size={30} /></span></>}
+            title={b.name}
+            tone={other ? 'faint' : 'ink'}
+            sub={other ? `In ${other.name}` : undefined}
+            onClick={() => toggleSelected(b._id)}
+            disabled={!!other}
+          />
+        );
+      })}
+    </Group>
+  );
+
+  const cupRow = (b: Bucket) => (
+    <Row
+      key={b._id}
+      leading={<CupThumb bucket={b} />}
+      title={b.name}
+      sub={bucketLine(b)}
+      chevron
+      onClick={() => {
+        setView('main');
+        handleEditBucket(b);
+      }}
+    />
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.pageHeader}>
-        <Text style={styles.pageTitle}>Settings</Text>
-      </View>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        bounces={true}
-      >
-        {/* Group 1: Your Budget */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>YOUR BUDGET</Text>
-          </View>
+    <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: '64px 20px 140px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 32 }}>
+        <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: '0 4px' }}>Settings</h1>
 
-          <View style={styles.groupCard}>
-            <Pressable style={styles.groupRow} onPress={handleSetIncome}>
-              <View style={{flex: 1}}>
-                <Text style={styles.groupRowTitle}>Income</Text>
-                <Text style={styles.groupRowSub}>
-                  {monthlyIncome > 0
-                    ? `$${monthlyIncome.toLocaleString('en-US', {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}/month`
-                    : 'No income set'}
-                </Text>
-              </View>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
+        <Group label="Money">
+          <Row title="Income" value={monthlyIncome > 0 ? `${money(monthlyIncome)} a month` : 'Not set'} chevron onClick={handleSetIncome} />
+          <Row
+            title="Cups"
+            sub={`${allBuckets.length} cup${allBuckets.length !== 1 ? 's' : ''} · ${money(totalAllocation)} a month`}
+            trailing={allBuckets.length > 0 ? (
+              <span className="st-cups" style={{ display: 'flex', alignItems: 'flex-end' }}>
+                {allBuckets.slice(0, 3).map((b, i) => (
+                  <img key={b._id} src={bucketCup(b)} alt="" style={{ width: 28, height: 28, objectFit: 'contain', marginLeft: i === 0 ? 0 : -8 }} />
+                ))}
+              </span>
+            ) : undefined}
+            chevron
+            onClick={() => setView('cups')}
+          />
+          <Row
+            title="Review queue"
+            trailing={pending > 0 ? (
+              <span style={{ fontSize: 13, fontWeight: 500, color: '#fff', background: COLORS.green, borderRadius: 999, minWidth: 22, height: 22, padding: '0 7px', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {pending}
+              </span>
+            ) : undefined}
+            value={pending > 0 ? undefined : 'All clear'}
+            chevron
+            onClick={openReview}
+          />
+        </Group>
 
-            <View style={styles.groupRowDivider} />
+        <Group label="App">
+          <Row title="Notifications" value={pushEnabled ? 'On' : 'Off'} chevron onClick={() => setView('notifications')} />
+          <Row title="Import spends" chevron onClick={() => setView('import')} />
+          <Row title="Export spends" chevron onClick={() => setView('export')} />
+        </Group>
 
-            <Pressable style={styles.groupRow} onPress={() => setShowManageBuckets(true)}>
-              <View style={styles.rowLeft}>
-                <View style={styles.bucketStackPreview}>
-                  {allBuckets.slice(0, 3).map((bucket, i) => (
-                    <Image
-                      key={bucket._id}
-                      source={getCupForBucketId(bucket._id, bucket.icon)}
-                      style={[
-                        styles.bucketStackImage,
-                        { marginLeft: i === 0 ? 0 : -8, zIndex: 3 - i },
-                      ]}
-                      resizeMode="contain"
-                    />
-                  ))}
-                </View>
-                <View style={{flex: 1}}>
-                  <Text style={styles.groupRowTitle}>Buckets</Text>
-                  <Text style={styles.groupRowSub}>
-                    {allBuckets.length} bucket{allBuckets.length !== 1 ? 's' : ''} · $
-                    {totalAllocation.toLocaleString('en-US', {
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    })}/mo
-                  </Text>
-                </View>
-              </View>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
+        <Group label="Account">
+          {currentUser?.email && <Row title={<span style={{ color: COLORS.muted }}>{currentUser.email}</span>} />}
+          <Row title="Change passcode" chevron onClick={openPasscode} />
+          <Row title="Log out" tone="rust" onClick={logout} />
+        </Group>
 
-            <View style={styles.groupRowDivider} />
+        <Group>
+          <Row title="Reset all data" tone="rust" chevron onClick={() => { setResetWord(''); setView('reset'); }} />
+        </Group>
 
-            <Pressable
-              style={styles.groupRow}
-              onPress={() => {
-                if (onNavigateToReviewQueue) {
-                  onNavigateToReviewQueue();
-                } else {
-                  navigation?.navigate('ReviewQueue');
-                }
-              }}
-            >
-              <View style={{flex: 1}}>
-                <Text style={styles.groupRowTitle}>Review queue</Text>
-              </View>
-              {!!reviewPendingCount && reviewPendingCount > 0 && (
-                <View style={styles.reviewBadge}>
-                  <Text style={styles.reviewBadgeText}>{reviewPendingCount}</Text>
-                </View>
-              )}
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-          </View>
-        </View>
+        <footer style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 8, fontSize: 13, color: '#A89E92' }}>
+          <span>Buckets 1.0</span>
+          <span>Made with care by Jaz</span>
+        </footer>
+      </div>
 
-        {/* Group 2: Data & Preferences */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>DATA & PREFERENCES</Text>
-          </View>
-
-          <View style={styles.groupCard}>
-            <Pressable style={styles.groupRow} onPress={() => setShowNotifications(true)}>
-              <Text style={styles.groupRowTitle}>Notifications</Text>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable style={styles.groupRow} onPress={() => setShowImport(true)}>
-              <Text style={styles.groupRowTitle}>Import Data</Text>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable style={styles.groupRow} onPress={() => setShowExport(true)}>
-              <Text style={styles.groupRowTitle}>Export Data</Text>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable style={styles.groupRow} onPress={handleResetAllData}>
-              <Text style={[styles.groupRowTitle, styles.dangerText]}>Reset All Data</Text>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Group 3: Account */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionHeader}>ACCOUNT</Text>
-          </View>
-
-          <View style={styles.groupCard}>
-            {currentUser?.email && (
+      {view === 'cups' && (
+        <Page
+          title="Cups"
+          onBack={() => setView('main')}
+          action={<button type="button" className="st-link" style={{ color: COLORS.ink }} onClick={() => { setView('main'); handleAddBucket(); }}>Add a cup</button>}
+        >
+          {allBuckets.length === 0 ? (
+            <p style={BODY}>No cups yet. Add one to start budgeting.</p>
+          ) : (() => {
+            const ungrouped = allBuckets.filter(b => !b.groupId || !allGroups.some(g => g._id === b.groupId));
+            return (
               <>
-                <View style={styles.groupRow}>
-                  <Text style={styles.groupRowTitle}>{currentUser.email}</Text>
-                </View>
-                <View style={styles.groupRowDivider} />
-              </>
-            )}
-
-            <Pressable style={styles.groupRow} onPress={() => {
-              setPcError('');
-              setCurrentPc('');
-              setNewPc('');
-              setConfirmPc('');
-              setShowChangePasscode(true);
-            }}>
-              <Text style={styles.groupRowTitle}>Change Passcode</Text>
-              <ChevronRight size={18} color={theme.colors.textTertiary} strokeWidth={2} />
-            </Pressable>
-
-            <View style={styles.groupRowDivider} />
-
-            <Pressable style={styles.groupRow} onPress={logout}>
-              <Text style={[styles.groupRowTitle, styles.dangerText]}>Log Out</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Version */}
-        <View style={styles.footer}>
-          <Text style={styles.version}>Kamidana v1.0.0</Text>
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>Made with </Text>
-            <Heart size={14} color="#5C8A7A" fill="#5C8A7A" strokeWidth={0} />
-            <Text style={styles.footerText}> by jaz</Text>
-          </View>
-        </View>
-      </ScrollView>
-
-      {/* Notifications Modal */}
-      <Modal
-        visible={showNotifications}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowNotifications(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowNotifications(false)}>
-              <X size={24} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Notifications</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            {!pushSupported && (
-              <View style={styles.settingItem}>
-                <Text style={styles.settingDescription}>
-                  Push notifications are not supported in this browser. Try using Chrome or Edge.
-                </Text>
-              </View>
-            )}
-
-            {pushSupported && (
-              <>
-                <View style={styles.settingItem}>
-                  <View style={styles.settingInfo}>
-                    <Text style={styles.settingTitle}>Push Notifications</Text>
-                    <Text style={styles.settingDescription}>
-                      Receive alerts for low balances, reports, and reminders
-                    </Text>
-                  </View>
-                  <Switch
-                    value={pushEnabled}
-                    onValueChange={handleTogglePush}
-                    disabled={pushLoading}
-                    trackColor={{
-                      false: theme.colors.border,
-                      true: '#8ac0ae',
-                    }}
-                    ios_backgroundColor={theme.colors.border}
-                    thumbColor="#FFFFFF"
-                  />
-                </View>
-
-                {pushEnabled && (
-                  <View style={styles.settingItem}>
-                    <Text style={[styles.settingDescription, { color: '#8ac0ae' }]}>
-                      Notifications are enabled. You'll receive alerts for low bucket balances, monthly reports, and spending reminders.
-                    </Text>
-                  </View>
+                {allGroups.map(g => {
+                  const inGroup = allBuckets.filter(b => b.groupId === g._id);
+                  return (
+                    <Group
+                      key={g._id}
+                      label={g.name}
+                      action={<button type="button" className="st-link" style={{ fontSize: 13, margin: '-12px 0' }} onClick={() => openEditGroup(g._id)}>Edit</button>}
+                    >
+                      {inGroup.length ? inGroup.map(cupRow) : <Row title="No cups in this group" tone="faint" />}
+                    </Group>
+                  );
+                })}
+                {ungrouped.length > 0 && (
+                  <Group label={allGroups.length ? 'Not in a group' : undefined}>{ungrouped.map(cupRow)}</Group>
                 )}
               </>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Export Data Modal */}
-      <Modal
-        visible={showExport}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowExport(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowExport(false)}>
-              <X size={24} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Export Data</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <Text style={styles.exportDescription}>
-              Export your financial data in various formats for backup or
-              analysis.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.exportOption}
-              onPress={handleExportCSV}
-            >
-              <View style={styles.exportOptionContent}>
-                <Text style={styles.exportOptionTitle}>Export as CSV</Text>
-                <Text style={styles.exportOptionDescription}>
-                  Spreadsheet-friendly format for all transactions (
-                  {allExpenses.length} expenses)
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.exportOption}
-              onPress={() => {
-                Alert.alert('Export JSON', 'JSON export coming soon!');
-              }}
-            >
-              <View style={styles.exportOptionContent}>
-                <Text style={styles.exportOptionTitle}>Export as JSON</Text>
-                <Text style={styles.exportOptionDescription}>
-                  Complete data export including all metadata
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.exportOption}
-              onPress={() => {
-                Alert.alert('Export PDF', 'PDF report coming soon!');
-              }}
-            >
-              <View style={styles.exportOptionContent}>
-                <Text style={styles.exportOptionTitle}>
-                  Export as PDF Report
-                </Text>
-                <Text style={styles.exportOptionDescription}>
-                  Formatted monthly spending report
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </TouchableOpacity>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Import Data Modal */}
-      <Modal
-        visible={showImport}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowImport(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowImport(false)}>
-              <X size={24} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Import Data</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <Text style={styles.exportDescription}>
-              Import your transactions from a CSV file. Make sure your CSV file
-              matches the template format.
-            </Text>
-
-            <TouchableOpacity
-              style={styles.exportOption}
-              onPress={handleDownloadTemplate}
-            >
-              <View style={styles.exportOptionContent}>
-                <Text style={styles.exportOptionTitle}>
-                  Download CSV Template
-                </Text>
-                <Text style={styles.exportOptionDescription}>
-                  Get a sample CSV file with the correct format
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.exportOption}
-              onPress={() => {
-                console.log('Import CSV button clicked');
-                // Create file input for web
-                if (typeof document !== 'undefined') {
-                  const input = document.createElement('input');
-                  input.type = 'file';
-                  input.accept = '.csv';
-                  input.onchange = (e: any) => {
-                    console.log('File selected');
-                    const file = e.target?.files?.[0];
-                    if (file) {
-                      console.log(
-                        'Reading file:',
-                        file.name,
-                        'size:',
-                        file.size,
-                      );
-                      const reader = new FileReader();
-                      reader.onload = event => {
-                        const csvText = event.target?.result as string;
-                        console.log(
-                          'File read successfully, length:',
-                          csvText?.length,
-                        );
-                        handleImportCSV(csvText);
-                      };
-                      reader.onerror = error => {
-                        console.error('FileReader error:', error);
-                        showToast('Failed to read file', 'error');
-                      };
-                      reader.readAsText(file);
-                    } else {
-                      console.log('No file selected');
-                    }
-                  };
-                  input.click();
-                } else {
-                  Alert.alert(
-                    'Import CSV',
-                    'CSV import is only available on web',
-                  );
-                }
-              }}
-            >
-              <View style={styles.exportOptionContent}>
-                <Text style={styles.exportOptionTitle}>Import from CSV</Text>
-                <Text style={styles.exportOptionDescription}>
-                  Upload your transactions CSV file
-                </Text>
-              </View>
-              <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-            </TouchableOpacity>
-
-            <View style={styles.importInstructions}>
-              <Text style={styles.importInstructionsTitle}>
-                CSV Format Requirements:
-              </Text>
-              <Text style={styles.importInstructionsText}>
-                • Date: YYYY-MM-DD format (e.g., 2024-01-15){'\n'}• Bucket: Must
-                match your bucket names exactly{'\n'}• Amount: Number without $
-                (e.g., 42.50){'\n'}• Note: Description (use quotes if contains
-                commas){'\n'}• Happiness Rating: Number from 1-5{'\n'}•
-                Category: Optional (e.g., Food & Dining){'\n'}• Merchant:
-                Optional (e.g., Whole Foods){'\n'}• Needs vs Wants: Optional -
-                "need" or "want"
-              </Text>
-            </View>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Manage Buckets Modal */}
-      <Modal
-        visible={showManageBuckets}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => {
-          setShowManageBuckets(false);
-          setCreatingGroup(false);
-          setEditingGroupMembership(null);
-        }}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => {
-              if (creatingGroup) { setCreatingGroup(false); return; }
-              if (editingGroupMembership) { setEditingGroupMembership(null); return; }
-              setShowManageBuckets(false);
-            }}>
-              <X size={24} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>
-              {creatingGroup ? 'New Group' : editingGroupMembership ? 'Edit Group' : 'Manage Buckets'}
-            </Text>
-            {!creatingGroup && !editingGroupMembership ? (
-              <TouchableOpacity
-                onPress={() => {
-                  setShowManageBuckets(false);
-                  handleAddBucket();
-                }}
-              >
-                <Text style={styles.addButton}>+ Add</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={{ width: 40 }} />
-            )}
-          </View>
-
-          {/* Create Group flow — name + multi-select buckets */}
-          {creatingGroup ? (
-            <ScrollView style={styles.modalContent}>
-              <View style={styles.mbCreateSection}>
-                <Text style={styles.mbCreateLabel}>Group name</Text>
-                <TextInput
-                  style={styles.mbCreateInput}
-                  value={newGroupName}
-                  onChangeText={setNewGroupName}
-                  placeholder="e.g. Essentials, Fun, Savings..."
-                  placeholderTextColor="#A09686"
-                  autoFocus
-                />
-              </View>
-
-              <View style={styles.mbCreateSection}>
-                <Text style={styles.mbCreateLabel}>Select buckets</Text>
-                <View style={styles.manageBucketsList}>
-                  {allBuckets.map((bucket, i) => {
-                    const selected = newGroupSelectedIds.has(bucket._id);
-                    const existingGroup = bucket.groupId ? (groups || []).find(g => g._id === bucket.groupId) : null;
-                    const isAlreadyGrouped = !!existingGroup;
-                    return (
-                      <Pressable
-                        key={bucket._id}
-                        style={[
-                          styles.manageBucketRow,
-                          i < allBuckets.length - 1 && styles.manageBucketRowBorder,
-                          isAlreadyGrouped && { opacity: 0.4 },
-                        ]}
-                        onPress={() => {
-                          if (isAlreadyGrouped) return;
-                          const next = new Set(newGroupSelectedIds);
-                          if (selected) next.delete(bucket._id); else next.add(bucket._id);
-                          setNewGroupSelectedIds(next);
-                        }}
-                        disabled={isAlreadyGrouped}
-                      >
-                        <View style={styles.rowLeft}>
-                          <View style={[styles.mbCheckbox, selected && styles.mbCheckboxChecked, isAlreadyGrouped && { borderColor: '#C4B9AD' }]}>
-                            {selected && <Text style={styles.mbCheckmark}>✓</Text>}
-                          </View>
-                          <Image
-                            source={getCupForBucketId(bucket._id, bucket.icon)}
-                            style={styles.bucketCupImage}
-                            resizeMode="contain"
-                          />
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.rowTitle, isAlreadyGrouped && { color: '#A09686' }]}>{bucket.name}</Text>
-                            {isAlreadyGrouped && (
-                              <Text style={{ fontSize: 12, color: '#B5A999', fontFamily: 'Merchant Copy', marginTop: 1 }}>
-                                in {existingGroup.name}
-                              </Text>
-                            )}
-                          </View>
-                        </View>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[styles.mbCreateButton, (!newGroupName.trim() || newGroupSelectedIds.size === 0) && styles.mbCreateButtonDisabled]}
-                onPress={async () => {
-                  if (!currentUser || !newGroupName.trim() || newGroupSelectedIds.size === 0) return;
-                  const groupId = await createGroup({ userId: currentUser._id, name: newGroupName.trim() });
-                  for (const bucketId of newGroupSelectedIds) {
-                    await assignBucketToGroup({ bucketId: bucketId as any, groupId });
-                  }
-                  setCreatingGroup(false);
-                  setNewGroupName('');
-                  setNewGroupSelectedIds(new Set());
-                }}
-              >
-                <Text style={styles.mbCreateButtonText}>
-                  Create Group{newGroupSelectedIds.size > 0 ? ` with ${newGroupSelectedIds.size} bucket${newGroupSelectedIds.size > 1 ? 's' : ''}` : ''}
-                </Text>
-              </TouchableOpacity>
-              <View style={{ height: 40 }} />
-            </ScrollView>
-          ) : editingGroupMembership ? (() => {
-            // Edit group membership — same multi-select but for an existing group
-            const allGroups = groups || [];
-            const group = allGroups.find(g => g._id === editingGroupMembership);
-            if (!group) return null;
-            return (
-              <ScrollView style={styles.modalContent}>
-                <View style={styles.mbCreateSection}>
-                  <Text style={styles.mbCreateLabel}>Group name</Text>
-                  {editingGroupId === group._id ? (
-                    <TextInput
-                      style={styles.mbCreateInput}
-                      value={editingGroupName}
-                      onChangeText={setEditingGroupName}
-                      autoFocus
-                      onBlur={async () => {
-                        const trimmed = editingGroupName.trim();
-                        if (trimmed && trimmed !== group.name) {
-                          await updateGroup({ groupId: group._id, name: trimmed });
-                        }
-                        setEditingGroupId(null);
-                      }}
-                      onSubmitEditing={async () => {
-                        const trimmed = editingGroupName.trim();
-                        if (trimmed && trimmed !== group.name) {
-                          await updateGroup({ groupId: group._id, name: trimmed });
-                        }
-                        setEditingGroupId(null);
-                      }}
-                    />
-                  ) : (
-                    <Pressable onPress={() => { setEditingGroupId(group._id); setEditingGroupName(group.name); }}>
-                      <Text style={styles.mbCreateInputDisplay}>{group.name}</Text>
-                    </Pressable>
-                  )}
-                </View>
-
-                <View style={styles.mbCreateSection}>
-                  <Text style={styles.mbCreateLabel}>Buckets in this group</Text>
-                  <View style={styles.manageBucketsList}>
-                    {allBuckets.map((bucket, i) => {
-                      const selected = editMembershipSelectedIds.has(bucket._id);
-                      const otherGroup = bucket.groupId && bucket.groupId !== editingGroupMembership
-                        ? (groups || []).find(g => g._id === bucket.groupId)
-                        : null;
-                      const isInOtherGroup = !!otherGroup;
-                      return (
-                        <Pressable
-                          key={bucket._id}
-                          style={[
-                            styles.manageBucketRow,
-                            i < allBuckets.length - 1 && styles.manageBucketRowBorder,
-                            isInOtherGroup && { opacity: 0.4 },
-                          ]}
-                          onPress={() => {
-                            if (isInOtherGroup) return;
-                            const next = new Set(editMembershipSelectedIds);
-                            if (selected) next.delete(bucket._id); else next.add(bucket._id);
-                            setEditMembershipSelectedIds(next);
-                          }}
-                          disabled={isInOtherGroup}
-                        >
-                          <View style={styles.rowLeft}>
-                            <View style={[styles.mbCheckbox, selected && styles.mbCheckboxChecked, isInOtherGroup && { borderColor: '#C4B9AD' }]}>
-                              {selected && <Text style={styles.mbCheckmark}>✓</Text>}
-                            </View>
-                            <Image
-                              source={getCupForBucketId(bucket._id, bucket.icon)}
-                              style={styles.bucketCupImage}
-                              resizeMode="contain"
-                            />
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.rowTitle, isInOtherGroup && { color: '#A09686' }]}>{bucket.name}</Text>
-                              {isInOtherGroup && (
-                                <Text style={{ fontSize: 12, color: '#B5A999', fontFamily: 'Merchant Copy', marginTop: 1 }}>
-                                  in {otherGroup.name}
-                                </Text>
-                              )}
-                            </View>
-                          </View>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-
-                <TouchableOpacity
-                  style={styles.mbCreateButton}
-                  onPress={async () => {
-                    // Assign selected buckets to this group, unassign deselected ones
-                    for (const bucket of allBuckets) {
-                      const shouldBeInGroup = editMembershipSelectedIds.has(bucket._id);
-                      const isInGroup = bucket.groupId === editingGroupMembership;
-                      if (shouldBeInGroup && !isInGroup) {
-                        await assignBucketToGroup({ bucketId: bucket._id as any, groupId: group._id });
-                      } else if (!shouldBeInGroup && isInGroup) {
-                        await assignBucketToGroup({ bucketId: bucket._id as any, groupId: undefined });
-                      }
-                    }
-                    setEditingGroupMembership(null);
-                    setEditingGroupId(null);
-                  }}
-                >
-                  <Text style={styles.mbCreateButtonText}>Save</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.mbDeleteGroupButton}
-                  onPress={async () => {
-                    const bucketCount = allBuckets.filter(b => b.groupId === group._id).length;
-                    const msg = bucketCount > 0
-                      ? `Delete "${group.name}"?\n\n${bucketCount} bucket${bucketCount > 1 ? 's' : ''} will be ungrouped.`
-                      : `Delete "${group.name}"?`;
-                    if (!confirm(msg)) return;
-                    await removeGroup({ groupId: group._id });
-                    setEditingGroupMembership(null);
-                  }}
-                >
-                  <Text style={styles.mbDeleteGroupText}>Delete Group</Text>
-                </TouchableOpacity>
-                <View style={{ height: 40 }} />
-              </ScrollView>
             );
-          })() : (
-            /* Main bucket list view */
-            <ScrollView style={styles.modalContent}>
-              {allBuckets.length === 0 ? (
-                <View style={styles.manageBucketsEmpty}>
-                  <Text style={styles.manageBucketsEmptyText}>
-                    No buckets yet
-                  </Text>
-                  <Text style={styles.manageBucketsEmptySubtext}>
-                    Create your first bucket to start budgeting
-                  </Text>
-                </View>
-              ) : (() => {
-                const allGroups = groups || [];
-                const groupBuckets = new Map<string, Bucket[]>();
-                const ungrouped: Bucket[] = [];
-                for (const g of allGroups) {
-                  groupBuckets.set(g._id, []);
-                }
-                for (const bucket of allBuckets) {
-                  if (bucket.groupId && groupBuckets.has(bucket.groupId)) {
-                    groupBuckets.get(bucket.groupId)!.push(bucket);
-                  } else {
-                    ungrouped.push(bucket);
-                  }
-                }
+          })()}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+            <button type="button" className="st-link" onClick={openNewGroup}>New group</button>
+            <span style={{ ...LABEL, color: '#A89E92' }}>To retire a cup, open it.</span>
+          </div>
+        </Page>
+      )}
 
-                const renderBucketRow = (bucket: Bucket, isLast: boolean) => (
-                  <SwipeableRow
-                    key={bucket._id}
-                    onDelete={() => handleDeleteBucket(bucket)}
-                    containerStyle={styles.swipeableCompact}
-                  >
-                    <Pressable
-                      style={[
-                        styles.manageBucketRow,
-                        !isLast && styles.manageBucketRowBorder,
-                      ]}
-                      onPress={() => {
-                        setShowManageBuckets(false);
-                        handleEditBucket(bucket);
-                      }}
-                    >
-                      <View style={styles.rowLeft}>
-                        <Image
-                          source={getCupForBucketId(bucket._id, bucket.icon)}
-                          style={styles.bucketCupImage}
-                          resizeMode="contain"
-                        />
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.rowTitle}>{bucket.name}</Text>
-                          <Text style={styles.rowSubtitle}>
-                            {bucket.bucketMode === 'save'
-                              ? bucket.contributionType === 'percentage'
-                                ? `${bucket.contributionPercent || 0}% of income · goal $${(bucket.targetAmount || 0).toLocaleString()}`
-                                : bucket.contributionAmount
-                                  ? `$${bucket.contributionAmount.toLocaleString()} per month · goal $${(bucket.targetAmount || 0).toLocaleString()}`
-                                  : `goal $${(bucket.targetAmount || 0).toLocaleString()}`
-                              : bucket.allocationType === 'percentage'
-                                ? `${bucket.plannedPercent || 0}% per month`
-                                : `$${(bucket.plannedAmount || 0).toLocaleString()} per month`}
-                          </Text>
-                        </View>
-                      </View>
-                      <ChevronRight size={20} color="#d1d1d6" strokeWidth={2} />
-                    </Pressable>
-                  </SwipeableRow>
-                );
+      {view === 'newGroup' && (
+        <Page title="New group" backLabel="Cups" onBack={() => setView('cups')}>
+          <Field label="Name" value={groupName} onChange={e => setGroupName(e.target.value)} placeholder="Essentials, fun, savings…" autoFocus />
+          {cupPicker(null)}
+          <button type="button" className="bk-btn" disabled={!groupName.trim() || groupSelected.size === 0 || groupSaving} onClick={saveNewGroup}>
+            {groupSelected.size > 0 ? `Make group with ${groupSelected.size} cup${groupSelected.size > 1 ? 's' : ''}` : 'Make group'}
+          </button>
+        </Page>
+      )}
 
-                return (
-                  <View>
-                    {/* Groups */}
-                    {allGroups.map(group => {
-                      const buckets = groupBuckets.get(group._id) || [];
-                      return (
-                        <View key={group._id} style={styles.mbGroupCard}>
-                          <Pressable
-                            style={styles.mbGroupHeader}
-                            onPress={() => {
-                              setEditingGroupMembership(group._id);
-                              const memberIds = new Set(
-                                allBuckets.filter(b => b.groupId === group._id).map(b => b._id)
-                              );
-                              setEditMembershipSelectedIds(memberIds);
-                            }}
-                          >
-                            <Text style={styles.mbGroupName}>{group.name}</Text>
-                            <Text style={styles.mbGroupCount}>{buckets.length}</Text>
-                          </Pressable>
-                          {buckets.map((bucket, i) => renderBucketRow(bucket, i === buckets.length - 1))}
-                        </View>
-                      );
-                    })}
+      {view === 'editGroup' && editingGroupId && (
+        <Page title="Edit group" backLabel="Cups" onBack={() => setView('cups')}>
+          <Field label="Name" value={groupName} onChange={e => setGroupName(e.target.value)} />
+          {cupPicker(editingGroupId)}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button type="button" className="bk-btn" disabled={!groupName.trim() || groupSaving} onClick={saveEditGroup}>Save</button>
+            <button type="button" className="st-link" style={{ color: COLORS.rust }} onClick={deleteGroup}>Delete group</button>
+          </div>
+        </Page>
+      )}
 
-                    {/* Ungrouped buckets */}
-                    {ungrouped.length > 0 && (
-                      <View style={styles.manageBucketsList}>
-                        {allGroups.length > 0 && (
-                          <View style={styles.mbUngroupedHeader}>
-                            <Text style={styles.mbUngroupedLabel}>Ungrouped</Text>
-                          </View>
-                        )}
-                        {ungrouped.map((bucket, i) => renderBucketRow(bucket, i === ungrouped.length - 1))}
-                      </View>
-                    )}
-
-                    {/* New Group button */}
-                    <TouchableOpacity
-                      style={styles.mbAddGroup}
-                      onPress={() => {
-                        setNewGroupName('');
-                        setNewGroupSelectedIds(new Set());
-                        setCreatingGroup(true);
-                      }}
-                    >
-                      <FolderPlus size={16} color={theme.colors.textSecondary} strokeWidth={2} />
-                      <Text style={styles.mbAddGroupText}>New Group</Text>
-                    </TouchableOpacity>
-                  </View>
-                );
-              })()}
-              <View style={{ height: 40 }} />
-            </ScrollView>
+      {view === 'notifications' && (
+        <Page title="Notifications" onBack={() => setView('main')}>
+          {pushSupported ? (
+            <>
+              <Group>
+                <Row
+                  title="Push notifications"
+                  sub="Low cups, payday and reminders"
+                  trailing={<Switch label="Push notifications" on={pushEnabled} disabled={pushLoading} onChange={handleTogglePush} />}
+                />
+              </Group>
+              {pushEnabled && <p style={{ ...BODY, margin: '0 4px' }}>On. We’ll nudge you when a cup runs low and when it’s payday.</p>}
+            </>
+          ) : (
+            <p style={{ ...BODY, margin: '0 4px' }}>This browser can’t show notifications. Try Chrome or Edge, or add Buckets to your home screen.</p>
           )}
-        </SafeAreaView>
-      </Modal>
+        </Page>
+      )}
 
-      {/* CSV Import Preview */}
+      {view === 'import' && (
+        <Page title="Import spends" onBack={() => setView('main')}>
+          <p style={{ ...BODY, margin: '0 4px' }}>Bring in spends from a CSV file. Start from the template so the columns line up.</p>
+          <Group>
+            <Row title="Choose a CSV file" chevron onClick={pickCSV} />
+            <Row title="Download the template" sub="Already has your cup names" chevron onClick={handleDownloadTemplate} />
+          </Group>
+          <Group label="Columns">
+            <Row title="Date" value="2026-01-15" />
+            <Row title="Bucket" value="A cup name, exactly" />
+            <Row title="Amount" value="42.50, no $" />
+            <Row title="Note" value="Quote it if it has commas" />
+            <Row title="Category" value="Optional" />
+            <Row title="Merchant" value="Optional" />
+            <Row title="Needs vs wants" value="Optional" />
+          </Group>
+        </Page>
+      )}
+
+      {view === 'export' && (
+        <Page title="Export spends" onBack={() => setView('main')}>
+          <p style={{ ...BODY, margin: '0 4px' }}>A spreadsheet of every spend, for backup or your own sums.</p>
+          <Group>
+            <Row title="Download CSV" value={`${allExpenses.length} spend${allExpenses.length !== 1 ? 's' : ''}`} chevron onClick={handleExportCSV} />
+          </Group>
+        </Page>
+      )}
+
+      {view === 'passcode' && (
+        <Page title="Change passcode" onBack={() => setView('main')}>
+          <form onSubmit={handleChangePasscode} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            {([
+              ['Current passcode', currentPc, setCurrentPc, 'current-password'],
+              ['New passcode', newPc, setNewPc, 'new-password'],
+              ['New passcode again', confirmPc, setConfirmPc, 'new-password'],
+            ] as const).map(([label, value, set, ac], i) => (
+              <Field
+                key={label}
+                label={label}
+                type="password"
+                inputMode="numeric"
+                autoComplete={ac}
+                maxLength={6}
+                placeholder="6 digits"
+                autoFocus={i === 0}
+                value={value}
+                onChange={e => { set(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); setPcError(''); }}
+                style={{ letterSpacing: value ? '0.3em' : undefined }}
+              />
+            ))}
+            <span role="alert" style={{ fontSize: 14, color: COLORS.rust, minHeight: 20 }}>{pcError}</span>
+            <button type="submit" className="bk-btn" disabled={pcSubmitting}>{pcSubmitting ? 'Saving…' : 'Change passcode'}</button>
+          </form>
+        </Page>
+      )}
+
+      {view === 'reset' && (
+        <Page title="Reset all data" onBack={() => setView('main')}>
+          <p style={{ ...BODY, margin: '0 4px' }}>
+            This deletes every cup, spend, income entry and repeating payment on this account. It can’t be undone.
+            Export your spends first if you might want them.
+          </p>
+          <form onSubmit={handleResetAllData} style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
+            <Field
+              label={`Type “${RESET_WORD}” to confirm`}
+              value={resetWord}
+              onChange={e => setResetWord(e.target.value)}
+              autoComplete="off"
+              autoCapitalize="none"
+              spellCheck={false}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <button type="submit" className="st-danger" disabled={resetWord.trim().toLowerCase() !== RESET_WORD || resetting}>
+                {resetting ? 'Deleting…' : 'Delete everything'}
+              </button>
+              <button type="button" className="st-link" onClick={() => setView('main')}>Keep my data</button>
+            </div>
+          </form>
+        </Page>
+      )}
+
       <CSVImportPreview
         visible={showImportPreview}
         parsedExpenses={parsedExpenses}
@@ -1292,644 +670,7 @@ export const Settings: React.FC<SettingsProps> = ({
         onConfirmImport={handleConfirmImport}
       />
 
-      {/* Change Passcode Modal */}
-      <Modal
-        visible={showChangePasscode}
-        animationType="slide"
-        transparent={false}
-        onRequestClose={() => setShowChangePasscode(false)}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowChangePasscode(false)}>
-              <X size={24} color={theme.colors.text} strokeWidth={2} />
-            </TouchableOpacity>
-            <Text style={styles.modalTitle}>Change Passcode</Text>
-            <View style={{ width: 24 }} />
-          </View>
-
-          <ScrollView style={styles.modalContent} contentContainerStyle={{ padding: 20, gap: 16 }}>
-            <View>
-              <Text style={styles.settingTitle}>Current Passcode</Text>
-              <TextInput
-                style={styles.textInputField}
-                value={currentPc}
-                onChangeText={(t) => { setCurrentPc(t.replace(/[^0-9]/g, '').slice(0, 6)); setPcError(''); }}
-                placeholder="Enter current 6-digit passcode"
-                placeholderTextColor={theme.colors.textTertiary}
-                secureTextEntry
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
-
-            <View>
-              <Text style={styles.settingTitle}>New Passcode</Text>
-              <TextInput
-                style={styles.textInputField}
-                value={newPc}
-                onChangeText={(t) => { setNewPc(t.replace(/[^0-9]/g, '').slice(0, 6)); setPcError(''); }}
-                placeholder="6 digits"
-                placeholderTextColor={theme.colors.textTertiary}
-                secureTextEntry
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
-
-            <View>
-              <Text style={styles.settingTitle}>Confirm New Passcode</Text>
-              <TextInput
-                style={styles.textInputField}
-                value={confirmPc}
-                onChangeText={(t) => { setConfirmPc(t.replace(/[^0-9]/g, '').slice(0, 6)); setPcError(''); }}
-                placeholder="Repeat new passcode"
-                placeholderTextColor={theme.colors.textTertiary}
-                secureTextEntry
-                keyboardType="number-pad"
-                maxLength={6}
-              />
-            </View>
-
-            {pcError !== '' && (
-              <Text style={{ color: '#C0392B', fontSize: 14, fontFamily: 'DM Sans' }}>{pcError}</Text>
-            )}
-
-            <TouchableOpacity
-              style={[styles.saveButton, pcSubmitting && { opacity: 0.5 }]}
-              onPress={handleChangePasscode}
-              disabled={pcSubmitting}
-            >
-              <Text style={styles.saveButtonText}>
-                {pcSubmitting ? 'Saving...' : 'Update Passcode'}
-              </Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      {/* Toast Notification */}
-      <Toast
-        visible={toastVisible}
-        message={toastMessage}
-        type={toastType}
-        onHide={() => setToastVisible(false)}
-      />
-    </SafeAreaView>
+      <Toast toast={toast} onHide={() => setToast(null)} />
+    </div>
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    maxHeight: '100vh' as any,
-  },
-  pageHeader: {
-    paddingTop: 40,
-    paddingBottom: 12,
-    paddingHorizontal: 20,
-  },
-  pageTitle: {
-    fontSize: 22,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    fontWeight: '500',
-  },
-  loadingWrapper: {
-    flex: 1,
-    backgroundColor: '#EAE3D5',
-    minHeight: '100vh' as any,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 200,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 0,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    height: 48,
-    marginBottom: 20,
-  },
-  headerSpacer: {
-    width: 48,
-    height: 48,
-  },
-  title: {
-    fontSize: 48,
-    fontWeight: '500',
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-    letterSpacing: -1.2,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionHeader: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    lineHeight: 15,
-  },
-  sectionHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    marginBottom: 12,
-    marginHorizontal: 20,
-  },
-  headerButtonsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 12,
-  },
-  refreshButton: {
-    fontSize: 15,
-    color: '#5C8A7A',
-    fontWeight: '500',
-    fontFamily: 'Merchant',
-    lineHeight: 15,
-  },
-  addButton: {
-    fontSize: 15,
-    color: '#5C8A7A',
-    fontWeight: '500',
-    fontFamily: 'Merchant',
-    lineHeight: 15,
-  },
-  row: {
-    backgroundColor: '#F5F0E7',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    marginHorizontal: 20,
-    borderRadius: 20,
-    marginBottom: 10,
-    cursor: 'pointer' as any,
-  },
-  bucketRow: {
-    backgroundColor: '#F5F0E7',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 20,
-    cursor: 'pointer' as any,
-  },
-  rowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  iconContainer: {
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  bucketCupImage: {
-    width: 28,
-    height: 28,
-    marginRight: 12,
-  },
-  rowTitle: {
-    fontSize: 20,
-    color: '#3D3229',
-    fontWeight: '400',
-    fontFamily: 'Merchant',
-  },
-  rowSubtitle: {
-    fontSize: 17,
-    color: '#7A6E62',
-    fontFamily: 'Merchant Copy',
-    marginTop: 3,
-  },
-  footer: {
-    paddingVertical: 40,
-    paddingBottom: 100,
-    alignItems: 'center',
-  },
-  footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  version: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-    marginBottom: 4,
-  },
-  footerText: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 16,
-  },
-  loadingText: {
-    fontSize: 18,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant',
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-  },
-  modalContent: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-  },
-  settingInfo: {
-    flex: 1,
-    marginRight: 16,
-  },
-  settingTitle: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  settingDescription: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-  },
-  exportDescription: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-    marginTop: 20,
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  exportOption: {
-    backgroundColor: theme.colors.cardBackground,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
-    borderRadius: 12,
-    marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  exportOptionContent: {
-    flex: 1,
-    marginRight: 12,
-  },
-  exportOptionTitle: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  exportOptionDescription: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-    flexWrap: 'wrap',
-  },
-  importInstructions: {
-    marginTop: 24,
-    padding: 16,
-    backgroundColor: theme.colors.purple100,
-    borderRadius: 12,
-  },
-  importInstructionsTitle: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 8,
-  },
-  importInstructionsText: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-    lineHeight: 18,
-  },
-  dangerText: {
-    color: '#FF3B30',
-  },
-  bucketStackPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  bucketStackImage: {
-    width: 22,
-    height: 22,
-  },
-  swipeableCompact: {
-    marginHorizontal: 0,
-    marginBottom: 0,
-    borderRadius: 0,
-  },
-  manageBucketsList: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 16,
-    marginTop: 12,
-    overflow: 'hidden',
-  },
-  manageBucketRow: {
-    backgroundColor: '#F5F0E7',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    cursor: 'pointer' as any,
-  },
-  manageBucketRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0D8C8',
-  },
-  manageBucketsEmpty: {
-    paddingVertical: 60,
-    alignItems: 'center',
-  },
-  manageBucketsEmptyText: {
-    fontSize: 20,
-    fontWeight: '500',
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-  },
-  manageBucketsEmptySubtext: {
-    fontSize: 16,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-  },
-  // Manage Buckets — group sections
-  mbGroupCard: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 16,
-    marginTop: 12,
-    overflow: 'hidden',
-  },
-  mbGroupHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0D8C8',
-  },
-  mbGroupName: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  mbGroupNameInput: {
-    fontSize: 15,
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    flex: 1,
-    paddingVertical: 0,
-    outlineStyle: 'none' as any,
-    borderBottomWidth: 1,
-    borderBottomColor: '#3D3229',
-  },
-  mbGroupDelete: {
-    padding: 4,
-    marginLeft: 8,
-  },
-  mbGroupEmpty: {
-    fontSize: 15,
-    color: '#A09686',
-    fontFamily: 'Merchant',
-    fontStyle: 'italic',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  mbUngroupedHeader: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0D8C8',
-  },
-  mbUngroupedLabel: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  mbAddGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 14,
-    marginTop: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#D5CFC4',
-    borderStyle: 'dashed',
-  },
-  mbAddGroupText: {
-    fontSize: 16,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-  },
-  mbGroupCount: {
-    fontSize: 15,
-    color: '#A09686',
-    fontFamily: 'Merchant Copy',
-  },
-  // Create/edit group flow
-  mbCreateSection: {
-    marginTop: 20,
-  },
-  mbCreateLabel: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-  },
-  mbCreateInput: {
-    fontSize: 18,
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-    backgroundColor: '#F5F0E7',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    outlineStyle: 'none' as any,
-  },
-  mbCreateInputDisplay: {
-    fontSize: 18,
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-    backgroundColor: '#F5F0E7',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    overflow: 'hidden' as any,
-  },
-  mbCheckbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: '#C8C0B4',
-    alignItems: 'center' as any,
-    justifyContent: 'center' as any,
-    marginRight: 10,
-  },
-  mbCheckboxChecked: {
-    backgroundColor: '#3D3229',
-    borderColor: '#3D3229',
-  },
-  mbCheckmark: {
-    fontSize: 15,
-    color: '#FAF8F4',
-    fontWeight: '700',
-    lineHeight: 15,
-  },
-  mbCreateButton: {
-    backgroundColor: '#3D3229',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center' as any,
-    marginTop: 24,
-  },
-  mbCreateButtonDisabled: {
-    opacity: 0.4,
-  },
-  mbCreateButtonText: {
-    fontSize: 17,
-    color: '#FAF8F4',
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-  },
-  mbDeleteGroupButton: {
-    alignItems: 'center' as any,
-    paddingVertical: 14,
-    marginTop: 12,
-  },
-  mbDeleteGroupText: {
-    fontSize: 16,
-    color: '#C0564E',
-    fontFamily: 'Merchant',
-  },
-  // Group card styles (settings main page)
-  groupCard: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 20,
-    marginHorizontal: 20,
-    overflow: 'hidden',
-  },
-  groupRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    cursor: 'pointer' as any,
-  },
-  groupRowTitle: {
-    fontSize: 18,
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-  },
-  groupRowSub: {
-    fontSize: 15,
-    color: '#7A6E62',
-    fontFamily: 'Merchant Copy',
-    marginTop: 2,
-  },
-  groupRowDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#E0D8C8',
-    marginHorizontal: 18,
-  },
-  reviewBadge: {
-    minWidth: 22,
-    height: 22,
-    borderRadius: 11,
-    paddingHorizontal: 7,
-    backgroundColor: '#5C8A7A',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
-  },
-  reviewBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  textInputField: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0D8C8',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    fontFamily: 'DM Sans',
-    color: '#1A1A1A',
-    marginTop: 6,
-  },
-  saveButton: {
-    backgroundColor: '#5C8A7A',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center' as const,
-    marginTop: 8,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600' as const,
-    fontFamily: 'Merchant',
-  },
-});

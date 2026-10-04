@@ -75,7 +75,7 @@ function Bar({ pct, color = COLORS.ink }: { pct: number; color?: string }) {
   );
 }
 
-export function Home({ onOpenCheckin }: { onOpenCheckin: () => void }) {
+export function Home({ onOpenCheckin, onEditExpense }: { onOpenCheckin: () => void; onEditExpense?: (expense: any, bucket: any) => void }) {
   useHomeStyles();
   const { user } = useAuth();
   const month = currentMonth();
@@ -162,6 +162,14 @@ export function Home({ onOpenCheckin }: { onOpenCheckin: () => void }) {
           month={month}
           allCups={data.shelves.flatMap((s) => s.cups as Cup[])}
           onClose={() => setPicked(null)}
+          onEdit={onEditExpense ? (t) => {
+            const cup = picked;
+            setPicked(null);
+            onEditExpense(
+              { _id: t.id, note: t.note, amount: t.amount, date: t.date, bucketId: cup.id, userId: user?._id },
+              { _id: cup.id, name: cup.name },
+            );
+          } : undefined}
         />
       )}
     </div>

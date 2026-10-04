@@ -1,656 +1,268 @@
-import React, { useState, useRef, useCallback } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Pressable,
-  Image,
-} from 'react-native';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useQuery, useMutation } from 'convex/react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
-import { theme } from '../theme';
-import { type } from '../theme/fonts';
-import { getCupForBucketId } from '../constants/bucketIcons';
-import { PotteryLoader } from '../components/PotteryLoader';
 import { DatePicker } from '../components/DatePicker';
-import { getAvailable } from '../../convex/lib/bucketMath';
-import { Drawer } from '../components/Drawer';
+import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
 
-// ── Sound (same pentatonic chime as BucketDetail) ────────────────────────
-const CHIME_NOTES = [
-  987.77, 1108.73, 1174.66, 1318.51, 1479.98,
-  1567.98, 1760.00, 1975.53, 2217.46, 2349.32,
-];
+// Add a spend by hand. Same feel as the check-in's "Which cup?" step:
+// amount, what it was, when, then tap a cup. Only spendable cups are offered
+// (Everyday, For me, Saving up), straight from home.summary.
 
-const playWorthItSound = () => {
-  try {
-    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    const t = ctx.currentTime;
-    const chime = (freq: number, start: number, dur: number, vol: number) => {
-      const osc = ctx.createOscillator();
-      const harmonic = ctx.createOscillator();
-      const g = ctx.createGain();
-      const hg = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      harmonic.type = 'sine';
-      harmonic.frequency.value = freq * 2.02;
-      g.gain.setValueAtTime(vol, t + start);
-      g.gain.exponentialRampToValueAtTime(vol * 0.3, t + start + dur * 0.3);
-      g.gain.exponentialRampToValueAtTime(0.001, t + start + dur);
-      hg.gain.setValueAtTime(vol * 0.12, t + start);
-      hg.gain.exponentialRampToValueAtTime(0.001, t + start + dur * 0.6);
-      osc.connect(g).connect(ctx.destination);
-      harmonic.connect(hg).connect(ctx.destination);
-      osc.start(t + start);
-      osc.stop(t + start + dur);
-      harmonic.start(t + start);
-      harmonic.stop(t + start + dur);
-    };
-    const shuffled = [...CHIME_NOTES].sort(() => Math.random() - 0.5);
-    chime(shuffled[0], 0, 0.4 + Math.random() * 0.2, 0.09);
-    chime(shuffled[1], 0.05 + Math.random() * 0.06, 0.35 + Math.random() * 0.15, 0.06);
-  } catch (_) {}
+export type SheetCup = { id: string; name: string; left: number; full: number };
+
+const FAINT = '#A89E92';
+const UNDERLINE = 'inset 0 -1px 0 #D9D2C6';
+const EASE = 'cubic-bezier(0.16,0.9,0.4,1)';
+
+export function dateLabel(d: Date): string {
+  const today = new Date();
+  const y = new Date();
+  y.setDate(today.getDate() - 1);
+  if (d.toDateString() === today.toDateString()) return 'Today';
+  if (d.toDateString() === y.toDateString()) return 'Yesterday';
+  return d.toLocaleDateString('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    ...(d.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+  });
+}
+
+const parseAmount = (s: string) => {
+  const n = parseFloat(s.replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
 };
 
-// ── Confetti ─────────────────────────────────────────────────────────────
-const CONFETTI_COLORS = ['#c4d4bc', '#b5c9ad', '#a8bca0', '#d0d8c6', '#B8986A', '#C2BDB0'];
+/** The spendable cups, in shelf order, with what's left this month. */
+export function useSpendableCups(): SheetCup[] | undefined {
+  const { user } = useAuth();
+  const data = useQuery(api.home.summary, user ? { userId: user._id, month: currentMonth() } : 'skip');
+  if (!data) return undefined;
+  return data.shelves.flatMap((s) => s.cups.map((c) => ({ id: c.id as string, name: c.name, left: c.left, full: c.full })));
+}
 
-interface ConfettiState { id: number; x: number; y: number; }
-
-const ConfettiParticle: React.FC<{
-  cx: number; cy: number; delay: number; color: string; size: number; dx: number; dy: number;
-}> = ({ cx, cy, delay, color, size, dx, dy }) => (
-  <motion.div
-    style={{
-      position: 'fixed', width: size, height: size,
-      borderRadius: Math.random() > 0.5 ? '50%' : 2,
-      backgroundColor: color, left: cx, top: cy,
-      pointerEvents: 'none' as any, zIndex: 9999,
-    }}
-    initial={{ x: 0, y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    animate={{ x: dx, y: dy, opacity: 0, scale: 0.2, rotate: Math.random() * 540 - 270 }}
-    transition={{ duration: 0.55 + Math.random() * 0.25, delay, ease: [0.25, 0.46, 0.45, 0.94] }}
-  />
+const CloseIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.ink} strokeWidth="1.5" strokeLinecap="round">
+    <path d="M3 3l10 10M13 3L3 13" />
+  </svg>
 );
 
-const ButtonConfetti: React.FC<{ bursts: ConfettiState[] }> = ({ bursts }) => {
-  if (bursts.length === 0) return null;
-  return (
-    <div style={{ position: 'fixed', top: 0, left: 0, width: 0, height: 0, pointerEvents: 'none' as any, zIndex: 9999 }}>
-      {bursts.map(burst =>
-        Array.from({ length: 10 }, (_, i) => {
-          const angle = (Math.PI * 2 * i) / 10 + (Math.random() - 0.5) * 0.6;
-          const dist = 30 + Math.random() * 40;
-          return (
-            <ConfettiParticle
-              key={`${burst.id}-${i}`}
-              cx={burst.x} cy={burst.y}
-              dx={Math.cos(angle) * dist} dy={Math.sin(angle) * dist - 20}
-              delay={Math.random() * 0.06}
-              color={CONFETTI_COLORS[i % CONFETTI_COLORS.length]}
-              size={4 + Math.random() * 3}
-            />
-          );
-        })
-      )}
-    </div>
-  );
+export const linkStyle: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0,
+  minHeight: 44, fontSize: 15, color: COLORS.muted, fontFamily: 'inherit',
 };
 
-// ─────────────────────────────────────────────────────────────────────────
+/** The shared sheet used by Add and Edit. */
+export function ExpenseSheet({
+  title,
+  cups,
+  initial,
+  saveLabel = 'Save',
+  onSave,
+  onClose,
+  footer,
+}: {
+  title: string;
+  cups: SheetCup[] | undefined;
+  initial?: { amount?: string; note?: string; date?: Date; cupId?: string | null };
+  saveLabel?: string;
+  onSave: (v: { amount: number; note: string; date: Date; cupId: string }) => Promise<void>;
+  onClose: () => void;
+  footer?: React.ReactNode;
+}) {
+  useHomeStyles();
+  const [amount, setAmount] = useState(initial?.amount ?? '');
+  const [note, setNote] = useState(initial?.note ?? '');
+  const [date, setDate] = useState<Date>(initial?.date ?? new Date());
+  const [cupId, setCupId] = useState<string | null>(initial?.cupId ?? null);
+  const [showDate, setShowDate] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const amountRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!initial?.amount) amountRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !showDate) onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showDate]);
+
+  const value = parseAmount(amount);
+  const cup = cups?.find((c) => c.id === cupId);
+  const valid = value > 0 && !!cupId;
+  const over = cup && value > 0 && value > cup.left ? value - Math.max(0, cup.left) : 0;
+
+  const save = async () => {
+    if (!valid || saving || !cupId) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSave({ amount: value, note: note.trim(), date, cupId });
+    } catch (e: any) {
+      console.error('Failed to save spend:', e);
+      setError(e?.message ? String(e.message) : 'Could not save. Try again.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(31,27,23,0.2)', zIndex: 2000 }} />
+      <div
+        className="bk-sheet bk-root"
+        role="dialog"
+        aria-label={title}
+        style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, top: 12, zIndex: 2001, maxWidth: 480, margin: '0 auto',
+          background: COLORS.wall, borderRadius: '24px 24px 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden',
+        }}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 12px 0 24px' }}>
+          <span style={{ fontSize: 15, color: COLORS.muted }}>{title}</span>
+          <button type="button" onClick={onClose} aria-label="Close"
+            style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CloseIcon />
+          </button>
+        </div>
+
+        <style>{'.bk-amt::placeholder { color: #A89E92; opacity: 1; }'}</style>
+        <div className="bk-scroll" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' as any, padding: '12px 24px 24px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <label style={{ display: 'flex', alignItems: 'baseline', fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1.05 }}>
+              <span style={{ color: amount ? COLORS.ink : FAINT, transition: 'color .3s ease' }}>$</span>
+              <input
+                ref={amountRef}
+                className="bk-amt"
+                inputMode="decimal"
+                aria-label="Amount"
+                placeholder="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+                onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+                style={{
+                  appearance: 'none', border: 0, background: 'transparent', outline: 'none', padding: 0, minWidth: 0, flex: 1,
+                  font: 'inherit', letterSpacing: 'inherit', color: COLORS.ink, caretColor: COLORS.green,
+                }}
+              />
+            </label>
+
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <span style={{ fontSize: 13, color: COLORS.muted }}>What was it?</span>
+              <input
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="e.g. lunch at the hawker"
+                onKeyDown={(e) => { if (e.key === 'Enter') save(); }}
+                style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: UNDERLINE, outline: 'none', fontFamily: 'inherit', color: COLORS.ink }}
+              />
+            </label>
+
+            <button type="button" onClick={() => setShowDate(true)} aria-label={`Date, ${dateLabel(date)}. Change`}
+              style={{ ...linkStyle, alignSelf: 'flex-start', display: 'flex', alignItems: 'center', gap: 8, color: COLORS.ink }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.muted} strokeWidth="1.3" strokeLinecap="round">
+                <rect x="2.5" y="3.5" width="11" height="10" rx="2" /><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3" />
+              </svg>
+              <span>{dateLabel(date)}</span>
+              <span style={{ color: FAINT, fontSize: 13 }}>Change</span>
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <span style={{ fontSize: 13, color: COLORS.muted }}>Which cup?</span>
+            {!cups ? (
+              <div style={{ height: 160 }} />
+            ) : cups.length === 0 ? (
+              <span style={{ fontSize: 15, color: COLORS.muted }}>No cups yet. Add one in Settings.</span>
+            ) : (
+              <div role="radiogroup" aria-label="Cup" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 6, columnGap: 4 }}>
+                {cups.map((c) => {
+                  const on = c.id === cupId;
+                  const dim = !!cupId && !on;
+                  const low = c.left < 0 || (c.full > 0 && c.left / c.full < 0.25);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      aria-label={`${c.name}, ${money(c.left)} left`}
+                      className="bk-row"
+                      onClick={() => setCupId(on ? null : c.id)}
+                      style={{
+                        appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '4px 0',
+                        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minHeight: 84, position: 'relative',
+                      }}
+                    >
+                      <img
+                        src={cupSrc(c.name)}
+                        alt=""
+                        style={{
+                          width: 52, height: 52, objectFit: 'contain', objectPosition: 'bottom', mixBlendMode: 'multiply',
+                          position: 'relative', top: on ? -4 : 0, opacity: dim ? 0.35 : 1,
+                          transition: `top .5s ${EASE}, opacity .4s ease`,
+                        }}
+                      />
+                      <span style={{ fontSize: 12, marginTop: 4, whiteSpace: 'nowrap', color: on ? COLORS.ink : COLORS.muted, fontWeight: on ? 600 : 400, opacity: dim ? 0.6 : 1, transition: 'opacity .4s ease' }}>
+                        {c.name}
+                      </span>
+                      <span style={{ fontSize: 11, color: low ? COLORS.rust : FAINT, opacity: dim ? 0.6 : 1, transition: 'opacity .4s ease' }}>
+                        {money(c.left)}
+                      </span>
+                      <span aria-hidden style={{ width: 4, height: 4, borderRadius: 999, marginTop: 3, background: on ? COLORS.ink : 'transparent', transition: 'background .3s ease' }} />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {footer}
+        </div>
+
+        <div style={{ padding: '12px 24px calc(env(safe-area-inset-bottom, 0px) + 20px)', display: 'flex', flexDirection: 'column', gap: 10, boxShadow: `inset 0 1px 0 ${COLORS.hairline}` }}>
+          {error ? (
+            <span style={{ fontSize: 13, color: COLORS.rust, textAlign: 'center' }}>{error}</span>
+          ) : cup && over > 0 ? (
+            <span className="bk-step" style={{ fontSize: 13, color: COLORS.muted, textAlign: 'center' }}>
+              {money(over)} more than {cup.name} has left. It carries into next month.
+            </span>
+          ) : null}
+          <button type="button" className="bk-btn" disabled={!valid || saving} onClick={save}>
+            {saving ? 'Saving' : cup && value > 0 ? `${saveLabel} ${money(value)} to ${cup.name}` : saveLabel}
+          </button>
+        </div>
+      </div>
+
+      <DatePicker visible={showDate} selectedDate={date} onSelectDate={setDate} onClose={() => setShowDate(false)} />
+    </>
+  );
+}
 
 interface AddExpenseProps {
   visible?: boolean;
   onClose?: () => void;
 }
 
-export const AddExpense: React.FC<AddExpenseProps> = ({
-  visible = true,
-  onClose = () => {},
-}) => {
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [worthIt, setWorthIt] = useState(false);
-  const [isNecessary, setIsNecessary] = useState(false);
-  const [date, setDate] = useState(new Date());
-  const [showBucketPicker, setShowBucketPicker] = useState(false);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [confettiBursts, setConfettiBursts] = useState<ConfettiState[]>([]);
-  const burstIdRef = useRef(0);
-
-  const _now = new Date();
-  const currentMonthStart = new Date(_now.getFullYear(), _now.getMonth(), 1).getTime();
-  const currentMonthEnd = new Date(_now.getFullYear(), _now.getMonth() + 1, 0, 23, 59, 59, 999).getTime();
-
-  const { user: currentUser } = useAuth();
-  const buckets = useQuery(
-    api.buckets.getByUser,
-    currentUser
-      ? { userId: currentUser._id, monthStart: currentMonthStart, monthEnd: currentMonthEnd }
-      : 'skip',
-  );
+export const AddExpense: React.FC<AddExpenseProps> = ({ visible = true, onClose = () => {} }) => {
+  const { user } = useAuth();
+  const cups = useSpendableCups();
   const createExpense = useMutation(api.expenses.create);
-  const necessaryNotes = useQuery(
-    api.expenses.getNecessaryNotes,
-    currentUser ? { userId: currentUser._id } : 'skip',
-  );
 
-  const allBuckets = buckets || [];
-  const [selectedBucket, setSelectedBucket] = useState(allBuckets[0]);
-
-  React.useEffect(() => {
-    if (allBuckets.length > 0 && !selectedBucket) {
-      setSelectedBucket(allBuckets[0]);
-    }
-    if (selectedBucket && allBuckets.length > 0) {
-      const updatedBucket = allBuckets.find((b: any) => b._id === selectedBucket._id);
-      if (updatedBucket && updatedBucket.currentBalance !== selectedBucket.currentBalance) {
-        setSelectedBucket(updatedBucket);
-      }
-    }
-  }, [allBuckets]);
-
-  // Auto-detect necessary based on remembered notes
-  React.useEffect(() => {
-    if (necessaryNotes && note.trim()) {
-      const normalized = note.toLowerCase().trim();
-      const isMatch = necessaryNotes.some((n: any) => n.note === normalized);
-      setIsNecessary(isMatch);
-      if (isMatch) setWorthIt(false);
-    }
-  }, [note, necessaryNotes]);
-
-  // Canonical available-balance — also handles recurring buckets correctly
-  // (the old inline check only covered 'spend' and fell through to currentBalance).
-  const getAvailableBalance = (bucket: any) => (bucket ? getAvailable(bucket) : 0);
-
-  const handleWorthItPress = useCallback((e: any) => {
-    if (worthIt) {
-      // Already worth it — toggle off
-      setWorthIt(false);
-      return;
-    }
-    setWorthIt(true);
-    setIsNecessary(false);
-    playWorthItSound();
-
-    // Confetti from button position
-    const rect = e?.currentTarget?.getBoundingClientRect?.();
-    if (rect) {
-      const id = ++burstIdRef.current;
-      setConfettiBursts(prev => [...prev, { id, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }]);
-      setTimeout(() => setConfettiBursts(prev => prev.filter(b => b.id !== id)), 1000);
-    }
-  }, [worthIt]);
-
-  const handleSave = async () => {
-    if (isSaving) return;
-    try {
-      setIsSaving(true);
-      if (currentUser === undefined) { setIsSaving(false); return; }
-      if (!selectedBucket) { alert('Please select a bucket'); setIsSaving(false); return; }
-      if (!amount || parseFloat(amount) <= 0) { alert('Please enter a valid amount'); setIsSaving(false); return; }
-
-      await createExpense({
-        userId: currentUser._id,
-        bucketId: selectedBucket._id,
-        amount: parseFloat(amount),
-        date: date.getTime(),
-        note,
-        worthIt,
-      });
-
-      setAmount('');
-      setNote('');
-      setWorthIt(false);
-      setIsNecessary(false);
-      setDate(new Date());
-      setIsSaving(false);
-      if (onClose) onClose();
-    } catch (error: any) {
-      console.error('Failed to create expense:', error);
-      alert(error.message || 'Failed to add expense.');
-      setIsSaving(false);
-    }
-  };
-
-  const amountValue = parseFloat(amount) || 0;
-  const availableBalance = selectedBucket ? getAvailableBalance(selectedBucket) : 0;
-  const hasInsufficientBalance = selectedBucket && amountValue > availableBalance;
-  const isValid = amount && amountValue > 0 && selectedBucket;
-
-  if (currentUser === undefined || buckets === undefined) {
-    return (
-      <View style={styles.container}>
-        <PotteryLoader message="Loading..." />
-      </View>
-    );
-  }
-
-  if (allBuckets.length === 0) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>No buckets yet!</Text>
-          <Text style={styles.emptySubtext}>Create a bucket first to track expenses.</Text>
-        </View>
-      </View>
-    );
-  }
+  if (!visible) return null;
 
   return (
-    <Drawer visible={visible} onClose={onClose} fullScreen>
-      <View style={styles.container}>
-        <ButtonConfetti bursts={confettiBursts} />
-
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          {/* Header */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={onClose}>
-              <Text style={styles.cancelButton}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={styles.title}>Add Expense</Text>
-            <TouchableOpacity onPress={handleSave} disabled={!isValid || isSaving}>
-              <Text style={[styles.saveButton, (!isValid || isSaving) && styles.saveButtonDisabled]}>
-                {isSaving ? 'Saving...' : 'Save'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Date chip */}
-          <View style={styles.dateChipRow}>
-            <Pressable style={styles.dateChip} onPress={() => setShowDatePicker(true)}>
-              <Text style={styles.dateChipText}>
-                {date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* Hero Amount */}
-          <View style={styles.amountHero}>
-            <Text style={styles.amountCurrency}>$</Text>
-            <TextInput
-              style={styles.amountInput}
-              value={amount}
-              onChangeText={setAmount}
-              keyboardType="decimal-pad"
-              placeholder="0.00"
-              placeholderTextColor="rgba(61,50,41,0.15)"
-              textAlign="center"
-            />
-          </View>
-
-          {/* Bucket Selector — tap to open grid */}
-          <Pressable
-            style={styles.bucketSelector}
-            onPress={() => setShowBucketPicker(!showBucketPicker)}
-          >
-            {selectedBucket ? (
-              <>
-                <Image
-                  source={getCupForBucketId(selectedBucket._id, selectedBucket.icon)}
-                  style={styles.bucketSelectorImage}
-                  resizeMode="contain"
-                />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.bucketSelectorName}>{selectedBucket.name}</Text>
-                  <Text style={styles.bucketSelectorBalance}>
-                    ${availableBalance.toFixed(2)} available
-                  </Text>
-                </View>
-              </>
-            ) : (
-              <Text style={styles.bucketSelectorPlaceholder}>Select a bucket</Text>
-            )}
-          </Pressable>
-
-          {/* Bucket Grid Picker */}
-          {showBucketPicker && (
-            <View style={styles.bucketGrid}>
-              {allBuckets.map((bucket: any) => {
-                const isSelected = selectedBucket?._id === bucket._id;
-                return (
-                  <TouchableOpacity
-                    key={bucket._id}
-                    style={[styles.bucketGridItem, isSelected && styles.bucketGridItemSelected]}
-                    onPress={() => { setSelectedBucket(bucket); setShowBucketPicker(false); }}
-                    activeOpacity={0.7}
-                  >
-                    <Image
-                      source={getCupForBucketId(bucket._id, bucket.icon)}
-                      style={styles.bucketGridImage}
-                      resizeMode="contain"
-                    />
-                    <Text style={[styles.bucketGridName, isSelected && styles.bucketGridNameSelected]} numberOfLines={1}>
-                      {bucket.name}
-                    </Text>
-                    <Text style={styles.bucketGridBalance}>
-                      ${getAvailableBalance(bucket).toFixed(0)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Overspending info */}
-          {hasInsufficientBalance && (
-            <View style={styles.infoBox}>
-              <Text style={styles.infoText}>
-                {availableBalance === 0 && selectedBucket.bucketMode === 'spend'
-                  ? 'This bucket isn\'t funded yet. Debt will carry forward.'
-                  : `Overspending by $${(amountValue - availableBalance).toFixed(2)}. Debt rolls over.`}
-              </Text>
-            </View>
-          )}
-
-          {/* Note */}
-          <View style={styles.noteSection}>
-            <TextInput
-              style={styles.noteInput}
-              value={note}
-              onChangeText={setNote}
-              placeholder="what did you buy?"
-              placeholderTextColor="rgba(61,50,41,0.25)"
-            />
-          </View>
-
-          {/* Worth It / Necessary — with sound + confetti */}
-          <View style={styles.worthItSection}>
-            <View style={styles.worthItRow}>
-              <TouchableOpacity
-                style={[styles.worthItBtn, !worthIt && !isNecessary && styles.worthItBtnNotWorth]}
-                onPress={() => { setWorthIt(false); setIsNecessary(false); }}
-              >
-                <Text style={[styles.worthItBtnText, !worthIt && !isNecessary && styles.worthItBtnTextNotWorth]}>
-                  NOT WORTH IT
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.worthItBtn, worthIt && styles.worthItBtnWorth]}
-                onPress={handleWorthItPress}
-              >
-                <Text style={[styles.worthItBtnText, worthIt && styles.worthItBtnTextWorth]}>
-                  WORTH IT
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.worthItBtn, isNecessary && styles.worthItBtnNecessary]}
-                onPress={() => { setIsNecessary(true); setWorthIt(false); }}
-              >
-                <Text style={[styles.worthItBtnText, isNecessary && styles.worthItBtnTextNecessary]}>
-                  NECESSARY
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <View style={{ height: 60 }} />
-        </ScrollView>
-
-        <DatePicker
-          visible={showDatePicker}
-          selectedDate={date}
-          onSelectDate={setDate}
-          onClose={() => setShowDatePicker(false)}
-        />
-      </View>
-    </Drawer>
+    <ExpenseSheet
+      title="Add a spend"
+      cups={cups}
+      onClose={onClose}
+      onSave={async ({ amount, note, date, cupId }) => {
+        if (!user) throw new Error('Not signed in.');
+        await createExpense({ userId: user._id, bucketId: cupId as any, amount, date: date.getTime(), note });
+        onClose();
+      }}
+    />
   );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#EAE3D5',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  title: {
-    ...type.sectionTitle,
-    fontWeight: '500',
-    color: '#1A1A1A',
-  },
-  cancelButton: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-  },
-  saveButton: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-  },
-  saveButtonDisabled: {
-    color: '#B5AFA5',
-  },
-
-  // Date chip
-  dateChipRow: {
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  dateChip: {
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  dateChipText: {
-    fontSize: 15,
-    fontFamily: 'Merchant Copy',
-    color: '#877E6F',
-  },
-
-  // Hero amount
-  amountHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 40,
-  },
-  amountCurrency: {
-    fontSize: 32,
-    fontFamily: 'Merchant Copy',
-    color: 'rgba(61,50,41,0.3)',
-    marginRight: 4,
-  },
-  amountInput: {
-    fontSize: 48,
-    fontFamily: 'Merchant Copy',
-    color: '#1A1A1A',
-    letterSpacing: -2,
-    minWidth: 120,
-    paddingVertical: 0,
-  },
-
-  // Bucket selector
-  bucketSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 24,
-    marginBottom: 8,
-    paddingVertical: 12,
-    gap: 12,
-  },
-  bucketSelectorImage: {
-    width: 44,
-    height: 44,
-  },
-  bucketSelectorName: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
-    color: '#1A1A1A',
-  },
-  bucketSelectorBalance: {
-    fontSize: 16,
-    fontFamily: 'Merchant Copy',
-    color: '#8ac0ae',
-    marginTop: 2,
-  },
-  bucketSelectorPlaceholder: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
-    color: 'rgba(61,50,41,0.25)',
-  },
-
-  // Bucket grid picker
-  bucketGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-    gap: 8,
-  },
-  bucketGridItem: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 6,
-    borderRadius: 14,
-    width: '23%' as any,
-    opacity: 0.6,
-  },
-  bucketGridItemSelected: {
-    opacity: 1,
-    backgroundColor: 'rgba(160,208,192,0.15)',
-  },
-  bucketGridImage: {
-    width: 32,
-    height: 32,
-    marginBottom: 4,
-  },
-  bucketGridName: {
-    ...type.caption,
-    fontSize: 13,
-    fontFamily: 'Merchant',
-    color: '#877E6F',
-    textAlign: 'center',
-  },
-  bucketGridNameSelected: {
-    color: '#245045',
-    fontWeight: '500',
-  },
-  bucketGridBalance: {
-    ...type.caption,
-    fontSize: 13,
-    color: '#8ac0ae',
-    marginTop: 1,
-  },
-
-  // Info box
-  infoBox: {
-    backgroundColor: 'rgba(61,50,41,0.04)',
-    borderRadius: 12,
-    padding: 12,
-    marginHorizontal: 24,
-    marginBottom: 8,
-  },
-  infoText: {
-    ...type.body,
-    fontSize: 15,
-    color: '#877E6F',
-    lineHeight: 20,
-    textAlign: 'center',
-  },
-
-  // Note
-  noteSection: {
-    paddingHorizontal: 24,
-    marginBottom: 24,
-  },
-  noteInput: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
-    color: '#1A1A1A',
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(61,50,41,0.1)',
-    paddingVertical: 12,
-    textAlign: 'center',
-  },
-
-  // Worth it
-  worthItSection: {
-    paddingHorizontal: 24,
-  },
-  worthItRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  worthItBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    paddingHorizontal: 8,
-    borderRadius: 12,
-    backgroundColor: 'transparent',
-    borderWidth: 1.5,
-    borderColor: 'rgba(61,50,41,0.1)',
-    alignItems: 'center',
-  },
-  worthItBtnNotWorth: {
-    backgroundColor: 'rgba(212,184,154,0.3)',
-    borderColor: '#c9a882',
-  },
-  worthItBtnWorth: {
-    backgroundColor: '#a0d0c0',
-    borderColor: '#8ac4b2',
-  },
-  worthItBtnNecessary: {
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    borderColor: 'rgba(61,50,41,0.15)',
-  },
-  worthItBtnText: {
-    ...type.button,
-    color: 'rgba(61,50,41,0.3)',
-    fontWeight: '600',
-    letterSpacing: 0.8,
-  },
-  worthItBtnTextNotWorth: {
-    color: '#a08060',
-  },
-  worthItBtnTextWorth: {
-    color: '#245045',
-  },
-  worthItBtnTextNecessary: {
-    color: 'rgba(61,50,41,0.4)',
-  },
-
-  // Empty state
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-    gap: 12,
-  },
-  emptyText: {
-    fontSize: 22,
-    fontWeight: '500',
-    color: '#3D3229',
-    fontFamily: 'Merchant',
-  },
-  emptySubtext: {
-    fontSize: 18,
-    color: '#8A8478',
-    fontFamily: 'Merchant',
-    textAlign: 'center',
-  },
-});

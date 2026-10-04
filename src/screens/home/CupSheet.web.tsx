@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+// @ts-ignore react-dom has no type definitions in this repo
+import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { COLORS, money } from './homeStyles';
@@ -23,7 +25,7 @@ const RULES: Record<string, string> = {
 };
 const NOTES: Record<string, string> = { 'Self care': 'Already paid for. Enjoy it.' };
 
-export function CupSheet({ cup, month, allCups, onClose }: { cup: Cup; month: string; allCups: Cup[]; onClose: () => void }) {
+export function CupSheet({ cup, month, allCups, onClose, onEdit }: { cup: Cup; month: string; allCups: Cup[]; onClose: () => void; onEdit?: (t: { id: string; note: string; amount: number; date: number }) => void }) {
   const txns = useQuery(api.home.cupTransactions, { bucketId: cup.id as any, month });
   const refile = useMutation(api.merchantRules.refile);
   const [open, setOpen] = useState<string | null>(null);
@@ -35,7 +37,8 @@ export function CupSheet({ cup, month, allCups, onClose }: { cup: Cup; month: st
     setOpen(null);
   };
 
-  return (
+  // Portal to <body> so the sheet sits above the fixed bottom bar.
+  return createPortal(
     <>
       <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(31,27,23,0.2)', zIndex: 2000 }} />
       <div className="bk-sheet bk-root" role="dialog" aria-label={cup.name}
@@ -74,7 +77,10 @@ export function CupSheet({ cup, month, allCups, onClose }: { cup: Cup; month: st
               </button>
               {open === t.id && (
                 <div className="bk-sheet" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 12 }}>
-                  <span style={{ fontSize: 12, color: COLORS.muted, width: '100%' }}>Move to</span>
+                  {onEdit && (
+                    <button type="button" className="bk-chip" style={{ background: COLORS.ink, color: '#F3F0EA' }} onClick={() => onEdit(t)}>Edit details</button>
+                  )}
+                  <span style={{ fontSize: 12, color: COLORS.muted, width: '100%', paddingTop: 4 }}>Move to</span>
                   {allCups.filter((c) => c.id !== cup.id).map((c) => (
                     <button key={c.id} type="button" className="bk-chip" onClick={() => move(t.id, c)}>{c.name}</button>
                   ))}
@@ -84,6 +90,7 @@ export function CupSheet({ cup, month, allCups, onClose }: { cup: Cup; month: st
           ))}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

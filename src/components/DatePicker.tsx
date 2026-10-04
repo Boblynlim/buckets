@@ -1,13 +1,7 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-} from 'react-native';
-import { theme } from '../theme';
-import { getFontFamily } from '../theme/fonts';
+import React, { useEffect, useState } from 'react';
+import { COLORS, useHomeStyles } from '../screens/home/homeStyles';
+
+// A small calendar sheet. Tap a day and it closes.
 
 interface DatePickerProps {
   visible: boolean;
@@ -16,308 +10,118 @@ interface DatePickerProps {
   onClose: () => void;
 }
 
-export const DatePicker: React.FC<DatePickerProps> = ({
-  visible,
-  selectedDate,
-  onSelectDate,
-  onClose,
-}) => {
-  const [currentMonth, setCurrentMonth] = useState(new Date(selectedDate));
-  const [tempSelectedDate, setTempSelectedDate] = useState(selectedDate);
-
-  const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
-  ];
-
-  const getDaysInMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    return new Date(year, month + 1, 0).getDate();
-  };
-
-  const getFirstDayOfMonth = (date: Date) => {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    return new Date(year, month, 1).getDay();
-  };
-
-  const previousMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
-  };
-
-  const nextMonth = () => {
-    setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
-  };
-
-  const renderCalendar = () => {
-    const daysInMonth = getDaysInMonth(currentMonth);
-    const firstDay = getFirstDayOfMonth(currentMonth);
-    const days = [];
-    const today = new Date();
-
-    // Add empty cells for days before the first day of the month
-    for (let i = 0; i < firstDay; i++) {
-      days.push(<View key={`empty-${i}`} style={styles.dayCell} />);
-    }
-
-    // Add cells for each day of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);
-      const isSelected = tempSelectedDate.toDateString() === date.toDateString();
-      const isToday = today.toDateString() === date.toDateString();
-
-      days.push(
-        <TouchableOpacity
-          key={day}
-          style={[
-            styles.dayCell,
-            isToday && styles.todayCell,
-            isSelected && styles.selectedCell,
-          ]}
-          onPress={() => setTempSelectedDate(date)}
-        >
-          <Text
-            style={[
-              styles.dayText,
-              isToday && styles.todayText,
-              isSelected && styles.selectedText,
-            ]}
-          >
-            {day}
-          </Text>
-        </TouchableOpacity>
-      );
-    }
-
-    return days;
-  };
-
-  const handleConfirm = () => {
-    onSelectDate(tempSelectedDate);
-    onClose();
-  };
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="fade"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <View style={styles.modalOverlay}>
-        <View style={styles.pickerContainer}>
-          {/* Header with month/year navigation */}
-          <View style={styles.header}>
-            <TouchableOpacity onPress={previousMonth} style={styles.navButton}>
-              <Text style={styles.navIcon}>‹</Text>
-            </TouchableOpacity>
-            <Text style={styles.monthYearText}>
-              {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
-            </Text>
-            <TouchableOpacity onPress={nextMonth} style={styles.navButton}>
-              <Text style={styles.navIcon}>›</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Weekday labels */}
-          <View style={styles.weekdayRow}>
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-              <View key={index} style={styles.weekdayCell}>
-                <Text style={styles.weekdayText}>{day}</Text>
-              </View>
-            ))}
-          </View>
-
-          {/* Calendar grid */}
-          <View style={styles.calendarGrid}>
-            {renderCalendar()}
-          </View>
-
-          {/* Quick select buttons */}
-          <View style={styles.quickSelectRow}>
-            <TouchableOpacity
-              style={styles.quickButton}
-              onPress={() => {
-                const today = new Date();
-                setTempSelectedDate(today);
-                setCurrentMonth(today);
-              }}
-            >
-              <Text style={styles.quickButtonText}>Today</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickButton}
-              onPress={() => {
-                const yesterday = new Date();
-                yesterday.setDate(yesterday.getDate() - 1);
-                setTempSelectedDate(yesterday);
-                setCurrentMonth(yesterday);
-              }}
-            >
-              <Text style={styles.quickButtonText}>Yesterday</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.quickButton}
-              onPress={() => {
-                const lastWeek = new Date();
-                lastWeek.setDate(lastWeek.getDate() - 7);
-                setTempSelectedDate(lastWeek);
-                setCurrentMonth(lastWeek);
-              }}
-            >
-              <Text style={styles.quickButtonText}>Last Week</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Action buttons */}
-          <View style={styles.actionButtons}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={onClose}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.confirmButton}
-              onPress={handleConfirm}
-            >
-              <Text style={styles.confirmButtonText}>Confirm</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const navBtn: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 44, height: 44,
+  borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
 };
 
-const styles = StyleSheet.create({
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  pickerContainer: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 20,
-    padding: 24,
-    width: '90%',
-    maxWidth: 400,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  navButton: {
-    padding: 8,
-    width: 40,
-    alignItems: 'center',
-  },
-  navIcon: {
-    fontSize: 32,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-  },
-  monthYearText: {
-    fontSize: 20,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-  },
-  weekdayRow: {
-    flexDirection: 'row',
-    marginBottom: 12,
-  },
-  weekdayCell: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  weekdayText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-  },
-  calendarGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: 20,
-  },
-  dayCell: {
-    width: '14.28%', // 100% / 7 days
-    aspectRatio: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  todayCell: {
-    backgroundColor: theme.colors.purple100,
-    borderRadius: 8,
-  },
-  selectedCell: {
-    backgroundColor: theme.colors.primary,
-    borderRadius: 8,
-  },
-  dayText: {
-    fontSize: 18,
-    fontFamily: 'Merchant Copy',
-    color: theme.colors.text,
-  },
-  todayText: {
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-  },
-  selectedText: {
-    color: theme.colors.textOnPrimary,
-    fontFamily: 'Merchant',
-  },
-  quickSelectRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 20,
-  },
-  quickButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-  },
-  quickButtonText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 14,
-    backgroundColor: theme.colors.border,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-  },
-  confirmButton: {
-    flex: 1,
-    paddingVertical: 14,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  confirmButtonText: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.textOnPrimary,
-  },
-});
+const Chevron = ({ dir }: { dir: 'left' | 'right' }) => (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+    <path d={dir === 'left' ? 'M10 3L5 8l5 5' : 'M6 3l5 5-5 5'} />
+  </svg>
+);
+
+export const DatePicker: React.FC<DatePickerProps> = ({ visible, selectedDate, onSelectDate, onClose }) => {
+  useHomeStyles();
+  const [month, setMonth] = useState(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+
+  useEffect(() => {
+    if (visible) setMonth(new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1));
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [visible]);
+
+  if (!visible) return null;
+
+  const today = new Date();
+  const y = month.getFullYear();
+  const m = month.getMonth();
+  const days = new Date(y, m + 1, 0).getDate();
+  const lead = (new Date(y, m, 1).getDay() + 6) % 7; // weeks start Monday
+
+  // Keep the time of day from the current selection.
+  const pick = (d: Date) => {
+    const out = new Date(d);
+    out.setHours(selectedDate.getHours(), selectedDate.getMinutes(), selectedDate.getSeconds(), 0);
+    onSelectDate(out);
+    onClose();
+  };
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  return (
+    <>
+      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(31,27,23,0.2)', zIndex: 4000 }} />
+      <div
+        className="bk-sheet bk-root"
+        role="dialog"
+        aria-label="Pick a date"
+        style={{
+          position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 4001, maxWidth: 480, margin: '0 auto', boxSizing: 'border-box',
+          background: COLORS.sheet, borderRadius: '24px 24px 0 0', padding: '20px 20px calc(env(safe-area-inset-bottom, 0px) + 28px)',
+          display: 'flex', flexDirection: 'column', gap: 12,
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <button type="button" style={navBtn} aria-label="Previous month" onClick={() => setMonth(new Date(y, m - 1, 1))}>
+            <Chevron dir="left" />
+          </button>
+          <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.02em' }}>
+            {month.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}
+          </span>
+          <button type="button" style={navBtn} aria-label="Next month" onClick={() => setMonth(new Date(y, m + 1, 1))}>
+            <Chevron dir="right" />
+          </button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', rowGap: 2 }}>
+          {WEEKDAYS.map((d, i) => (
+            <span key={i} style={{ fontSize: 12, color: '#A89E92', textAlign: 'center', paddingBottom: 6 }}>{d}</span>
+          ))}
+          {Array.from({ length: lead }).map((_, i) => <span key={`e${i}`} />)}
+          {Array.from({ length: days }).map((_, i) => {
+            const d = new Date(y, m, i + 1);
+            const on = d.toDateString() === selectedDate.toDateString();
+            const isToday = d.toDateString() === today.toDateString();
+            return (
+              <button
+                key={i}
+                type="button"
+                aria-label={d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' })}
+                aria-pressed={on}
+                onClick={() => pick(d)}
+                style={{
+                  appearance: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', justifySelf: 'center',
+                  width: 44, height: 44, borderRadius: 999, fontSize: 15, fontVariantNumeric: 'tabular-nums',
+                  background: on ? COLORS.ink : 'transparent', color: on ? COLORS.wall : COLORS.ink,
+                  fontWeight: isToday || on ? 600 : 400, position: 'relative', transition: 'background .3s ease, color .3s ease',
+                }}
+              >
+                {i + 1}
+                {isToday && !on && (
+                  <span style={{ position: 'absolute', left: '50%', bottom: 7, width: 4, height: 4, marginLeft: -2, borderRadius: 999, background: COLORS.green }} />
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        <div style={{ display: 'flex', gap: 8, paddingTop: 4 }}>
+          <button type="button" className="bk-chip" style={{ height: 40, fontSize: 14, padding: '0 16px' }} onClick={() => pick(today)}>Today</button>
+          <button type="button" className="bk-chip" style={{ height: 40, fontSize: 14, padding: '0 16px' }} onClick={() => pick(yesterday)}>Yesterday</button>
+        </div>
+      </div>
+    </>
+  );
+};
