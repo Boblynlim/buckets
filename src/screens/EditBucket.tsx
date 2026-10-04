@@ -1,26 +1,351 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  Image,
-  Pressable,
-} from 'react-native';
-// Navigation imports handled conditionally below
-import type { RouteProp } from '@react-navigation/native';
-import { useMutation } from 'convex/react';
+import React, { useMemo, useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { theme } from '../theme';
-import { type } from '../theme/fonts';
 import type { Bucket } from '../types';
-import { Drawer } from '../components/Drawer';
-import { getCupForBucketId } from '../constants/bucketIcons';
+import { COLORS, cupSrc, money, useHomeStyles } from './home/homeStyles';
 
-type EditBucketRouteProp = RouteProp<{ EditBucket: { bucket: Bucket } }, 'EditBucket'>;
+// Editing a cup (and, via CupForm, adding one). Calm full-screen page:
+// the cup photo, its name, what goes in each month, which shelf it sits on.
+// Older knobs (share of take-home, kind, low alert) live under "More options".
+
+export type Mode = 'spend' | 'save' | 'recurring';
+export const SHELVES = ['Everyday', 'For me', 'Saving up', 'Fixed'] as const;
+export type Shelf = (typeof SHELVES)[number];
+
+const EASE = 'cubic-bezier(0.16,0.9,0.4,1)';
+const LABEL: React.CSSProperties = { fontSize: 13, color: COLORS.muted };
+const INPUT: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit',
+  color: COLORS.ink, fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', width: '100%', boxSizing: 'border-box',
+};
+const LINK: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: COLORS.muted, fontSize: 14,
+  minHeight: 44, padding: 0, fontFamily: 'inherit',
+};
+
+const FORM_CSS = `
+.bk-cupform input::placeholder { color: #C9C0B4; }
+.bk-cupform input:focus { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
+.bk-cupform .bk-money input:focus { box-shadow: none !important; }
+.bk-cupform .bk-money:focus-within { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
+.bk-chip.on { background: ${COLORS.ink}; color: ${COLORS.wall}; box-shadow: none; }
+.bk-more { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .6s ${EASE}, opacity .4s ease; }
+.bk-more.open { grid-template-rows: 1fr; opacity: 1; }
+.bk-more > div { overflow: hidden; }
+.bk-chev { transition: transform .5s ${EASE}; }
+@keyframes bkCupIn { from { opacity: 0; } to { opacity: 1; } }
+.bk-cupimg { animation: bkCupIn .5s ease backwards; }
+@media (prefers-reduced-motion: reduce) { .bk-more, .bk-chev { transition: none; } .bk-cupimg { animation: none; } }
+`;
+let cssInjected = false;
+function useFormStyles() {
+  useHomeStyles();
+  if (cssInjected || typeof document === 'undefined') return;
+  cssInjected = true;
+  const s = document.createElement('style');
+  s.textContent = FORM_CSS;
+  document.head.appendChild(s);
+}
+
+// "50000.5" -> "50,000.5" for display; typing strips the commas again.
+const withCommas = (s: string) => {
+  if (!s) return s;
+  const [i, d] = s.split('.');
+  return Number(i || 0).toLocaleString('en-US') + (d !== undefined ? '.' + d : '');
+};
+
+const num = (s: string) => {
+  const n = parseFloat(String(s).replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+};
+
+export function Chips<T extends string>({ options, value, onChange, label }: {
+  options: readonly { value: T; label: string }[]; value: T; onChange: (v: T) => void; label: string;
+}) {
+  return (
+    <div role="radiogroup" aria-label={label} style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+      {options.map((o) => (
+        <button key={o.value} type="button" role="radio" aria-checked={value === o.value}
+          className={`bk-chip${value === o.value ? ' on' : ''}`} style={{ height: 40, padding: '0 14px', fontSize: 14 }}
+          onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Big money input: "$" muted, number 52/600, optional suffix. */
+export function MoneyInput({ value, onChange, label, suffix, prefix = '$', size = 52, autoFocus }: {
+  value: string; onChange: (v: string) => void; label: string; suffix?: string; prefix?: string; size?: number; autoFocus?: boolean;
+}) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={LABEL}>{label}</span>
+      <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
+        {prefix && <span style={{ fontSize: size * 0.6, fontWeight: 500, color: '#A89E92', letterSpacing: '-0.02em' }}>{prefix}</span>}
+        <input inputMode="decimal" value={prefix ? withCommas(value) : value} placeholder="0" autoFocus={autoFocus}
+          onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ''))}
+          style={{ ...INPUT, boxShadow: 'none', fontSize: size, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1.1, padding: '4px 0', flex: 1, minWidth: 0 }} />
+        {suffix && <span style={{ fontSize: 15, color: COLORS.muted, whiteSpace: 'nowrap' }}>{suffix}</span>}
+      </span>
+    </label>
+  );
+}
+
+export type CupValues = {
+  name: string;
+  mode: Mode;
+  shelf: Shelf | null;
+  allocationType: 'amount' | 'percentage';
+  amount: string; // spend/recurring: $ or %, save: monthly contribution
+  target: string; // save only
+  contributionType: 'amount' | 'percentage' | 'none';
+  alertThreshold: string;
+};
+
+/** The shared page used by EditBucket and AddBucket. */
+export function CupForm({
+  title, initial, initialMode, takeHome, saved = 0, onClose, onSave, saveLabel, onRetire, retireNote, helper, onShelfChange,
+}: {
+  title: string;
+  initial: CupValues;
+  initialMode?: Mode;
+  takeHome: number;
+  saved?: number;
+  onClose: () => void;
+  onSave: (v: CupValues) => Promise<void>;
+  saveLabel: string;
+  onRetire?: () => Promise<void>;
+  retireNote?: string;
+  helper?: (v: CupValues, set: (p: Partial<CupValues>) => void) => React.ReactNode;
+  onShelfChange?: (shelf: Shelf, v: CupValues) => Partial<CupValues>;
+}) {
+  useFormStyles();
+  const [v, setV] = useState<CupValues>(initial);
+  const set = (p: Partial<CupValues>) => setV((cur) => ({ ...cur, ...p }));
+  const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmRetire, setConfirmRetire] = useState(false);
+
+  const modeChanged = initialMode !== undefined && v.mode !== initialMode;
+  const isSave = v.mode === 'save';
+  const pct = v.allocationType === 'percentage';
+  const savePct = v.contributionType === 'percentage';
+  const threshold = num(v.alertThreshold);
+
+  const valid = !!v.name.trim()
+    && threshold >= 0 && threshold <= 100 && v.alertThreshold.trim() !== ''
+    && (isSave
+      ? num(v.target) > 0 && (v.contributionType === 'none' || num(v.amount) > 0)
+      : num(v.amount) > 0);
+
+  const submit = async () => {
+    if (!valid || busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await onSave(v);
+    } catch (e: any) {
+      setError(e?.message || 'That did not save. Try again.');
+      setBusy(false);
+    }
+  };
+
+  const retire = async () => {
+    if (!onRetire) return;
+    setBusy(true);
+    try {
+      await onRetire();
+    } catch (e: any) {
+      setError(e?.message || 'That did not work. Try again.');
+      setBusy(false);
+    }
+  };
+
+  const monthly = isSave
+    ? (v.contributionType === 'none' ? 0 : savePct ? (num(v.amount) / 100) * takeHome : num(v.amount))
+    : pct ? (num(v.amount) / 100) * takeHome : num(v.amount);
+  const src = cupSrc(v.name.trim());
+
+  return (
+    <div className="bk-root bk-cupform" role="dialog" aria-label={title}
+      style={{ position: 'fixed', inset: 0, zIndex: 2500, overflowY: 'auto', background: COLORS.wall }}>
+      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '20px 24px 48px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 15, color: COLORS.muted }}>{title}</span>
+          <button type="button" onClick={onClose} aria-label="Close"
+            style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 44, height: 44, marginRight: -12, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.ink} strokeWidth="1.5" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13" /></svg>
+          </button>
+        </div>
+
+        {/* The cup, sitting on the wall. No transform on this branch: the
+            multiply blend needs it to stay flat. */}
+        <div style={{ display: 'flex', justifyContent: 'center', height: 150, marginTop: -8 }}>
+          <img key={src} className="bk-cupimg" src={src} alt=""
+            style={{ height: 150, width: 150, objectFit: 'contain', objectPosition: 'bottom', mixBlendMode: 'multiply' }} />
+        </div>
+
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={LABEL}>Name</span>
+          <input value={v.name} onChange={(e) => set({ name: e.target.value })} placeholder="What is this cup for?"
+            autoFocus={!initial.name}
+            style={{ ...INPUT, fontSize: 28, fontWeight: 600, letterSpacing: '-0.03em', padding: '6px 0 10px' }} />
+        </label>
+
+        {isSave ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <MoneyInput label="Saving up to" value={v.target} onChange={(t) => set({ target: t })} />
+            {v.contributionType !== 'none' && (
+              <MoneyInput label="Each month" size={32} value={v.amount} onChange={(a) => set({ amount: a })}
+                prefix={savePct ? '' : '$'} suffix={savePct ? '% of take-home' : undefined} />
+            )}
+            {(saved > 0 || (num(v.target) > 0 && monthly > 0)) && (
+              <span style={{ fontSize: 14, color: COLORS.muted, marginTop: -12, lineHeight: 1.5 }}>
+                {saved > 0 ? `${money(saved)} saved so far. ` : ''}
+                {num(v.target) > 0 && monthly > 0 && (saved >= num(v.target)
+                  ? <span style={{ color: COLORS.green }}>You’re there.</span>
+                  : <span style={{ color: COLORS.green }}>About {Math.ceil((num(v.target) - saved) / monthly)} months to go.</span>)}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <MoneyInput label="Each month" value={v.amount} onChange={(a) => set({ amount: a })}
+              prefix={pct ? '' : '$'} suffix={pct ? '% of take-home' : undefined} />
+            <span style={{ fontSize: 13, color: COLORS.muted, lineHeight: 1.5 }}>
+              {pct && takeHome > 0 ? `About ${money(monthly)} a month. ` : ''}
+              {v.mode === 'recurring' ? 'Paid out the same each month.' : 'Whatever you don’t spend stays in the cup.'}
+            </span>
+          </div>
+        )}
+
+        {helper?.(v, set)}
+
+        {!isSave && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <span style={LABEL}>Shelf</span>
+          <Chips label="Shelf" value={(v.shelf ?? '') as Shelf}
+            options={SHELVES.map((s) => ({ value: s, label: s }))}
+            onChange={(s) => set({ shelf: s, ...(onShelfChange?.(s, v) ?? {}) })} />
+        </div>}
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <button type="button" onClick={() => setMore(!more)} aria-expanded={more}
+            style={{ ...LINK, display: 'flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
+            More options
+            <svg className="bk-chev" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"
+              style={{ transform: more ? 'rotate(180deg)' : 'none' }}><path d="M3 4.5l3 3 3-3" /></svg>
+          </button>
+          <div className={`bk-more${more ? ' open' : ''}`} aria-hidden={!more}>
+            <div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: '8px 0 4px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <span style={LABEL}>Kind of cup</span>
+                  <Chips label="Kind of cup" value={v.mode} onChange={(m) => set({ mode: m })}
+                    options={[{ value: 'spend', label: 'Spending' }, { value: 'save', label: 'Saving for a goal' }, { value: 'recurring', label: 'Fixed bill' }] as const} />
+                  {modeChanged && <span style={{ fontSize: 13, color: COLORS.rust }}>Changing this starts the cup from $0.</span>}
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <span style={LABEL}>Each month, put in</span>
+                  {isSave ? (
+                    <Chips label="Each month, put in" value={v.contributionType} onChange={(c) => set({ contributionType: c })}
+                      options={[{ value: 'amount', label: 'A set amount' }, { value: 'percentage', label: 'A share of take-home' }, { value: 'none', label: 'Nothing' }] as const} />
+                  ) : (
+                    <Chips label="Each month, put in" value={v.allocationType} onChange={(a) => set({ allocationType: a })}
+                      options={[{ value: 'amount', label: 'A set amount' }, { value: 'percentage', label: 'A share of take-home' }] as const} />
+                  )}
+                </div>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  <span style={LABEL}>Tell me when it’s down to</span>
+                  <span style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                    <input inputMode="decimal" value={v.alertThreshold} aria-label="Alert threshold"
+                      onChange={(e) => set({ alertThreshold: e.target.value.replace(/[^0-9.]/g, '') })}
+                      style={{ ...INPUT, width: 56, textAlign: 'center' }} />
+                    <span style={{ fontSize: 15, color: COLORS.muted }}>% left</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 'auto' }}>
+          {error && <span style={{ fontSize: 14, color: COLORS.rust }}>{error}</span>}
+          <button type="button" className="bk-btn" disabled={!valid || busy} onClick={submit}>
+            {busy && !confirmRetire ? 'Saving' : saveLabel}
+          </button>
+
+          {onRetire && !confirmRetire && (
+            <button type="button" style={{ ...LINK, color: COLORS.rust }} onClick={() => setConfirmRetire(true)}>
+              Retire this cup
+            </button>
+          )}
+          {onRetire && confirmRetire && (
+            <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 20, marginTop: 8, borderRadius: 18, background: COLORS.sheet }}>
+              <span style={{ fontSize: 17, fontWeight: 600, letterSpacing: '-0.02em' }}>Retire {initial.name}?</span>
+              <span style={{ fontSize: 15, color: COLORS.muted, lineHeight: 1.5 }}>
+                It comes off your shelf and stops getting money. {retireNote ?? ''}
+              </span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setConfirmRetire(false)}
+                  style={{ ...LINK, flex: 1, height: 48, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', color: COLORS.ink, fontSize: 15 }}>
+                  Keep it
+                </button>
+                <button type="button" disabled={busy} onClick={retire}
+                  style={{ ...LINK, flex: 1, height: 48, borderRadius: 999, background: COLORS.rust, color: '#FFFFFF', fontSize: 15, fontWeight: 500 }}>
+                  {busy ? 'Retiring' : 'Retire'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Takes home this month, and the user's shelves (groups) by name. */
+export function useCupContext(userId: any) {
+  const d = new Date();
+  const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const income = useQuery(api.monthlyIncome.getByMonth, userId ? { userId, month } : 'skip') as any[] | undefined;
+  const groups = useQuery(api.groups.getByUser, userId ? { userId } : 'skip') as any[] | undefined;
+  const takeHome = useMemo(() => (income ?? []).reduce((s, r) => s + r.amount, 0), [income]);
+  const createGroup = useMutation(api.groups.create);
+  const assign = useMutation(api.groups.assignBucket);
+
+  // Puts the cup on the named shelf, making the shelf if this user lacks it.
+  const placeOnShelf = async (bucketId: any, shelf: Shelf) => {
+    let g = (groups ?? []).find((x) => x.name === shelf);
+    const groupId = g ? g._id : await createGroup({ userId, name: shelf });
+    await assign({ bucketId, groupId });
+  };
+  const shelfOf = (groupId?: string): Shelf | null => {
+    const n = (groups ?? []).find((x) => x._id === groupId)?.name;
+    return (SHELVES as readonly string[]).includes(n) ? (n as Shelf) : null;
+  };
+  return { takeHome, groups, placeOnShelf, shelfOf };
+}
+
+/** Builds the buckets.update / buckets.create amount fields from the form. */
+export function amountFields(v: CupValues) {
+  if (v.mode === 'save') {
+    return {
+      targetAmount: num(v.target),
+      contributionType: v.contributionType,
+      ...(v.contributionType === 'amount' && { contributionAmount: num(v.amount) }),
+      ...(v.contributionType === 'percentage' && { contributionPercent: num(v.amount) }),
+    };
+  }
+  return {
+    allocationType: v.allocationType,
+    ...(v.allocationType === 'amount' ? { plannedAmount: num(v.amount) } : { plannedPercent: num(v.amount) }),
+  };
+}
 
 interface EditBucketProps {
   visible?: boolean;
@@ -30,770 +355,83 @@ interface EditBucketProps {
 }
 
 export const EditBucket: React.FC<EditBucketProps> = (props) => {
-  // Safely get navigation (will be null on web)
+  // Native navigation passes the cup as a route param; web passes props.
   let route: any = null;
   let navigation: any = null;
-
   try {
     const { useRoute, useNavigation } = require('@react-navigation/native');
-    route = useRoute() as EditBucketRouteProp;
+    route = useRoute();
     navigation = useNavigation();
-  } catch (error) {
-    // Not in navigation context (web) - use props instead
+  } catch {
+    // Not inside a navigator (web).
   }
-
-  // Support both prop-based (web/modal) and route-based (mobile navigation) usage
-  const bucket = props.bucket || route?.params?.bucket;
-  const visible = props.visible !== undefined ? props.visible : true;
+  const bucket: Bucket | undefined = props.bucket || route?.params?.bucket;
   const onClose = props.onClose || (() => navigation?.goBack());
-
-  if (!bucket) {
-    return null;
-  }
-
-  const initialMode = bucket.bucketMode || 'spend';
-  const [bucketMode, setBucketMode] = useState<'spend' | 'save' | 'recurring'>(initialMode);
-  const bucketType = bucketMode === 'recurring' ? 'bill' : bucketMode === 'save' ? 'goal' : 'budget';
-  const isModeChanged = bucketMode !== initialMode;
-  const [name, setName] = useState(bucket.name);
-  const [allocationType, setAllocationType] = useState<'amount' | 'percentage'>(
-    bucket.allocationType || 'amount'
-  );
-  const [allocationValue, setAllocationValue] = useState(
-    (props.suggestedAmount !== undefined ? props.suggestedAmount : (bucket.plannedAmount || bucket.plannedPercent || bucket.allocationValue || 0)).toString()
-  );
-  const [targetAmount, setTargetAmount] = useState(
-    (bucket.targetAmount || 0).toString()
-  );
-  const [contributionType, setContributionType] = useState<'amount' | 'percentage' | 'none'>(
-    bucket.contributionType || 'none'
-  );
-  const [contributionValue, setContributionValue] = useState(
-    (initialMode === 'save' && props.suggestedAmount !== undefined ? props.suggestedAmount : (bucket.contributionAmount || bucket.contributionPercent || 0)).toString()
-  );
-
-  // Switching type wipes balances on the backend, so reset the input defaults
-  // for the new mode rather than carrying over values from the old one.
-  const handleChangeMode = (next: 'spend' | 'save' | 'recurring') => {
-    if (next === bucketMode) return;
-    setBucketMode(next);
-    if (next === 'spend' || next === 'recurring') {
-      // Default to a fixed-dollar allocation; user can switch to %.
-      setAllocationType(next === initialMode ? (bucket.allocationType || 'amount') : 'amount');
-      setAllocationValue(
-        next === initialMode
-          ? (bucket.plannedAmount || bucket.plannedPercent || bucket.allocationValue || 0).toString()
-          : ''
-      );
-    } else {
-      setTargetAmount(
-        next === initialMode ? (bucket.targetAmount || 0).toString() : ''
-      );
-      setContributionType(
-        next === initialMode ? (bucket.contributionType || 'none') : 'none'
-      );
-      setContributionValue(
-        next === initialMode
-          ? (bucket.contributionAmount || bucket.contributionPercent || 0).toString()
-          : ''
-      );
-    }
-  };
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [alertThreshold, setAlertThreshold] = useState(
-    bucket.alertThreshold.toString()
-  );
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const updateBucket = useMutation(api.buckets.update);
-  const removeBucket = useMutation(api.buckets.remove);
-
-  const inputTarget = parseFloat(targetAmount) || 0;
-  const inputContribution = parseFloat(contributionValue) || 0;
-
-  const isValid = bucketMode === 'spend' || bucketMode === 'recurring'
-    ? name.trim() &&
-      allocationValue &&
-      parseFloat(allocationValue) > 0 &&
-      alertThreshold &&
-      parseFloat(alertThreshold) >= 0 &&
-      parseFloat(alertThreshold) <= 100
-    : name.trim() &&
-      targetAmount &&
-      parseFloat(targetAmount) > 0 &&
-      alertThreshold &&
-      parseFloat(alertThreshold) >= 0 &&
-      parseFloat(alertThreshold) <= 100 &&
-      (contributionType === 'none' || (contributionValue && parseFloat(contributionValue) > 0));
-
-  const handleSave = async () => {
-    if (isSaving) return;
-    if (!isValid) {
-      alert('Please fill in all fields correctly');
-      return;
-    }
-
-    try {
-      setIsSaving(true);
-
-      const baseParams: any = {
-        bucketId: bucket._id as any,
-        name: name.trim(),
-        alertThreshold: parseFloat(alertThreshold),
-        color: bucket.color,
-      };
-
-      // Only send bucketMode when it has actually changed — the backend uses
-      // a mode change to clear opposite-mode fields and reset balances.
-      if (isModeChanged) {
-        baseParams.bucketMode = bucketMode;
-      }
-
-      let updateParams;
-      if (bucketMode === 'spend' || bucketMode === 'recurring') {
-        updateParams = {
-          ...baseParams,
-          allocationType,
-          ...(allocationType === 'amount'
-            ? { plannedAmount: parseFloat(allocationValue) }
-            : { plannedPercent: parseFloat(allocationValue) }
-          ),
-        };
-      } else {
-        updateParams = {
-          ...baseParams,
-          targetAmount: parseFloat(targetAmount),
-          contributionType,
-          ...(contributionType === 'amount' && { contributionAmount: parseFloat(contributionValue) }),
-          ...(contributionType === 'percentage' && { contributionPercent: parseFloat(contributionValue) }),
-        };
-      }
-
-      await updateBucket(updateParams);
-      setIsSaving(false);
-      if (onClose) onClose();
-    } catch (error: any) {
-      console.error('Failed to update bucket:', error);
-      alert(error.message || 'Failed to update bucket. Please try again.');
-      setIsSaving(false);
-    }
-  };
-
-  const handleDelete = () => {
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDelete = async () => {
-    setShowDeleteConfirm(false);
-    try {
-      await removeBucket({ bucketId: bucket._id as any });
-      if (onClose) onClose();
-    } catch (error: any) {
-      console.error('Failed to delete bucket:', error);
-      alert(error.message || 'Failed to delete bucket. Please try again.');
-    }
-  };
-
-  const content = (
-    <View style={styles.container}>
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={styles.cancelButton}>Cancel</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Edit Cup</Text>
-          <TouchableOpacity onPress={handleSave} disabled={!isValid || isSaving}>
-            <Text style={[styles.saveButton, (!isValid || isSaving) && styles.saveButtonDisabled]}>
-              {isSaving ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Cup Preview */}
-        <View style={styles.cupPreview}>
-          <Image
-            source={getCupForBucketId(bucket._id, bucket.icon)}
-            style={styles.cupImage}
-            resizeMode="contain"
-          />
-        </View>
-
-        {/* Name Input */}
-        <View style={styles.nameSection}>
-          <TextInput
-            style={styles.nameInput}
-            value={name}
-            onChangeText={setName}
-            placeholder="name this cup..."
-            placeholderTextColor="rgba(61,50,41,0.2)"
-            textAlign="center"
-          />
-        </View>
-
-        {/* Type Pills */}
-        <View style={styles.typeRow}>
-          {(['bill', 'budget', 'goal'] as const).map((t) => {
-            const mode = t === 'bill' ? 'recurring' : t === 'budget' ? 'spend' : 'save';
-            return (
-              <Pressable
-                key={t}
-                style={[styles.typePill, bucketType === t && styles.typePillActive]}
-                onPress={() => handleChangeMode(mode)}
-              >
-                <Text style={[styles.typePillText, bucketType === t && styles.typePillTextActive]}>
-                  {t === 'bill' ? 'BILL' : t === 'budget' ? 'BUDGET' : 'GOAL'}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        <Text style={styles.typeHelper}>
-          {bucketMode === 'spend'
-            ? 'flexible spending — track against a monthly limit'
-            : bucketMode === 'save'
-            ? 'save toward a target amount over time'
-            : 'fixed monthly expense — same amount each time'}
-        </Text>
-        {isModeChanged && (
-          <Text style={styles.modeChangeWarning}>
-            switching type will reset this cup's balance
-          </Text>
-        )}
-
-        {/* Amount Fields — Spend / Recurring */}
-        {(bucketMode === 'spend' || bucketMode === 'recurring') && (
-          <View style={styles.amountSection}>
-            <View style={styles.amountRow}>
-              <Text style={styles.amountCurrency}>
-                {allocationType === 'amount' ? '$' : '%'}
-              </Text>
-              <TextInput
-                style={styles.amountInput}
-                value={allocationValue}
-                onChangeText={setAllocationValue}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor="rgba(61,50,41,0.15)"
-              />
-              <Text style={styles.amountSuffix}>
-                {allocationType === 'amount' ? '/ month' : '% of income'}
-              </Text>
-            </View>
-
-            {/* Allocation type toggle */}
-            <View style={styles.allocationToggle}>
-              <Pressable
-                style={[styles.allocationPill, allocationType === 'amount' && styles.allocationPillActive]}
-                onPress={() => setAllocationType('amount')}
-              >
-                <Text style={[styles.allocationPillText, allocationType === 'amount' && styles.allocationPillTextActive]}>
-                  FIXED $
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.allocationPill, allocationType === 'percentage' && styles.allocationPillActive]}
-                onPress={() => setAllocationType('percentage')}
-              >
-                <Text style={[styles.allocationPillText, allocationType === 'percentage' && styles.allocationPillTextActive]}>
-                  % OF INCOME
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* Amount Fields — Save/Goal */}
-        {bucketMode === 'save' && (
-          <View style={styles.amountSection}>
-            <View style={styles.amountRow}>
-              <Text style={styles.amountCurrency}>$</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={targetAmount}
-                onChangeText={setTargetAmount}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor="rgba(61,50,41,0.15)"
-              />
-              <Text style={styles.amountSuffix}>goal</Text>
-            </View>
-
-            {/* Monthly contribution */}
-            <View style={styles.contributionRow}>
-              <Text style={styles.contributionLabel}>contribute</Text>
-              <Text style={styles.contributionCurrency}>
-                {contributionType === 'percentage' ? '%' : '$'}
-              </Text>
-              <TextInput
-                style={styles.contributionInput}
-                value={contributionValue}
-                onChangeText={setContributionValue}
-                keyboardType="decimal-pad"
-                placeholder="0"
-                placeholderTextColor="rgba(61,50,41,0.15)"
-              />
-              <Text style={styles.contributionSuffix}>
-                {contributionType === 'percentage' ? '% of income' : '/ month'}
-              </Text>
-            </View>
-
-            {/* Contribution type toggle */}
-            <View style={styles.allocationToggle}>
-              <Pressable
-                style={[styles.allocationPill, contributionType === 'none' && styles.allocationPillActive]}
-                onPress={() => setContributionType('none')}
-              >
-                <Text style={[styles.allocationPillText, contributionType === 'none' && styles.allocationPillTextActive]}>
-                  NONE
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.allocationPill, contributionType === 'amount' && styles.allocationPillActive]}
-                onPress={() => setContributionType('amount')}
-              >
-                <Text style={[styles.allocationPillText, contributionType === 'amount' && styles.allocationPillTextActive]}>
-                  FIXED $
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.allocationPill, contributionType === 'percentage' && styles.allocationPillActive]}
-                onPress={() => setContributionType('percentage')}
-              >
-                <Text style={[styles.allocationPillText, contributionType === 'percentage' && styles.allocationPillTextActive]}>
-                  %
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Time estimate */}
-            {inputTarget > 0 && inputContribution > 0 && contributionType === 'amount' && (
-              <Text style={styles.timeEstimate}>
-                {Math.ceil(inputTarget / inputContribution)} months to reach your goal
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* Advanced options toggle */}
-        <Pressable
-          style={styles.advancedToggle}
-          onPress={() => setShowAdvanced(!showAdvanced)}
-        >
-          <Text style={styles.advancedToggleText}>
-            {showAdvanced ? 'less options' : 'more options'}
-          </Text>
-        </Pressable>
-
-        {showAdvanced && (
-          <View style={styles.advancedSection}>
-            <Text style={styles.advancedLabel}>alert when</Text>
-            <View style={styles.advancedRow}>
-              <TextInput
-                style={styles.advancedInput}
-                value={alertThreshold}
-                onChangeText={setAlertThreshold}
-                keyboardType="decimal-pad"
-                placeholder="20"
-                placeholderTextColor="rgba(61,50,41,0.2)"
-              />
-              <Text style={styles.advancedSuffix}>% remaining</Text>
-            </View>
-          </View>
-        )}
-
-        {/* Delete */}
-        <View style={styles.deleteSection}>
-          <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>Delete Bucket</Text>
-          </TouchableOpacity>
-          <Text style={styles.deleteHint}>This action cannot be undone</Text>
-        </View>
-
-        <View style={{ height: 80 }} />
-      </ScrollView>
-
-      {/* Delete Confirmation Modal */}
-      <Modal
-        visible={showDeleteConfirm}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowDeleteConfirm(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Delete Bucket?</Text>
-            <Text style={styles.modalMessage}>
-              Are you sure you want to delete "{bucket.name}"?
-              {(bucket.currentBalance || 0) > 0 && ` This bucket has $${(bucket.currentBalance || 0).toFixed(2)} remaining.`}
-              {' '}This cannot be undone.
-            </Text>
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonCancel]}
-                onPress={() => setShowDeleteConfirm(false)}>
-                <Text style={styles.modalButtonTextCancel}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalButtonDelete]}
-                onPress={confirmDelete}>
-                <Text style={styles.modalButtonTextDelete}>Delete</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-
-  // If visible prop is provided (web), wrap in Drawer
-  if (onClose) {
-    return (
-      <Drawer
-        visible={visible}
-        onClose={onClose}
-        fullScreen>
-        {content}
-      </Drawer>
-    );
-  }
-
-  // Otherwise return content directly (native navigation)
-  return content;
+  if (!bucket || props.visible === false) return null;
+  return <EditCup bucket={bucket} suggestedAmount={props.suggestedAmount} onClose={onClose} />;
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#EAE3D5',
-  },
-  scrollView: {
-    flex: 1,
-  },
+function EditCup({ bucket, suggestedAmount, onClose }: { bucket: Bucket; suggestedAmount?: number; onClose: () => void }) {
+  const updateBucket = useMutation(api.buckets.update);
+  const removeBucket = useMutation(api.buckets.remove);
+  const { takeHome, groups, placeOnShelf, shelfOf } = useCupContext(bucket.userId);
 
-  // Header
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  title: {
-    ...type.sectionTitle,
-    fontWeight: '500',
-    color: '#1A1A1A',
-  },
-  cancelButton: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-  },
-  saveButton: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-    fontWeight: '500',
-  },
-  saveButtonDisabled: {
-    color: '#B5AFA5',
-  },
+  const initialMode: Mode = bucket.bucketMode || 'spend';
+  const isSave = initialMode === 'save';
+  const startAmount = suggestedAmount !== undefined
+    ? suggestedAmount
+    : isSave
+      ? (bucket.contributionAmount || bucket.contributionPercent || 0)
+      : (bucket.plannedAmount || bucket.plannedPercent || bucket.allocationValue || 0);
 
-  // Cup preview
-  cupPreview: {
-    alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 4,
-  },
-  cupImage: {
-    width: 80,
-    height: 80,
-  },
+  if (groups === undefined) {
+    return <div className="bk-root" style={{ position: 'fixed', inset: 0, zIndex: 2500, background: COLORS.wall }} />;
+  }
+  const startShelf = shelfOf(bucket.groupId);
 
-  // Name
-  nameSection: {
-    paddingHorizontal: 40,
-    paddingVertical: 12,
-  },
-  nameInput: {
-    fontSize: 24,
-    fontFamily: 'Merchant',
-    color: '#1A1A1A',
-    textAlign: 'center',
-    paddingVertical: 8,
-    letterSpacing: -0.5,
-  },
+  const initial: CupValues = {
+    name: bucket.name,
+    mode: initialMode,
+    shelf: startShelf,
+    allocationType: bucket.allocationType || 'amount',
+    amount: startAmount ? String(startAmount) : '',
+    target: bucket.targetAmount ? String(bucket.targetAmount) : '',
+    contributionType: bucket.contributionType || (isSave ? 'none' : 'amount'),
+    alertThreshold: String(bucket.alertThreshold ?? 20),
+  };
 
-  // Type pills (read-only in edit mode)
-  typeRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 24,
-    marginTop: 8,
-  },
-  typePill: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 20,
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  typePillActive: {
-    backgroundColor: 'rgba(160,208,192,0.2)',
-    borderColor: 'rgba(92,138,122,0.3)',
-  },
-  typePillText: {
-    ...type.button,
-    fontWeight: '600',
-    color: '#877E6F',
-    letterSpacing: 0.8,
-  },
-  typePillTextActive: {
-    color: '#245045',
-  },
-  typeHelper: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-    textAlign: 'center',
-    marginTop: 10,
-    marginBottom: 4,
-    paddingHorizontal: 40,
-  },
-  modeChangeWarning: {
-    ...type.caption,
-    fontStyle: 'italic',
-    color: '#C0564E',
-    textAlign: 'center',
-    marginTop: 4,
-    paddingHorizontal: 40,
-  },
+  const save = async (v: CupValues) => {
+    const params: any = {
+      bucketId: bucket._id as any,
+      name: v.name.trim(),
+      alertThreshold: num(v.alertThreshold),
+      color: bucket.color,
+      ...amountFields(v),
+    };
+    // Only send the mode when it changed: the backend treats a mode change
+    // as a reset (clears the other mode's fields and the balance).
+    if (v.mode !== initialMode) params.bucketMode = v.mode;
+    await updateBucket(params);
+    if (v.mode !== 'save' && v.shelf && v.shelf !== startShelf) await placeOnShelf(bucket._id, v.shelf);
+    onClose();
+  };
 
-  // Amount section
-  amountSection: {
-    paddingHorizontal: 24,
-    marginTop: 20,
-  },
-  amountRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'center',
-    gap: 4,
-  },
-  amountCurrency: {
-    fontSize: 28,
-    fontFamily: 'Merchant Copy',
-    color: 'rgba(61,50,41,0.25)',
-  },
-  amountInput: {
-    fontSize: 36,
-    fontFamily: 'Merchant Copy',
-    color: '#1A1A1A',
-    minWidth: 60,
-    textAlign: 'center',
-    paddingVertical: 4,
-  },
-  amountSuffix: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-    marginLeft: 4,
-  },
-
-  // Allocation type toggle
-  allocationToggle: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 16,
-  },
-  allocationPill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 16,
-    backgroundColor: 'rgba(61,50,41,0.06)',
-    borderWidth: 1.5,
-    borderColor: 'transparent',
-  },
-  allocationPillActive: {
-    backgroundColor: 'rgba(160,208,192,0.2)',
-    borderColor: 'rgba(92,138,122,0.3)',
-  },
-  allocationPillText: {
-    ...type.button,
-    fontWeight: '600',
-    color: '#877E6F',
-    letterSpacing: 0.6,
-  },
-  allocationPillTextActive: {
-    color: '#245045',
-  },
-
-  // Contribution (goal mode)
-  contributionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(61,50,41,0.06)',
-  },
-  contributionLabel: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-  },
-  contributionCurrency: {
-    fontSize: 20,
-    fontFamily: 'Merchant Copy',
-    color: 'rgba(61,50,41,0.25)',
-  },
-  contributionInput: {
-    fontSize: 24,
-    fontFamily: 'Merchant Copy',
-    color: '#1A1A1A',
-    minWidth: 50,
-    textAlign: 'center',
-    paddingVertical: 2,
-  },
-  contributionSuffix: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-  },
-  timeEstimate: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
-    fontStyle: 'italic',
-    color: '#5C8A7A',
-    textAlign: 'center',
-    marginTop: 12,
-  },
-
-  // Advanced
-  advancedToggle: {
-    alignItems: 'center',
-    marginTop: 28,
-  },
-  advancedToggleText: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-    textDecorationLine: 'underline',
-  },
-  advancedSection: {
-    paddingHorizontal: 24,
-    marginTop: 16,
-  },
-  advancedLabel: {
-    ...type.eyebrow,
-    fontSize: 13,
-    color: '#877E6F',
-    letterSpacing: 0.8,
-    marginBottom: 8,
-  },
-  advancedRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  advancedInput: {
-    fontSize: 18,
-    fontFamily: 'Merchant Copy',
-    color: '#1A1A1A',
-    backgroundColor: 'rgba(61,50,41,0.04)',
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    width: 60,
-    textAlign: 'center',
-  },
-  advancedSuffix: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: '#A09686',
-  },
-
-  // Delete
-  deleteSection: {
-    alignItems: 'center',
-    marginTop: 32,
-  },
-  deleteButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    backgroundColor: theme.colors.danger,
-  },
-  deleteButtonText: {
-    ...type.button,
-    fontSize: 16,
-    color: theme.colors.textOnPrimary,
-  },
-  deleteHint: {
-    fontSize: 14,
-    color: '#A09686',
-    fontFamily: 'Merchant',
-    marginTop: 8,
-  },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#F5F0E7',
-    borderRadius: 20,
-    padding: 24,
-    width: '80%',
-    maxWidth: 340,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: '#1A1A1A',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  modalMessage: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#7A6E62',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: 'center',
-  },
-  modalButtonCancel: {
-    backgroundColor: 'rgba(61,50,41,0.08)',
-  },
-  modalButtonDelete: {
-    backgroundColor: theme.colors.danger,
-  },
-  modalButtonTextCancel: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#1A1A1A',
-  },
-  modalButtonTextDelete: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.textOnPrimary,
-  },
-});
+  const balance = bucket.currentBalance || 0;
+  return (
+    <CupForm
+      title="Edit cup"
+      initial={initial}
+      initialMode={initialMode}
+      takeHome={takeHome}
+      onClose={onClose}
+      onSave={save}
+      saveLabel="Save"
+      saved={initialMode === 'save' ? balance : 0}
+      onRetire={async () => {
+        await removeBucket({ bucketId: bucket._id as any });
+        onClose();
+      }}
+      retireNote={`${balance > 0 ? `${money(balance)} is still in it. ` : ''}Its past spending stays in your history.`}
+    />
+  );
+}

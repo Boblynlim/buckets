@@ -1,51 +1,65 @@
-import React, {useState, useMemo, useEffect, useRef} from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  Platform,
-} from 'react-native';
-import {Check, Plus, Trash2, ChevronLeft, ChevronRight, Pencil, ArrowDownToLine} from 'lucide-react-native';
-import {useQuery, useMutation} from 'convex/react';
-import {api} from '../../convex/_generated/api';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useMutation, useQuery } from 'convex/react';
+import { addMonths, format, isBefore, isSameMonth, startOfMonth, subMonths } from 'date-fns';
+import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
-import {theme} from '../theme';
-import {type} from '../theme/fonts';
-import {Drawer} from '../components/Drawer';
-import {PotteryLoader} from '../components/PotteryLoader';
-import {format, addMonths, subMonths, startOfMonth, isSameMonth, isBefore} from 'date-fns';
+import { COLORS, money, useHomeStyles } from './home/homeStyles';
+
+// Income for a month: one big number, the entries under it, add / edit /
+// remove. Ticking an entry marks it as arrived.
 
 interface IncomeManagementProps {
   visible?: boolean;
   onClose?: () => void;
 }
 
-const formatMonth = (date: Date) => format(date, 'yyyy-MM');
+const LABEL: React.CSSProperties = { fontSize: 13, color: COLORS.muted };
+const INPUT: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', color: COLORS.ink,
+  fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', width: '100%', boxSizing: 'border-box',
+};
+const LINK: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: COLORS.muted, fontSize: 14,
+  minHeight: 44, padding: 0, fontFamily: 'inherit',
+};
+const ICON_BTN: React.CSSProperties = {
+  appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 44, height: 44,
+  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
+};
+const CSS = `
+.bk-income input::placeholder { color: #C9C0B4; }
+.bk-income input:focus { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
+.bk-income .bk-money input:focus { box-shadow: none !important; }
+.bk-income .bk-money:focus-within { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
+.bk-tick { transition: background .3s ease, box-shadow .3s ease; }
+`;
+let cssInjected = false;
 
-export const IncomeManagement: React.FC<IncomeManagementProps> = ({
-  visible = true,
-  onClose,
-}) => {
+// Whole dollars unless there are cents.
+const amt = (n: number) =>
+  Number.isInteger(n) ? money(n) : '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const parse = (s: string) => parseFloat(s.replace(/[^0-9.]/g, ''));
+
+export const IncomeManagement: React.FC<IncomeManagementProps> = ({ visible = true, onClose }) => {
+  useHomeStyles();
+  if (!cssInjected && typeof document !== 'undefined') {
+    cssInjected = true;
+    const s = document.createElement('style');
+    s.textContent = CSS;
+    document.head.appendChild(s);
+  }
+
   const [selectedMonth, setSelectedMonth] = useState(startOfMonth(new Date()));
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newAmount, setNewAmount] = useState('');
-  const [newNote, setNewNote] = useState('');
+  const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editAmount, setEditAmount] = useState('');
-  const [editNote, setEditNote] = useState('');
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const { user: currentUser } = useAuth();
-  const month = formatMonth(selectedMonth);
-
-  // Per-month income entries
-  const entries = useQuery(
-    api.monthlyIncome.getByMonth,
-    currentUser ? {userId: currentUser._id, month} : 'skip',
-  );
+  const month = format(selectedMonth, 'yyyy-MM');
+  const entries = useQuery(api.monthlyIncome.getByMonth, currentUser ? { userId: currentUser._id, month } : 'skip');
   const seedMonth = useMutation(api.monthlyIncome.seedMonth);
   const addEntry = useMutation(api.monthlyIncome.add);
   const updateEntry = useMutation(api.monthlyIncome.update);
@@ -53,788 +67,244 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({
   const toggleConfirm = useMutation(api.monthlyIncome.toggleConfirm);
   const migrateFromLegacy = useMutation(api.monthlyIncome.migrateFromLegacy);
   const recalculateDistribution = useMutation(api.distribution.calculateDistribution);
+  const distributionStatus = useQuery(api.distribution.getDistributionStatus, currentUser ? { userId: currentUser._id } : 'skip');
 
-  const distributionStatus = useQuery(
-    api.distribution.getDistributionStatus,
-    currentUser ? {userId: currentUser._id} : 'skip',
-  );
-
-  // One-time migration from old global income table
+  // One-time move from the old global income table.
   const hasMigrated = useRef(false);
   useEffect(() => {
     if (currentUser && !hasMigrated.current) {
       hasMigrated.current = true;
-      migrateFromLegacy({userId: currentUser._id}).catch(() => {});
+      migrateFromLegacy({ userId: currentUser._id }).catch(() => {});
     }
   }, [currentUser]);
 
-  // Auto-seed month from previous month if empty (only once per month)
+  // An empty month copies last month's entries (once per month).
   const seededMonths = useRef(new Set<string>());
   useEffect(() => {
     if (entries && entries.length === 0 && currentUser && !seededMonths.current.has(month)) {
       seededMonths.current.add(month);
-      seedMonth({userId: currentUser._id, month});
+      seedMonth({ userId: currentUser._id, month });
     }
   }, [entries, currentUser, month]);
 
-  const expectedTotal = useMemo(() => {
-    if (!entries) return 0;
-    return entries.reduce((sum, e) => sum + e.amount, 0);
-  }, [entries]);
-
-  const receivedTotal = useMemo(() => {
-    if (!entries) return 0;
-    return entries.filter(e => e.isConfirmed).reduce((sum, e) => sum + e.amount, 0);
-  }, [entries]);
-
-  const progressPercent = expectedTotal > 0
-    ? Math.min(100, (receivedTotal / expectedTotal) * 100)
-    : 0;
-
+  const expected = useMemo(() => (entries ?? []).reduce((s, e) => s + e.amount, 0), [entries]);
+  const received = useMemo(() => (entries ?? []).filter((e) => e.isConfirmed).reduce((s, e) => s + e.amount, 0), [entries]);
   const isCurrentMonth = isSameMonth(selectedMonth, new Date());
+  const isPast = isBefore(selectedMonth, startOfMonth(new Date()));
 
-  const handleAdd = async () => {
-    const amt = parseFloat(newAmount);
-    if (!amt || amt <= 0 || !currentUser) return;
+  const refill = async () => {
+    if (isCurrentMonth && currentUser) await recalculateDistribution({ userId: currentUser._id }).catch(() => {});
+  };
+
+  const closeForm = () => {
+    setAdding(false);
+    setEditingId(null);
+    setConfirmRemove(false);
+    setAmount('');
+    setNote('');
+    setBusy(false);
+  };
+
+  const startEdit = (e: any) => {
+    setAdding(false);
+    setConfirmRemove(false);
+    setEditingId(e._id);
+    setAmount(String(e.amount));
+    setNote(e.note || '');
+  };
+
+  const startAdd = () => {
+    closeForm();
+    setAdding(true);
+  };
+
+  const valid = parse(amount) > 0;
+
+  const submit = async () => {
+    if (!valid || !currentUser || busy) return;
+    setBusy(true);
     try {
-      await addEntry({
-        userId: currentUser._id,
-        month,
-        amount: amt,
-        note: newNote || undefined,
-      });
-      // Recalculate if current month
-      if (isCurrentMonth) {
-        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
+      if (editingId) {
+        await updateEntry({ entryId: editingId as any, amount: parse(amount), note: note.trim() || undefined });
+      } else {
+        await addEntry({ userId: currentUser._id, month, amount: parse(amount), note: note.trim() || undefined });
       }
-      setNewAmount('');
-      setNewNote('');
-      setShowAddForm(false);
-    } catch (err: any) {
-      console.error('Failed to add income:', err);
+      await refill();
+      closeForm();
+    } catch (err) {
+      console.error('Failed to save income:', err);
+      setBusy(false);
     }
   };
 
-  const handleDelete = async (entryId: string) => {
-    const confirm = Platform.OS === 'web'
-      ? window.confirm('Remove this income for this month?')
-      : true;
-    if (!confirm) return;
+  const remove = async () => {
+    if (!editingId || busy) return;
+    setBusy(true);
     try {
-      await removeEntry({entryId: entryId as any});
-      if (isCurrentMonth && currentUser) {
-        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
-      }
-    } catch (err: any) {
+      await removeEntry({ entryId: editingId as any });
+      await refill();
+      closeForm();
+    } catch (err) {
       console.error('Failed to remove income:', err);
+      setBusy(false);
     }
   };
 
-  const handleToggleConfirm = async (entryId: string) => {
+  const tick = async (id: string) => {
     try {
-      await toggleConfirm({entryId: entryId as any});
-      // Recalculate distribution when confirming income for current month
-      if (isCurrentMonth && currentUser) {
-        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
-      }
-    } catch (err: any) {
-      console.error('Failed to toggle confirm:', err);
+      await toggleConfirm({ entryId: id as any });
+      await refill();
+    } catch (err) {
+      console.error('Failed to toggle income:', err);
     }
   };
 
-  const handleRecalculate = async () => {
-    if (!currentUser) return;
-    try {
-      await recalculateDistribution({userId: currentUser._id});
-    } catch (err: any) {
-      console.error('Failed to recalculate:', err);
-    }
+  const goMonth = (d: Date) => {
+    closeForm();
+    setSelectedMonth(d);
   };
 
-  const startEdit = (entry: any) => {
-    setEditingId(entry._id);
-    setEditAmount(String(entry.amount));
-    setEditNote(entry.note || '');
-  };
+  if (!visible) return null;
 
-  const handleSaveEdit = async () => {
-    if (!editingId) return;
-    const amt = parseFloat(editAmount);
-    if (!amt || amt <= 0) return;
-    try {
-      await updateEntry({
-        entryId: editingId as any,
-        amount: amt,
-        note: editNote || undefined,
-      });
-      if (isCurrentMonth && currentUser) {
-        await recalculateDistribution({userId: currentUser._id}).catch(() => {});
-      }
-      setEditingId(null);
-    } catch (err: any) {
-      console.error('Failed to update income:', err);
-    }
-  };
+  const list = entries ?? [];
+  const status = distributionStatus as any;
 
-  // Only show full-page loader on initial auth load, not when switching months
-  if (currentUser === undefined) {
-    return (
-      <View style={styles.container}>
-        <PotteryLoader />
-      </View>
-    );
-  }
-
-  // Use empty array while loading a new month's data (prevents drawer re-layout)
-  const displayEntries = entries ?? [];
-
-  const content = (
-    <View style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}>
-
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={onClose}>
-            <Text style={styles.closeButton}>Done</Text>
-          </TouchableOpacity>
-          <Text style={styles.title}>Income</Text>
-          <View style={{width: 40}} />
-        </View>
-
-        {/* Month Selector */}
-        <View style={styles.monthSelector}>
-          <TouchableOpacity
-            onPress={() => setSelectedMonth(subMonths(selectedMonth, 1))}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-            <ChevronLeft size={20} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-          <Text style={styles.monthLabel}>{format(selectedMonth, 'MMMM yyyy')}</Text>
-          <TouchableOpacity
-            onPress={() => setSelectedMonth(addMonths(selectedMonth, 1))}
-            hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-            <ChevronRight size={20} color={theme.colors.textSecondary} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Status Card */}
-        <View style={styles.statusCard}>
-          <View style={styles.statusAmounts}>
-            <View style={styles.statusCol}>
-              <Text style={styles.statusCaption}>received</Text>
-              <Text style={styles.statusValue}>${receivedTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</Text>
-            </View>
-            <View style={styles.statusDivider} />
-            <View style={[styles.statusCol, {alignItems: 'flex-end'}]}>
-              <Text style={styles.statusCaption}>expected</Text>
-              <Text style={[styles.statusValue, {color: theme.colors.textSecondary}]}>
-                ${expectedTotal.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
-              </Text>
-            </View>
-          </View>
-
-          {/* Progress bar */}
-          <View style={styles.progressTrack}>
-            <View style={[
-              styles.progressFill,
-              {
-                width: `${progressPercent}%` as any,
-                backgroundColor: receivedTotal >= expectedTotal && expectedTotal > 0
-                  ? theme.colors.success : theme.colors.primary,
-              },
-            ]} />
-          </View>
-          {receivedTotal >= expectedTotal && expectedTotal > 0 && (
-            <Text style={styles.statusNote}>All income received</Text>
-          )}
-          {receivedTotal < expectedTotal && expectedTotal > 0 && (
-            <Text style={styles.statusNote}>
-              ${(expectedTotal - receivedTotal).toFixed(2)} remaining
-            </Text>
-          )}
-        </View>
-
-        {/* Allocation Status */}
-        {isCurrentMonth && distributionStatus && (
-          <TouchableOpacity
-            style={styles.allocationBadge}
-            onPress={handleRecalculate}
-            activeOpacity={0.7}>
-            <View style={[
-              styles.allocationIcon,
-              {backgroundColor: distributionStatus.totalFunded > 0 ? theme.colors.success : theme.colors.primary},
-            ]}>
-              <ArrowDownToLine size={14} color="#FFFFFF" strokeWidth={2.5} />
-            </View>
-            <View style={{flex: 1}}>
-              {distributionStatus.totalFunded > 0 ? (
-                <>
-                  <Text style={styles.allocationTitle}>Allocated to cups</Text>
-                  <Text style={styles.allocationDetail}>
-                    ${distributionStatus.totalFunded.toFixed(2)} distributed across your cups
-                    {distributionStatus.unallocated > 0
-                      ? ` · $${distributionStatus.unallocated.toFixed(2)} unallocated`
-                      : ''}
-                    {distributionStatus.isOverPlanned
-                      ? ` · over-planned by $${distributionStatus.overPlannedBy.toFixed(2)}`
-                      : ''}
-                  </Text>
-                  <Text style={styles.allocationHint}>Tap to recalculate</Text>
-                </>
-              ) : expectedTotal > 0 ? (
-                <>
-                  <Text style={styles.allocationTitle}>Not yet allocated</Text>
-                  <Text style={styles.allocationDetail}>
-                    ${expectedTotal.toFixed(2)} ready to distribute
-                  </Text>
-                  <Text style={styles.allocationHint}>Tap to allocate to cups</Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.allocationTitle}>No income to allocate</Text>
-                  <Text style={styles.allocationDetail}>Add income above first</Text>
-                </>
-              )}
-            </View>
-            {distributionStatus.totalFunded > 0 && (
-              <View style={styles.allocationCheck}>
-                <Check size={16} color={theme.colors.success} strokeWidth={3} />
-              </View>
-            )}
-          </TouchableOpacity>
+  const form = (
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '20px 0 8px' }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={LABEL}>Amount</span>
+        <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
+          <span style={{ fontSize: 26, fontWeight: 500, color: '#A89E92' }}>$</span>
+          <input inputMode="decimal" autoFocus value={amount} placeholder="0" onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
+            onKeyDown={(e) => e.key === 'Enter' && submit()}
+            style={{ ...INPUT, boxShadow: 'none', fontSize: 44, fontWeight: 600, letterSpacing: '-0.04em', padding: '2px 0' }} />
+        </span>
+      </label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={LABEL}>What is it?</span>
+        <input value={note} placeholder="Salary, freelance, a refund" onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && submit()} style={INPUT} />
+      </label>
+      <button type="button" className="bk-btn" disabled={!valid || busy} onClick={submit}>
+        {editingId ? 'Save' : 'Add income'}
+      </button>
+      <div style={{ display: 'flex', justifyContent: editingId ? 'space-between' : 'center' }}>
+        <button type="button" style={LINK} onClick={closeForm}>Cancel</button>
+        {editingId && !confirmRemove && (
+          <button type="button" style={{ ...LINK, color: COLORS.rust }} onClick={() => setConfirmRemove(true)}>Remove</button>
         )}
-        {!isCurrentMonth && (
-          <View style={styles.allocationBadge}>
-            <View style={[
-              styles.allocationIcon,
-              {backgroundColor: isBefore(selectedMonth, startOfMonth(new Date()))
-                ? theme.colors.success
-                : theme.colors.textTertiary},
-            ]}>
-              <ArrowDownToLine size={14} color="#FFFFFF" strokeWidth={2.5} />
-            </View>
-            <View style={{flex: 1}}>
-              {isBefore(selectedMonth, startOfMonth(new Date())) ? (
-                <>
-                  <Text style={styles.allocationTitle}>Allocated</Text>
-                  <Text style={styles.allocationDetail}>
-                    This month's income was allocated to cups
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.allocationTitle}>Not yet allocated</Text>
-                  <Text style={styles.allocationDetail}>
-                    Income will be allocated when this month begins
-                  </Text>
-                </>
-              )}
-            </View>
-            {isBefore(selectedMonth, startOfMonth(new Date())) && (
-              <View style={styles.allocationCheck}>
-                <Check size={16} color={theme.colors.success} strokeWidth={3} />
-              </View>
-            )}
-          </View>
+        {editingId && confirmRemove && (
+          <button type="button" disabled={busy} style={{ ...LINK, color: COLORS.rust, fontWeight: 500 }} onClick={remove}>
+            Remove from {format(selectedMonth, 'MMMM')}?
+          </button>
         )}
-
-        {/* Income Entries for this month */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.label}>{format(selectedMonth, 'MMMM')} Income</Text>
-            <TouchableOpacity onPress={() => setShowAddForm(true)}>
-              <Plus size={18} color={theme.colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {displayEntries.length === 0 && !showAddForm && (
-            <TouchableOpacity
-              style={styles.emptyCard}
-              onPress={() => setShowAddForm(true)}>
-              <Text style={styles.emptyText}>
-                Add your income for this month
-              </Text>
-              <Text style={styles.emptySubtext}>
-                e.g., Salary, Freelance, Side gig
-              </Text>
-            </TouchableOpacity>
-          )}
-
-          {displayEntries.map((entry, index) => (
-            <View
-              key={entry._id}
-              style={[
-                styles.entryRow,
-                index < displayEntries.length - 1 && styles.entryRowBorder,
-              ]}>
-              {/* Confirm checkbox */}
-              <TouchableOpacity
-                style={[styles.checkCircle, entry.isConfirmed && styles.checkCircleActive]}
-                onPress={() => handleToggleConfirm(entry._id)}>
-                {entry.isConfirmed && <Check size={14} color="#FFFFFF" strokeWidth={3} />}
-              </TouchableOpacity>
-
-              <View style={styles.entryInfo}>
-                <Text style={[styles.entryName, entry.isConfirmed && styles.entryNameConfirmed]}>
-                  {entry.note || 'Income'}
-                </Text>
-                <Text style={styles.entryAmount}>
-                  ${entry.amount.toLocaleString('en-US', {minimumFractionDigits: 2})}
-                </Text>
-                {entry.isConfirmed && entry.confirmedAt && (
-                  <Text style={styles.confirmedDate}>
-                    Received {new Date(entry.confirmedAt).toLocaleDateString()}
-                  </Text>
-                )}
-              </View>
-
-              {/* Edit button */}
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => startEdit(entry)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                <Pencil size={15} color={theme.colors.textTertiary} />
-              </TouchableOpacity>
-
-              {/* Delete button */}
-              <TouchableOpacity
-                style={styles.actionBtn}
-                onPress={() => handleDelete(entry._id)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
-                <Trash2 size={15} color={theme.colors.textTertiary} />
-              </TouchableOpacity>
-            </View>
-          ))}
-
-          {/* Inline add form */}
-          {showAddForm && (
-            <View style={styles.inlineForm}>
-              <View style={styles.inlineFormRow}>
-                <View style={[styles.amountContainer, {flex: 1}]}>
-                  <Text style={styles.currencySymbol}>$</Text>
-                  <TextInput
-                    style={styles.amountInput}
-                    value={newAmount}
-                    onChangeText={setNewAmount}
-                    keyboardType="decimal-pad"
-                    placeholder="0.00"
-                    placeholderTextColor={theme.colors.textTertiary}
-                    autoFocus
-                  />
-                </View>
-              </View>
-              <TextInput
-                style={styles.noteInput}
-                value={newNote}
-                onChangeText={setNewNote}
-                placeholder="e.g., Salary, Freelance"
-                placeholderTextColor={theme.colors.textTertiary}
-              />
-              <View style={styles.inlineFormActions}>
-                <TouchableOpacity onPress={() => {setShowAddForm(false); setNewAmount(''); setNewNote('');}}>
-                  <Text style={styles.inlineCancel}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.inlineSaveBtn, (!newAmount || parseFloat(newAmount) <= 0) && {opacity: 0.4}]}
-                  onPress={handleAdd}>
-                  <Text style={styles.inlineSaveText}>Add</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          )}
-        </View>
-
-        <View style={{height: 40}} />
-      </ScrollView>
-
-      {/* Edit Modal */}
-      <Modal visible={!!editingId} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Income</Text>
-
-            <View style={styles.amountContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.amountInput}
-                value={editAmount}
-                onChangeText={setEditAmount}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-                placeholderTextColor={theme.colors.textTertiary}
-                autoFocus
-              />
-            </View>
-
-            <TextInput
-              style={[styles.noteInput, {marginTop: 10}]}
-              value={editNote}
-              onChangeText={setEditNote}
-              placeholder="e.g., Salary, Freelance"
-              placeholderTextColor={theme.colors.textTertiary}
-            />
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setEditingId(null)}>
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalSaveBtn, (!editAmount || parseFloat(editAmount) <= 0) && {opacity: 0.4}]}
-                onPress={handleSaveEdit}>
-                <Text style={styles.modalSaveText}>Save</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-    </View>
+      </div>
+    </div>
   );
 
-  if (onClose) {
-    return (
-      <Drawer visible={visible} onClose={onClose} fullScreen>
-        {content}
-      </Drawer>
-    );
-  }
+  return (
+    <div className="bk-root bk-income" role="dialog" aria-label="Income"
+      style={{ position: 'fixed', inset: 0, zIndex: 2500, overflowY: 'auto', background: COLORS.wall }}>
+      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '20px 24px 48px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 15, color: COLORS.muted }}>Income</span>
+          {onClose && (
+            <button type="button" onClick={onClose} aria-label="Close" style={{ ...ICON_BTN, marginRight: -12 }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={COLORS.ink} strokeWidth="1.5" strokeLinecap="round"><path d="M3 3l10 10M13 3L3 13" /></svg>
+            </button>
+          )}
+        </div>
 
-  return content;
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 15, color: COLORS.muted }}>{format(selectedMonth, isCurrentMonth ? 'MMMM' : 'MMMM yyyy')}</span>
+            <span style={{ display: 'flex', marginRight: -14 }}>
+              <button type="button" aria-label="Previous month" style={ICON_BTN} onClick={() => goMonth(subMonths(selectedMonth, 1))}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M7.5 3L4.5 6l3 3" /></svg>
+              </button>
+              <button type="button" aria-label="Next month" style={ICON_BTN} onClick={() => goMonth(addMonths(selectedMonth, 1))}>
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M4.5 3l3 3-3 3" /></svg>
+              </button>
+            </span>
+          </div>
+          <span key={month} className="bk-step" style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>
+            {money(expected)}
+          </span>
+          <span style={{ fontSize: 15, color: COLORS.muted, lineHeight: 1.5 }}>
+            {expected === 0
+              ? 'Nothing coming in yet.'
+              : received >= expected
+                ? <span style={{ color: COLORS.green }}>All of it has arrived.</span>
+                : received > 0
+                  ? `${amt(received)} arrived so far. ${amt(expected - received)} to come.`
+                  : isPast ? 'Coming in that month.' : 'Coming in this month.'}
+          </span>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {list.map((e) => (
+            <div key={e._id} style={{ boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minHeight: 60 }}>
+                <button type="button" onClick={() => tick(e._id)} role="checkbox" aria-checked={!!e.isConfirmed}
+                  aria-label={`${e.note || 'Income'} arrived`} style={{ ...ICON_BTN, marginLeft: -10 }}>
+                  <span className="bk-tick" style={{
+                    width: 22, height: 22, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: e.isConfirmed ? COLORS.green : 'transparent', boxShadow: e.isConfirmed ? 'none' : 'inset 0 0 0 1.5px #D9D2C6',
+                  }}>
+                    {e.isConfirmed && (
+                      <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.2l2.4 2.3 4.6-5" /></svg>
+                    )}
+                  </span>
+                </button>
+                <button type="button" className="bk-row" onClick={() => (editingId === e._id ? closeForm() : startEdit(e))}
+                  aria-expanded={editingId === e._id}
+                  style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '10px 0', textAlign: 'left', minHeight: 56 }}>
+                  <span style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    <span style={{ fontSize: 15 }}>{e.note || 'Income'}</span>
+                    {e.isConfirmed && e.confirmedAt && (
+                      <span style={{ fontSize: 13, color: COLORS.muted }}>
+                        Arrived {new Date(e.confirmedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                      </span>
+                    )}
+                  </span>
+                  <span style={{ fontSize: 15, color: e.isConfirmed ? COLORS.ink : COLORS.muted }}>{amt(e.amount)}</span>
+                </button>
+              </div>
+              {editingId === e._id && form}
+            </div>
+          ))}
+
+          {adding ? form : (
+            <button type="button" onClick={startAdd}
+              style={{ ...LINK, display: 'flex', alignItems: 'center', gap: 8, minHeight: 56, color: COLORS.ink, fontSize: 15 }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.ink} strokeWidth="1.4" strokeLinecap="round"><path d="M7 2v10M2 7h10" /></svg>
+              Add income
+            </button>
+          )}
+        </div>
+
+        {/* How this month's money reached the cups. Tapping refills them. */}
+        {isCurrentMonth && status && expected > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 'auto' }}>
+            <span style={{ fontSize: 13, color: COLORS.muted, lineHeight: 1.5 }}>
+              {status.totalFunded > 0
+                ? `${money(status.totalFunded)} went into your cups.`
+                : 'Not in your cups yet.'}
+              {status.totalFunded > 0 && status.unallocated > 0 ? ` ${money(status.unallocated)} isn’t in a cup.` : ''}
+              {status.isOverPlanned ? <span style={{ color: COLORS.rust }}> Cups ask for {money(status.overPlannedBy)} more than this.</span> : ''}
+            </span>
+            <button type="button" style={{ ...LINK, alignSelf: 'flex-start', color: COLORS.ink, textDecoration: 'underline', textUnderlineOffset: 3, textDecorationColor: '#D9D2C6' }}
+              onClick={() => currentUser && recalculateDistribution({ userId: currentUser._id }).catch(() => {})}>
+              {status.totalFunded > 0 ? 'Fill cups again' : 'Fill my cups'}
+            </button>
+          </div>
+        )}
+        {!isCurrentMonth && expected > 0 && (
+          <span style={{ fontSize: 13, color: COLORS.muted, marginTop: 'auto' }}>
+            {isPast ? 'This went into your cups that month.' : 'Goes into your cups when the month starts.'}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 };
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: theme.colors.background,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-  },
-  title: {
-    ...type.sectionTitle,
-    color: theme.colors.text,
-  },
-  closeButton: {
-    fontSize: 16,
-    color: theme.colors.primary,
-    fontFamily: 'Merchant',
-  },
-
-  // Month selector
-  monthSelector: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  monthLabel: {
-    ...type.rowTitle,
-    color: theme.colors.text,
-  },
-
-  // Status card
-  statusCard: {
-    marginHorizontal: 20,
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-  },
-  statusAmounts: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 16,
-  },
-  statusCol: {
-    flex: 1,
-  },
-  statusDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: theme.colors.border,
-    marginHorizontal: 16,
-  },
-  statusCaption: {
-    ...type.eyebrow,
-    fontSize: 13,
-    color: theme.colors.textSecondary,
-    letterSpacing: 0.5,
-    marginBottom: 4,
-  },
-  statusValue: {
-    fontSize: 24,
-    fontFamily: 'Merchant Copy',
-    color: theme.colors.text,
-  },
-  progressTrack: {
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: theme.colors.border,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  statusNote: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-    marginTop: 8,
-  },
-
-  // Allocation badge
-  allocationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginHorizontal: 20,
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 12,
-    gap: 12,
-  },
-  allocationIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  allocationTitle: {
-    fontSize: 15,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  allocationDetail: {
-    ...type.caption,
-    color: theme.colors.textSecondary,
-  },
-  allocationHint: {
-    ...type.caption,
-    color: theme.colors.primary,
-    marginTop: 4,
-  },
-  allocationCheck: {
-    marginLeft: 4,
-  },
-
-  // Sections
-  section: {
-    marginHorizontal: 20,
-    backgroundColor: theme.colors.backgroundLight,
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 12,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  label: {
-    ...type.eyebrow,
-    fontSize: 15,
-    color: theme.colors.textSecondary,
-    letterSpacing: 0.5,
-  },
-
-  // Entry rows
-  entryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  entryRowBorder: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-  },
-  checkCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  checkCircleActive: {
-    backgroundColor: theme.colors.success,
-    borderColor: theme.colors.success,
-  },
-  entryInfo: {
-    flex: 1,
-  },
-  entryName: {
-    ...type.rowTitle,
-    color: theme.colors.text,
-    marginBottom: 2,
-  },
-  entryNameConfirmed: {
-    color: theme.colors.textSecondary,
-  },
-  entryAmount: {
-    fontSize: 18,
-    fontFamily: 'Merchant Copy',
-    color: theme.colors.text,
-  },
-  confirmedDate: {
-    ...type.caption,
-    color: theme.colors.success,
-    marginTop: 2,
-  },
-  actionBtn: {
-    padding: 8,
-  },
-
-  // Empty state
-  emptyCard: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 4,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    fontFamily: 'Merchant',
-    color: theme.colors.textTertiary,
-  },
-
-  // Inline form
-  inlineForm: {
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    padding: 14,
-    marginTop: 8,
-  },
-  inlineFormRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  inlineFormActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    gap: 12,
-    marginTop: 12,
-  },
-  inlineCancel: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-  },
-  inlineSaveBtn: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 10,
-  },
-  inlineSaveText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#FFFFFF',
-  },
-
-  // Shared form elements
-  amountContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-  },
-  currencySymbol: {
-    fontSize: 18,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Merchant Copy',
-    marginRight: 8,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: 18,
-    color: theme.colors.text,
-    fontFamily: 'Merchant Copy',
-    paddingVertical: 12,
-  },
-  noteInput: {
-    fontSize: 16,
-    color: theme.colors.text,
-    fontFamily: 'Merchant',
-    backgroundColor: theme.colors.cardBackground,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-
-  // Modal
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 30,
-  },
-  modalContent: {
-    backgroundColor: theme.colors.background,
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 360,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontFamily: 'Merchant',
-    color: theme.colors.text,
-    marginBottom: 14,
-  },
-  modalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-    marginTop: 18,
-  },
-  modalCancelBtn: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  modalCancelText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: theme.colors.textSecondary,
-  },
-  modalSaveBtn: {
-    backgroundColor: theme.colors.primary,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  modalSaveText: {
-    fontSize: 16,
-    fontFamily: 'Merchant',
-    color: '#FFFFFF',
-  },
-});
