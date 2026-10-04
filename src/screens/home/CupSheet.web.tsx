@@ -4,6 +4,8 @@ import { createPortal } from 'react-dom';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { COLORS, money, moneyExact } from './homeStyles';
+import { AdventuresList } from './Adventures.web';
+import { useAuth } from '../../lib/AuthContext';
 
 type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number };
 
@@ -27,6 +29,7 @@ const NOTES: Record<string, string> = { 'Self care': 'Already paid for. Enjoy it
 
 export function CupSheet({ cup, month, allCups, onClose, onEdit, past }: { cup: Cup; month: string; allCups: Cup[]; onClose: () => void; past?: boolean; onEdit?: (t: { id: string; note: string; amount: number; date: number }) => void }) {
   const txns = useQuery(api.home.cupTransactions, { bucketId: cup.id as any, month });
+  const { user } = useAuth();
   const refile = useMutation(api.merchantRules.refile);
   const [open, setOpen] = useState<string | null>(null);
   const [moved, setMoved] = useState<Record<string, string>>({});
@@ -64,6 +67,9 @@ export function CupSheet({ cup, month, allCups, onClose, onEdit, past }: { cup: 
         {RULES[cup.name] && <span style={{ fontSize: 13, color: COLORS.muted }}>{RULES[cup.name]}</span>}
 
         <div className="bk-scroll" style={{ display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
+          {!past && cup.name === 'Adventures' && user && (
+            <div style={{ paddingBottom: 16 }}><AdventuresList userId={user._id} /></div>
+          )}
           {txns && txns.length === 0 && <span style={{ fontSize: 15, color: COLORS.muted, padding: '10px 0' }}>Nothing yet this month</span>}
           {txns?.map((t) => (
             <div key={t.id} style={{ display: 'flex', flexDirection: 'column', boxShadow: 'inset 0 -1px 0 #EEEAE3' }}>

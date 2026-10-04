@@ -358,6 +358,17 @@ function App() {
   const [selectedExpense, setSelectedExpense] = useState<{expense: Expense; bucket: Bucket} | null>(null);
   const [showCheckin, setShowCheckin] = useState(false);
 
+  // Opened from the payday notification (/?checkin=1): go straight to the check-in.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('checkin') === '1') {
+      setShowCheckin(true);
+      params.delete('checkin');
+      const rest = params.toString();
+      window.history.replaceState(null, '', window.location.pathname + (rest ? `?${rest}` : ''));
+    }
+  }, []);
+
   // Register service worker for PWA functionality
   useEffect(() => {
     if (process.env.NODE_ENV === 'production') {

@@ -3,6 +3,7 @@ import { useQuery } from 'convex/react';
 import { api } from '../../../convex/_generated/api';
 import { useAuth } from '../../lib/AuthContext';
 import { CupSheet } from './CupSheet.web';
+import { NextAdventure } from './Adventures.web';
 import { COLORS, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from './homeStyles';
 
 type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number; spent: number };
@@ -214,6 +215,7 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
               {backup && <span style={{ fontSize: 13, color: COLORS.muted }}>Plus {money(backup.amount)} {backup.name.toLowerCase()} in the bank</span>}
             </div>
           )}
+          {user && <NextAdventure userId={user._id} />}
         </section>
 
         {data.netWorth && (

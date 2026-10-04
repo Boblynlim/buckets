@@ -36,7 +36,12 @@ export function Checkin({ onClose }: { onClose: () => void }) {
   useHomeStyles();
   const { user } = useAuth();
   const userId = user?._id;
-  const month = currentMonth();
+  // In the last week of a month the check-in sets up the next one (pay that
+  // lands from the 24th funds next month; see convex/lib/incomeMonth.ts).
+  const month = (() => {
+    const now = new Date();
+    return now.getDate() >= 24 ? currentMonth(new Date(now.getFullYear(), now.getMonth() + 1, 1)) : currentMonth(now);
+  })();
   const [step, setStep] = useState(0);
 
   const summary = useQuery(api.home.summary, userId ? { userId, month } : 'skip');

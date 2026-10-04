@@ -186,6 +186,18 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  // Adventures I'm saving for, in order. The Adventures cup's balance funds
+  // them first to last (see adventures.list).
+  adventures: defineTable({
+    userId: v.id("users"),
+    name: v.string(),
+    cost: v.number(),
+    when: v.optional(v.string()), // "2027-07"
+    order: v.number(),
+    done: v.optional(v.boolean()),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
   // Learned filing rules: one per merchant key (see convex/lib/merchantKey.ts).
   // bucketId set = file into that cup; ignore = not spending (card bills,
   // transfers between my own accounts).

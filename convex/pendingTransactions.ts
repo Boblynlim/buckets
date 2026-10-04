@@ -4,7 +4,7 @@ import {
   query,
   internalMutation,
 } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { learn, autoFile } from "./merchantRules";
 import { incomeMonthFor } from "./lib/incomeMonth";
@@ -156,6 +156,18 @@ export const ingestIncome = internalMutation({
 
     const now = Date.now();
     const incomeId = await recordIncome(ctx, userId as any, args.amount, args.date, note);
+
+    // Payday: nudge to the check-in (only for pay-sized deposits; the import
+    // only sends those here). Opening the notification starts the check-in.
+    const funds = incomeMonthFor(args.date);
+    const fundsName = new Date(Date.UTC(Number(funds.slice(0, 4)), Number(funds.slice(5)) - 1, 1)).toLocaleString("en-GB", { month: "long", timeZone: "UTC" });
+    await ctx.scheduler.runAfter(0, internal.pushNotificationActions.sendToUser, {
+      userId: userId as any,
+      title: "Payday",
+      body: `$${Math.round(args.amount).toLocaleString("en-US")} is in. Five minutes to set up ${fundsName}?`,
+      url: "/?checkin=1",
+      tag: "payday",
+    });
 
     const id = await ctx.db.insert("pendingTransactions", {
       userId: userId as any,
