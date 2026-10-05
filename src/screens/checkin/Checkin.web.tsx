@@ -13,7 +13,7 @@ const STEPS = 6;
 const H1: React.CSSProperties = { fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: 0 };
 const LABEL: React.CSSProperties = { fontSize: 14, color: COLORS.muted };
 const PAGE: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 3000, overflowY: 'auto' };
-const INNER: React.CSSProperties = { maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '72px 24px 40px', display: 'flex', flexDirection: 'column', gap: 28 };
+const INNER: React.CSSProperties = { maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 88px) 24px 40px', display: 'flex', flexDirection: 'column', gap: 28 };
 
 function useCountUp(target: number, run: boolean, ms = 1800) {
   const [v, setV] = useState(0);
@@ -60,7 +60,8 @@ export function Checkin({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="bk-root" style={PAGE}>
-      <div style={{ position: 'fixed', top: 28, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
+      {/* Clears the status bar / Dynamic Island (at least 44px even where the inset reads 0), on the wall colour so content scrolls under it. */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 16px)', paddingBottom: 8, background: COLORS.wall, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
         <div style={{ width: 'min(392px, calc(100% - 48px))', display: 'flex', gap: 6, alignItems: 'center' }}>
           {Array.from({ length: STEPS }).map((_, i) => (
             <div key={i} style={{ flexGrow: 1, height: 2, borderRadius: 2, background: i <= step ? COLORS.ink : COLORS.hairline, transition: 'background .6s ease' }} />
