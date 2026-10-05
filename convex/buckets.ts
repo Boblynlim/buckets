@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { api } from "./_generated/api";
+import { spendsBetween } from "./home";
 
 // Create a new bucket
 export const create = mutation({
@@ -118,10 +119,7 @@ export const getByUser = query({
 
           // Filter by month if provided
           if (args.monthStart !== undefined && args.monthEnd !== undefined) {
-            const allExpenses = await expensesQuery.collect();
-            const filteredExpenses = allExpenses.filter(
-              e => !e.superseded && e.date >= args.monthStart! && e.date <= args.monthEnd!
-            );
+            const filteredExpenses = await spendsBetween(ctx, bucket._id, args.monthStart, args.monthEnd);
             const spentAmount = filteredExpenses.reduce((sum, e) => sum + e.amount, 0);
 
             return {

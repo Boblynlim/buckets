@@ -1,5 +1,5 @@
 // Service Worker for Buckets PWA
-const CACHE_VERSION = 'buckets-v4';
+const CACHE_VERSION = 'buckets-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 
@@ -10,13 +10,7 @@ const STATIC_ASSETS = [
   '/manifest.json',
   '/icons/icon-180x180.png',
   '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  '/fonts/BBBDMSans-Regular.woff2',
-  '/fonts/BBBDMSans-Medium.woff2',
-  '/fonts/BBBDMSans-Bold.woff2',
-  '/fonts/BBBDMSans-Light.woff2',
-  '/Merchant Copy.ttf',
-  '/Merchant Copy Wide.ttf'
+  '/icons/icon-512x512.png'
 ];
 
 // Install event - cache static assets
@@ -60,16 +54,9 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  // Skip cross-origin requests
-  if (url.origin !== location.origin) {
-    // For Convex API calls, use network-first strategy
-    if (url.hostname.includes('convex.cloud')) {
-      event.respondWith(networkFirst(request));
-      return;
-    }
-    // For external resources (fonts, CDN), let browser handle
-    return;
-  }
+  // Leave cross-origin requests (Convex, Google Fonts) to the browser. Routing
+  // Convex through here only added a hop and cached live data.
+  if (url.origin !== location.origin) return;
 
   // Navigations and HTML must be NETWORK-FIRST: the HTML references the current
   // hashed JS bundle, so serving a stale cached index.html pins users to an old

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query } from "./_generated/server";
+import { query, QueryCtx } from "./_generated/server";
 import { Doc, Id } from "./_generated/dataModel";
 
 // Everything the new home screen and payday check-in read, in one place.
@@ -13,6 +13,15 @@ export function monthRange(month: string): { start: number; end: number } {
   const start = Date.UTC(y, m - 1, 1) - 8 * 3600 * 1000;
   const end = Date.UTC(y, m, 1) - 8 * 3600 * 1000 - 1;
   return { start, end };
+}
+
+/** A cup's spends in [start, end], read by date range rather than all-time. */
+export async function spendsBetween(ctx: QueryCtx, bucketId: Id<"buckets">, start: number, end: number) {
+  const exps = await ctx.db
+    .query("expenses")
+    .withIndex("by_bucket_and_date", (q) => q.eq("bucketId", bucketId).gte("date", start).lte("date", end))
+    .collect();
+  return exps.filter((e) => !e.superseded);
 }
 
 function prevMonth(month: string): string {
@@ -31,10 +40,11 @@ export const summary = query({
     ).filter((b) => b.isActive);
 
     const spentOf = async (b: Doc<"buckets">) => {
-      const exps = await ctx.db.query("expenses").withIndex("by_bucket", (q) => q.eq("bucketId", b._id)).collect();
-      return exps.filter((e) => !e.superseded && e.date >= start && e.date <= end).reduce((s, e) => s + e.amount, 0);
+      const exps = await spendsBetween(ctx, b._id, start, end);
+      return exps.reduce((s, e) => s + e.amount, 0);
     };
 
+    const spentBy = new Map(await Promise.all(buckets.map(async (b) => [b._id, await spentOf(b)] as const)));
     const shelves = [];
     let spendable = 0;
     for (const name of SHELVES) {
@@ -42,7 +52,7 @@ export const summary = query({
       for (const b of buckets.filter((x) => x.groupId && groupName.get(x.groupId) === name)) {
         const funded = b.fundedAmount ?? b.plannedAmount ?? 0;
         const carry = b.carryoverBalance ?? 0;
-        const spent = await spentOf(b);
+        const spent = spentBy.get(b._id) ?? 0;
         const full = Math.max(0, funded + carry);
         const left = funded + carry - spent;
         cups.push({ id: b._id, name: b.name, planned: b.plannedAmount ?? 0, funded, carry, spent, left, full });
@@ -108,8 +118,7 @@ export const cupTransactions = query({
     const { start, end } = monthRange(month);
     const bucket = await ctx.db.get(bucketId);
     if (!bucket) return [];
-    const exps = (await ctx.db.query("expenses").withIndex("by_bucket", (q) => q.eq("bucketId", bucketId)).collect())
-      .filter((e) => !e.superseded && e.date >= start && e.date <= end)
+    const exps = (await spendsBetween(ctx, bucketId, start, end))
       .sort((a, b) => b.date - a.date);
     const confirmed = await ctx.db
       .query("pendingTransactions")
@@ -132,8 +141,7 @@ export const monthRecap = query({
     for (const name of SHELVES) {
       const cups = [];
       for (const b of buckets.filter((x) => x.groupId && groupName.get(x.groupId) === name)) {
-        const exps = await ctx.db.query("expenses").withIndex("by_bucket", (q) => q.eq("bucketId", b._id)).collect();
-        const spent = exps.filter((e) => !e.superseded && e.date >= start && e.date <= end).reduce((s, e) => s + e.amount, 0);
+        const spent = (await spendsBetween(ctx, b._id, start, end)).reduce((s, e) => s + e.amount, 0);
         const had = (b.plannedAmount ?? 0) + (b.carryoverBalance ?? 0);
         cups.push({ id: b._id, name: b.name, had, spent, left: had - spent });
       }

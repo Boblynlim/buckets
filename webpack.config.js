@@ -79,10 +79,6 @@ module.exports = {
         { from: 'public/service-worker.js', to: 'service-worker.js' },
         // Copy icons
         { from: 'public/icons', to: 'icons' },
-        // Copy fonts
-        { from: 'public/fonts', to: 'fonts' },
-        { from: 'public/Merchant Copy.ttf', to: 'Merchant Copy.ttf' },
-        { from: 'public/Merchant Copy Wide.ttf', to: 'Merchant Copy Wide.ttf' },
       ],
     }),
   ],

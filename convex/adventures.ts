@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { monthRange } from "./home";
+import { monthRange, spendsBetween } from "./home";
 
 // The Adventures cup funds the list in order: the first adventure fills
 // before the next one starts.
@@ -18,8 +18,7 @@ export const list = query({
     if (cup) {
       const now = new Date(Date.now() + 8 * 3600 * 1000);
       const { start, end } = monthRange(`${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`);
-      const exps = await ctx.db.query("expenses").withIndex("by_bucket", (q) => q.eq("bucketId", cup._id)).collect();
-      const spent = exps.filter((e) => !e.superseded && e.date >= start && e.date <= end).reduce((s, e) => s + e.amount, 0);
+      const spent = (await spendsBetween(ctx, cup._id, start, end)).reduce((s, e) => s + e.amount, 0);
       balance = (cup.fundedAmount ?? cup.plannedAmount ?? 0) + (cup.carryoverBalance ?? 0) - spent;
       monthly = cup.plannedAmount ?? 0;
     }
