@@ -162,6 +162,7 @@ export default defineSchema({
     group: v.union(v.literal("now"), v.literal("soon"), v.literal("later")),
     order: v.number(),
     isActive: v.boolean(),
+    invested: v.optional(v.boolean()), // also track what went in (AIA, robo, stocks)
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
 
@@ -207,6 +208,7 @@ export default defineSchema({
     key: v.string(),
     bucketId: v.optional(v.id("buckets")),
     ignore: v.optional(v.boolean()),
+    accountId: v.optional(v.id("accounts")), // money moved into an investment
     example: v.optional(v.string()), // a raw bank name, for display
     updatedAt: v.number(),
   }).index("by_user_key", ["userId", "key"]),

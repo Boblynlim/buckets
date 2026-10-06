@@ -3,6 +3,7 @@ import { mutation, query, internalMutation, MutationCtx } from "./_generated/ser
 import { api } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { merchantKey, isPaymentCompany } from "./lib/merchantKey";
+import { addInvestment } from "./accounts";
 
 // Learned filing: file a merchant once and its next transactions file
 // themselves. Payment-company names never learn (they always ask).
@@ -11,7 +12,7 @@ export async function learn(
   ctx: MutationCtx,
   userId: Id<"users">,
   merchant: string | undefined,
-  target: { bucketId: Id<"buckets"> } | { ignore: true }
+  target: { bucketId: Id<"buckets"> } | { ignore: true } | { accountId: Id<"accounts"> }
 ) {
   if (isPaymentCompany(merchant)) return;
   const key = merchantKey(merchant);
@@ -22,6 +23,7 @@ export async function learn(
   const fields = {
     bucketId: "bucketId" in target ? target.bucketId : undefined,
     ignore: "ignore" in target ? true : undefined,
+    accountId: "accountId" in target ? target.accountId : undefined,
     example: merchant,
     updatedAt: Date.now(),
   };
@@ -40,6 +42,10 @@ async function ruleFor(ctx: MutationCtx, userId: Id<"users">, merchant: string |
     const bucket = await ctx.db.get(rule.bucketId);
     if (!bucket || !bucket.isActive) return null; // cup gone: ask again
   }
+  if (rule.accountId) {
+    const acct = await ctx.db.get(rule.accountId);
+    if (!acct || !acct.isActive) return null;
+  }
   return rule;
 }
 
@@ -55,6 +61,12 @@ export async function autoFile(
   if ((row.direction ?? "out") === "in" && !rule.ignore) return "asked";
   const now = Date.now();
   if (rule.ignore) {
+    await ctx.db.patch(row._id, { status: "dismissed", autoFiled: true, updatedAt: now });
+    return "ignored";
+  }
+  if (rule.accountId) {
+    if ((row.direction ?? "out") === "in") return "asked";
+    await addInvestment(ctx, rule.accountId, row.amount, row.date);
     await ctx.db.patch(row._id, { status: "dismissed", autoFiled: true, updatedAt: now });
     return "ignored";
   }
@@ -83,6 +95,21 @@ export const markNotSpending = mutation({
     if (!row) throw new Error("Pending transaction not found");
     await ctx.db.patch(pendingId, { status: "dismissed", updatedAt: Date.now() });
     await learn(ctx, row.userId, row.merchant, { ignore: true });
+  },
+});
+
+/** Money moved into an investment: add it to that account and remember. */
+export const markInvested = mutation({
+  args: { pendingId: v.id("pendingTransactions"), accountId: v.id("accounts") },
+  handler: async (ctx, { pendingId, accountId }) => {
+    const row = await ctx.db.get(pendingId);
+    if (!row) throw new Error("Pending transaction not found");
+    if (row.status !== "pending") throw new Error(`Transaction already ${row.status}`);
+    const acct = await ctx.db.get(accountId);
+    if (!acct || acct.userId !== row.userId) throw new Error("Account not found");
+    await addInvestment(ctx, accountId, row.amount, row.date);
+    await ctx.db.patch(pendingId, { status: "dismissed", updatedAt: Date.now() });
+    await learn(ctx, row.userId, row.merchant, { accountId });
   },
 });
 

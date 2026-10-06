@@ -45,7 +45,8 @@ export function ReviewQueue({ onBack }: Props) {
   const markAsIncome = useMutation(api.pendingTransactions.markAsIncome);
   const fileUnsure = useMutation(api.pendingTransactions.fileUnsure);
 
-  const cups = useMemo(() => summary?.shelves.flatMap((s: any) => s.cups) ?? [], [summary]);
+  const cups = useMemo(() => [...(summary?.shelves.flatMap((s: any) => s.cups) ?? []), ...(summary?.fixedCups ?? [])], [summary]);
+  const invested = useMutation(api.merchantRules.markInvested);
 
   // Rows that need fixing first, then newest. Month headings only when the
   // queue spans more than one month.
@@ -102,6 +103,9 @@ export function ReviewQueue({ onBack }: Props) {
   const leaveOut = (row: any) =>
     finish(row, () => notSpending({ pendingId: row._id }), `Got it. ${row.merchant ?? 'That'} stays out of your cups.`);
 
+  const invest = (row: any, accountId: any, name: string) =>
+    finish(row, () => invested({ pendingId: row._id, accountId }), `Added to ${name}. Next time ${row.merchant ?? 'this'} goes there itself.`);
+
   const moneyIn = (row: any) =>
     finish(row, () => markAsIncome({ pendingId: row._id }), `Counted as money in. Pay near month end goes to next month.`);
 
@@ -154,6 +158,7 @@ export function ReviewQueue({ onBack }: Props) {
                   onFile={(cup, memo, amount) => fileTo(row, cup, memo, amount)}
                   onNotSpending={() => leaveOut(row)}
                   onIncome={() => moneyIn(row)}
+                  onInvest={(accountId: any, name: string) => invest(row, accountId, name)}
                   onPaidBack={(msg: string) => finish(row, async () => {}, msg)}
                   onUnsure={(note?: string, amount?: number) => unsure(row, note, amount)}
                   onRemove={() => removeOne(row)}
@@ -225,17 +230,49 @@ function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncom
   );
 }
 
-function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onUnsure, onRemove, onPaidBack }: {
+// Money moved into an investment: which account? Adds to what I've put in.
+export function InvestPicker({ onPick, onBack }: { onPick: (accountId: any, name: string) => void; onBack: () => void }) {
+  const { user } = useAuth();
+  const accounts = useQuery(api.accounts.list, user?._id ? { userId: user._id } : 'skip') as any[] | undefined;
+  const invested = (accounts ?? []).filter((a) => a.invested);
+  const shown = invested.length ? invested : accounts ?? [];
+  const opt: React.CSSProperties = { ...PLAIN_BTN, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, padding: '12px 0', minHeight: 52, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` };
+  return (
+    <div className="bk-fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
+      <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 6 }}>Into which account? It adds to what you've put in.</span>
+      {accounts === undefined && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>Looking…</span>}
+      {shown.map((a) => (
+        <button key={a._id} type="button" style={opt} onClick={() => onPick(a._id, a.name)}>
+          <span style={{ fontSize: 15 }}>{a.name}</span>
+          {a.amountIn != null && <span style={{ fontSize: 13, color: COLORS.muted }}>{money(a.amountIn)} in</span>}
+        </button>
+      ))}
+      <button type="button" onClick={onBack} style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44, alignSelf: 'flex-start' }}>Back</button>
+    </div>
+  );
+}
+
+export function InvestIcon() {
+  return (
+    <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.ink}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.ink} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M2 10.5l3.5-3.5 2.5 2.5L12 5M9 5h3v3" /></svg>
+    </span>
+  );
+}
+
+function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, onIncome, onInvest, onUnsure, onRemove, onPaidBack }: {
   row: any; cups: any[]; open: boolean; leaving: boolean;
   onOpen: () => void;
   onFile: (cup: any, memo: string, amount?: number) => void;
   onNotSpending: () => void;
   onIncome: () => void;
+  onInvest: (accountId: any, name: string) => void;
   onUnsure: (note?: string, amount?: number) => void;
   onPaidBack: (msg: string) => void;
   onRemove: () => void;
 }) {
   const [memo, setMemo] = useState('');
+  const [investing, setInvesting] = useState(false);
   const [amountText, setAmountText] = useState(String(row.amount ?? ''));
   const amount = parseFloat(amountText);
   const amountOk = isFinite(amount) && amount > 0;
@@ -276,7 +313,7 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
     );
   }
 
-  const targets = [...cups, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }];
+  const targets = [...cups, { id: 'invest', name: 'Invested' }, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }];
 
   return (
     <div className="bk-step" style={{ ...shell, padding: 20, gap: 22 }}>
@@ -333,15 +370,19 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
 
       {isIn ? (
         <InChoices row={row} onIncome={onIncome} onNotSpending={onNotSpending} onDone={onPaidBack} />
+      ) : investing ? (
+        <InvestPicker onPick={onInvest} onBack={() => setInvesting(false)} />
       ) : (
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
         {targets.map((c) => (
-          <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' ? 'Not spending' : c.id === 'in' ? 'Money in' : `File to ${c.name}`}
+          <button key={c.id} type="button" className="bk-cup" aria-label={c.id === 'none' || c.id === 'in' || c.id === 'invest' ? c.name : `File to ${c.name}`}
             disabled={!amountOk || (share === -1 && shareAmount == null)}
-            onClick={() => (c.id === 'none' ? onNotSpending() : c.id === 'in' ? onIncome() : onFile(c, fileMemo(memo), editedAmount))}
+            onClick={() => (c.id === 'none' ? onNotSpending() : c.id === 'in' ? onIncome() : c.id === 'invest' ? setInvesting(true) : onFile(c, fileMemo(memo), editedAmount))}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64, opacity: amountOk ? 1 : 0.4 }}>
             <span style={{ position: 'relative', width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-              {c.id === 'none' ? (
+              {c.id === 'invest' ? (
+                <InvestIcon />
+              ) : c.id === 'none' ? (
                 <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                 </span>

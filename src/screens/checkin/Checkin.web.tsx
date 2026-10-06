@@ -4,6 +4,7 @@ import { api } from '../../../convex/_generated/api';
 import { useAuth } from '../../lib/AuthContext';
 import { isPaymentCompany } from '../../../convex/lib/merchantKey';
 import { CupArt } from '../home/Home.web';
+import { InvestIcon, InvestPicker } from '../ReviewQueue.web';
 import { COLORS, cupSrc, currentMonth, money, moneyExact, monthLabel, useHomeStyles } from '../home/homeStyles';
 
 // Payday check-in: recap -> balances -> filed for you -> the few it couldn't
@@ -55,7 +56,7 @@ export function Checkin({ onClose }: { onClose: () => void }) {
   const pending = useQuery(api.pendingTransactions.listPending, userId ? { userId } : 'skip');
 
   const next = () => setStep((s) => Math.min(STEPS - 1, s + 1));
-  const cups = summary?.shelves.flatMap((s) => s.cups) ?? [];
+  const cups = [...(summary?.shelves.flatMap((s) => s.cups) ?? []), ...(summary?.fixedCups ?? [])];
   const pay = (income ?? []).reduce((s, r) => s + r.amount, 0);
 
   return (
@@ -142,15 +143,24 @@ function Recap({ recap, prevLabel, onNext }: { recap: any[]; prevLabel: string; 
 
 const GROUP_LABEL: Record<string, string> = { now: 'Now', soon: 'Soon', later: 'Later' };
 
+const num = (v: string) => Number(v.replace(/[^0-9.]/g, ''));
+const AMOUNT_INPUT: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', width: 96, textAlign: 'right', fontSize: 15, padding: '8px 0', outline: 'none', fontFamily: 'inherit' };
+
 function Balances({ userId, month, accounts, onNext }: { userId: any; month: string; accounts: any[]; onNext: () => void }) {
   const save = useMutation(api.accounts.saveBalances);
+  const close = useMutation(api.accounts.closeAccount);
+  // Keys: account id for "now", `${id}:in` for what went in (investments).
   const [vals, setVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
-  const changed = Object.entries(vals).filter(([id, v]) => {
-    const a = accounts.find((x) => x._id === id);
-    const n = Number(v.replace(/[^0-9.]/g, ''));
-    return a && v.trim() !== '' && !Number.isNaN(n) && Math.abs(n - a.amount) > 0.004;
-  });
+  const valueOf = (a: any, key: 'now' | 'in') => {
+    const base = key === 'now' ? a.amount : a.amountIn ?? 0;
+    const v = vals[key === 'now' ? a._id : `${a._id}:in`];
+    const n = v !== undefined && v.trim() !== '' ? num(v) : base;
+    return Number.isNaN(n) ? base : n;
+  };
+  const isChanged = (a: any) =>
+    Math.abs(valueOf(a, 'now') - a.amount) > 0.004 || (a.invested && Math.abs(valueOf(a, 'in') - (a.amountIn ?? 0)) > 0.004);
+  const changed = accounts.filter(isChanged).length;
 
   const submit = async () => {
     setBusy(true);
@@ -158,14 +168,28 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
       userId,
       month,
       // Unchanged accounts are saved too, so this month has a full picture.
-      entries: accounts.map((a) => {
-        const v = vals[a._id];
-        const n = v !== undefined && v.trim() !== '' ? Number(v.replace(/[^0-9.]/g, '')) : a.amount;
-        return { accountId: a._id, amount: Number.isNaN(n) ? a.amount : n };
-      }),
+      entries: accounts.map((a) => ({
+        accountId: a._id,
+        amount: valueOf(a, 'now'),
+        ...(a.invested ? { amountIn: valueOf(a, 'in') } : {}),
+      })),
     });
     setBusy(false);
     onNext();
+  };
+
+  const field = (a: any, key: 'now' | 'in', label: string) => {
+    const k = key === 'now' ? a._id : `${a._id}:in`;
+    const base = key === 'now' ? a.amount : a.amountIn ?? 0;
+    return (
+      <span style={{ display: 'flex', alignItems: 'center', fontSize: 15 }}>
+        <span style={{ color: COLORS.muted }}>$</span>
+        <input inputMode="decimal" aria-label={`${a.name} ${label}`}
+          value={vals[k] ?? Math.round(base).toLocaleString('en-US')}
+          onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
+          style={AMOUNT_INPUT} />
+      </span>
+    );
   };
 
   return (
@@ -174,35 +198,114 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
         <span style={LABEL}>Balances</span>
         <h1 style={H1}>Change only what moved.</h1>
       </div>
-      {(['now', 'soon', 'later'] as const).map((g) => (
+      {(['now', 'soon', 'later'] as const).filter((g) => accounts.some((a) => a.group === g)).map((g) => (
         <div key={g} style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 4 }}>{GROUP_LABEL[g]}</span>
           {accounts.filter((a) => a.group === g).map((a) => {
-            const isChanged = changed.some(([id]) => id === a._id);
+            const closer = valueOf(a, 'now') === 0 && vals[a._id] !== undefined && (
+              <button type="button" className="bk-step" onClick={() => close({ userId, accountId: a._id, month })}
+                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '0 0 10px', alignSelf: 'flex-start', fontSize: 13, color: COLORS.ink, textDecoration: 'underline', textUnderlineOffset: 3 }}>
+                Closed it? Hide {a.name}
+              </button>
+            );
+            const dot = <span style={{ width: 6, height: 6, borderRadius: 999, background: isChanged(a) ? COLORS.green : 'transparent' }} />;
+            if (!a.invested) {
+              return (
+                <div key={a._id} style={{ display: 'flex', flexDirection: 'column', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 48 }}>
+                    <span style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>{a.name}{dot}</span>
+                    {field(a, 'now', 'balance')}
+                  </label>
+                  {closer}
+                </div>
+              );
+            }
+            // Investments: what went in, and what it's worth now.
+            const gain = valueOf(a, 'now') - valueOf(a, 'in');
             return (
-              <label key={a._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 48, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
-                <span style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {a.name}
-                  <span style={{ width: 6, height: 6, borderRadius: 999, background: isChanged ? COLORS.green : 'transparent' }} />
+              <div key={a._id} style={{ display: 'flex', flexDirection: 'column', padding: '10px 0 4px', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>{a.name}{dot}</span>
+                  <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: Math.abs(gain) < 0.5 ? COLORS.muted : gain > 0 ? COLORS.green : COLORS.rust }}>
+                    {Math.abs(gain) < 0.5 ? 'even' : `${gain > 0 ? '+' : '-'}${money(Math.abs(gain)).replace('-', '')}`}
+                  </span>
                 </span>
-                <span style={{ display: 'flex', alignItems: 'center', fontSize: 15 }}>
-                  <span style={{ color: COLORS.muted }}>$</span>
-                  <input
-                    inputMode="decimal"
-                    aria-label={`${a.name} balance`}
-                    value={vals[a._id] ?? Math.round(a.amount).toLocaleString('en-US')}
-                    onChange={(e) => setVals((v) => ({ ...v, [a._id]: e.target.value }))}
-                    style={{ appearance: 'none', border: 0, background: 'transparent', width: 100, textAlign: 'right', fontSize: 15, padding: '8px 0', outline: 'none', fontFamily: 'inherit' }}
-                  />
+                <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, color: COLORS.muted }}>Put in</span>
+                    {field(a, 'in', 'put in')}
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 13, color: COLORS.muted }}>Now</span>
+                    {field(a, 'now', 'worth now')}
+                  </label>
                 </span>
-              </label>
+                {closer}
+              </div>
             );
           })}
         </div>
       ))}
+      <AddAccount userId={userId} />
       <button type="button" className="bk-btn" disabled={busy} onClick={submit}>
-        {changed.length ? `Save ${changed.length} ${changed.length === 1 ? 'change' : 'changes'}` : 'Nothing moved. Next'}
+        {changed ? `Save ${changed} ${changed === 1 ? 'change' : 'changes'}` : 'Nothing moved. Next'}
       </button>
+    </div>
+  );
+}
+
+const GROUP_HINT: Record<string, string> = { now: 'Can use any time', soon: 'Locked for a while, like an FD', later: 'Long term, like CPF or stocks' };
+
+function AddAccount({ userId }: { userId: any }) {
+  const add = useMutation(api.accounts.addAccount);
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [group, setGroup] = useState<'now' | 'soon' | 'later'>('now');
+  const [invested, setInvested] = useState(false);
+  const [busy, setBusy] = useState(false);
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', minHeight: 44, fontSize: 15, color: COLORS.ink, display: 'flex', alignItems: 'center', gap: 8, marginTop: -12 }}>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
+        Add an account
+      </button>
+    );
+  }
+  const submit = async () => {
+    if (!name.trim()) return;
+    setBusy(true);
+    await add({ userId, name, group, invested: invested || undefined });
+    setBusy(false);
+    setName('');
+    setInvested(false);
+    setOpen(false);
+  };
+  return (
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 18, background: '#FFFFFF', marginTop: -12 }}>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>Name</span>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Trust Bank"
+          style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
+      </label>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {(['now', 'soon', 'later'] as const).map((g) => (
+            <button key={g} type="button" className="bk-chip" onClick={() => setGroup(g)}
+              style={group === g ? { background: COLORS.ink, color: '#FFFFFF' } : undefined}>{GROUP_LABEL[g]}</button>
+          ))}
+        </div>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>{GROUP_HINT[group]}</span>
+      </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 15, cursor: 'pointer' }}>
+        <input type="checkbox" checked={invested} onChange={(e) => setInvested(e.target.checked)} style={{ width: 18, height: 18, accentColor: COLORS.ink }} />
+        Track what I put in, too
+      </label>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+        <button type="button" className="bk-btn" disabled={busy || !name.trim()} onClick={submit} style={{ flex: 1 }}>Add</button>
+        <button type="button" onClick={() => setOpen(false)}
+          style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontSize: 14, color: COLORS.muted, minHeight: 44 }}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -262,6 +365,8 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
   const confirm = useMutation(api.pendingTransactions.confirm);
   const notSpending = useMutation(api.merchantRules.markNotSpending);
   const markAsIncome = useMutation(api.pendingTransactions.markAsIncome);
+  const markInvested = useMutation(api.merchantRules.markInvested);
+  const [investing, setInvesting] = useState(false);
   const queue = useRef(rows).current; // freeze the order while filing
   const [i, setI] = useState(0);
   const [memo, setMemo] = useState('');
@@ -269,7 +374,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
   const [fly, setFly] = useState<{ x: number; y: number } | null>(null);
   const [landed, setLanded] = useState<number | null>(null);
   const row = queue[i];
-  const targets = useMemo(() => [...cups, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }], [cups]);
+  const targets = useMemo(() => [...cups, { id: 'invest', name: 'Invested' }, { id: 'none', name: 'Not spending' }, { id: 'in', name: 'Money in' }], [cups]);
 
   useEffect(() => {
     if (!row && queue.length > 0) {
@@ -282,6 +387,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
   const pick = (ci: number) => {
     if (fly || !row) return;
     const target = targets[ci];
+    if (target.id === 'invest') return setInvesting(true);
     const col = ci % 4;
     const r = Math.floor(ci / 4);
     setFly({ x: (col - 1.5) * 86, y: 236 + r * 78 });
@@ -307,6 +413,15 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
       setMemo('');
       setI((n) => n + 1);
     }, 650);
+  };
+
+  const invest = async (accountId: any, name: string) => {
+    if (!row) return;
+    await markInvested({ pendingId: row._id, accountId });
+    setToast(`Added to ${name}. Next time this goes there itself.`);
+    setInvesting(false);
+    setMemo('');
+    setI((n) => n + 1);
   };
 
   const when = row
@@ -335,12 +450,15 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
                 style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
             </label>
           </div>
+          {investing ? <InvestPicker onPick={invest} onBack={() => setInvesting(false)} /> : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', rowGap: 14, columnGap: 2 }}>
             {targets.map((c, ci) => (
               <button key={c.id} type="button" onClick={() => pick(ci)} aria-label={c.name}
                 style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, minHeight: 64 }}>
                 <div style={{ width: 44, height: 44, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transform: landed === ci ? 'translateY(3px) scale(1.08)' : 'none', transition: 'transform .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
-                  {c.id === 'in' ? (
+                  {c.id === 'invest' ? (
+                    <InvestIcon />
+                  ) : c.id === 'in' ? (
                     <div style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.green}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.green} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 11V3M3.5 6.5L7 3l3.5 3.5" /></svg>
                     </div>
@@ -356,6 +474,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
               </button>
             ))}
           </div>
+          )}
         </div>
       )}
       {toast && <span key={toast + i} className="bk-step" style={{ fontSize: 14, color: COLORS.green }}>{toast}</span>}

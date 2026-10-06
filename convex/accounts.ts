@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, internalMutation } from "./_generated/server";
+import { mutation, query, internalMutation, MutationCtx } from "./_generated/server";
 import { Id } from "./_generated/dataModel";
 
 const group = v.union(v.literal("now"), v.literal("soon"), v.literal("later"));
@@ -17,8 +17,18 @@ export const list = query({
         .query("balanceSnapshots")
         .withIndex("by_account_month", (q) => q.eq("accountId", a._id))
         .order("desc")
-        .first();
-      out.push({ ...a, amount: latest?.amount ?? 0, month: latest?.month ?? null });
+        .take(24);
+      // Sheet imports gave every account an "amount in"; only ones where it
+      // differs from the balance are investments (unless set explicitly).
+      const withIn = latest.find((s) => s.amountIn !== undefined);
+      const invested = a.invested ?? (withIn !== undefined && Math.abs(withIn.amountIn! - withIn.amount) > 0.5);
+      out.push({
+        ...a,
+        amount: latest[0]?.amount ?? 0,
+        month: latest[0]?.month ?? null,
+        amountIn: invested ? withIn?.amountIn ?? null : null,
+        invested,
+      });
     }
     return out;
   },
@@ -53,7 +63,7 @@ export const saveBalances = mutation({
   args: {
     userId: v.id("users"),
     month: v.string(),
-    entries: v.array(v.object({ accountId: v.id("accounts"), amount: v.number() })),
+    entries: v.array(v.object({ accountId: v.id("accounts"), amount: v.number(), amountIn: v.optional(v.number()) })),
   },
   handler: async (ctx, { userId, month, entries }) => {
     for (const e of entries) {
@@ -63,17 +73,56 @@ export const saveBalances = mutation({
         .query("balanceSnapshots")
         .withIndex("by_account_month", (q) => q.eq("accountId", e.accountId).eq("month", month))
         .first();
-      if (existing) await ctx.db.patch(existing._id, { amount: e.amount, updatedAt: Date.now() });
-      else await ctx.db.insert("balanceSnapshots", { userId, accountId: e.accountId, month, amount: e.amount, updatedAt: Date.now() });
+      if (existing) await ctx.db.patch(existing._id, { amount: e.amount, amountIn: e.amountIn, updatedAt: Date.now() });
+      else await ctx.db.insert("balanceSnapshots", { userId, accountId: e.accountId, month, amount: e.amount, amountIn: e.amountIn, updatedAt: Date.now() });
     }
   },
 });
 
+/**
+ * Money moved into an investment (e.g. a transfer to IBKR): raises what went
+ * in. "Now" only changes when balances are typed in the check-in, so the money
+ * is never counted in both the bank and the investment.
+ */
+export async function addInvestment(ctx: MutationCtx, accountId: Id<"accounts">, amount: number, date: number) {
+  const acct = await ctx.db.get(accountId);
+  if (!acct) throw new Error("Account not found");
+  const month = new Date(date + 8 * 3600 * 1000).toISOString().slice(0, 7); // SGT
+  const recent = await ctx.db
+    .query("balanceSnapshots")
+    .withIndex("by_account_month", (q) => q.eq("accountId", accountId).lte("month", month))
+    .order("desc")
+    .take(24);
+  const base = recent[0];
+  const baseIn = recent.find((s) => s.amountIn !== undefined)?.amountIn ?? 0;
+  const fields = { amount: base?.amount ?? 0, amountIn: baseIn + amount, updatedAt: Date.now() };
+  if (base?.month === month) await ctx.db.patch(base._id, fields);
+  else await ctx.db.insert("balanceSnapshots", { userId: acct.userId, accountId, month, ...fields });
+  if (!acct.invested) await ctx.db.patch(accountId, { invested: true });
+}
+
+/** Closed it: zero this month (both columns) and hide it from now on. */
+export const closeAccount = mutation({
+  args: { userId: v.id("users"), accountId: v.id("accounts"), month: v.string() },
+  handler: async (ctx, { userId, accountId, month }) => {
+    const acct = await ctx.db.get(accountId);
+    if (!acct || acct.userId !== userId) throw new Error("Account not found");
+    const existing = await ctx.db
+      .query("balanceSnapshots")
+      .withIndex("by_account_month", (q) => q.eq("accountId", accountId).eq("month", month))
+      .first();
+    const fields = { amount: 0, amountIn: 0, updatedAt: Date.now() };
+    if (existing) await ctx.db.patch(existing._id, fields);
+    else await ctx.db.insert("balanceSnapshots", { userId, accountId, month, ...fields });
+    await ctx.db.patch(accountId, { isActive: false });
+  },
+});
+
 export const addAccount = mutation({
-  args: { userId: v.id("users"), name: v.string(), group },
-  handler: async (ctx, { userId, name, group }) => {
+  args: { userId: v.id("users"), name: v.string(), group, invested: v.optional(v.boolean()) },
+  handler: async (ctx, { userId, name, group, invested }) => {
     const all = await ctx.db.query("accounts").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
-    return await ctx.db.insert("accounts", { userId, name, group, order: all.length, isActive: true, createdAt: Date.now() });
+    return await ctx.db.insert("accounts", { userId, name: name.trim(), group, invested, order: all.length, isActive: true, createdAt: Date.now() });
   },
 });
 

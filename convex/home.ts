@@ -63,6 +63,12 @@ export const summary = query({
       shelves.push({ name, total, cups });
     }
 
+    // Fixed bills (Shared account, Parents, Tax...) aren't on a shelf but can
+    // still be filed to from the review queue.
+    const fixedCups = buckets
+      .filter((b) => b.groupId && groupName.get(b.groupId) === "Fixed")
+      .map((b) => ({ id: b._id, name: b.name }));
+
     const goals = buckets
       .filter((b) => b.bucketMode === "save")
       .map((b) => ({ id: b._id, name: b.name, balance: b.currentBalance ?? 0, target: b.targetAmount ?? 0, monthly: b.contributionType === "amount" ? b.contributionAmount ?? 0 : 0 }));
@@ -93,6 +99,7 @@ export const summary = query({
       month,
       spendable,
       shelves,
+      fixedCups,
       goals,
       earmarks: earmarks.map((e) => ({ name: e.name, amount: e.amount, goalBucketId: e.goalBucketId })),
       netWorth,
