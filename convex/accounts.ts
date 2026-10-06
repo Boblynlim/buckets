@@ -200,3 +200,20 @@ export const updateAccount = mutation({
     await ctx.db.patch(accountId, { name: name.trim() || acct.name, group, invested });
   },
 });
+
+/** Undo a close: show the account again with this month's balance. */
+export const reopenAccount = internalMutation({
+  args: { accountId: v.id("accounts"), month: v.string(), amount: v.number() },
+  handler: async (ctx, { accountId, month, amount }) => {
+    const acct = await ctx.db.get(accountId);
+    if (!acct) throw new Error("Account not found");
+    await ctx.db.patch(accountId, { isActive: true });
+    const existing = await ctx.db
+      .query("balanceSnapshots")
+      .withIndex("by_account_month", (q) => q.eq("accountId", accountId).eq("month", month))
+      .first();
+    const fields = { amount, amountIn: undefined, updatedAt: Date.now() };
+    if (existing) await ctx.db.patch(existing._id, fields);
+    else await ctx.db.insert("balanceSnapshots", { userId: acct.userId, accountId, month, ...fields });
+  },
+});
