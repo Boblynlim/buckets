@@ -4,6 +4,7 @@ import { api } from '../../../convex/_generated/api';
 import { useAuth } from '../../lib/AuthContext';
 import { CupSheet } from './CupSheet.web';
 import { NextAdventure } from './Adventures.web';
+import { NetWorthSheet } from './NetWorthSheet.web';
 import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from './homeStyles';
 
 type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number; spent: number };
@@ -145,6 +146,7 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
   const { user } = useAuth();
   const thisMonth = currentMonth();
   const [month, setMonth] = useState(thisMonth);
+  const [showNetWorth, setShowNetWorth] = useState(false);
   const past = month !== thisMonth;
 
   const fresh = useQuery(api.home.summary, user ? { userId: user._id, month } : 'skip');
@@ -219,7 +221,8 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
         </section>
 
         {data.netWorth && (
-          <section style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '16px 0', boxShadow: `inset 0 1px 0 ${COLORS.hairline}, inset 0 -1px 0 ${COLORS.hairline}` }}>
+          <button type="button" className="bk-row" onClick={() => setShowNetWorth(true)}
+            style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: COLORS.ink, textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '16px 0', boxShadow: `inset 0 1px 0 ${COLORS.hairline}, inset 0 -1px 0 ${COLORS.hairline}` }}>
             <span style={{ fontSize: 15, color: COLORS.muted }}>Net worth</span>
             <span style={{ fontSize: 15 }}>
               <span style={{ fontWeight: 500 }}>{money(data.netWorth.total)}</span>{' '}
@@ -228,8 +231,9 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
                   {data.netWorth.change > 0 ? '+' : '-'}{(Math.abs(data.netWorth.change) / 1000).toFixed(1)}k
                 </span>
               )}
+              <svg width="8" height="12" viewBox="0 0 8 12" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" style={{ marginLeft: 10 }}><path d="M2 2l4 4-4 4" /></svg>
             </span>
-          </section>
+          </button>
         )}
 
         {data.shelves.filter((s) => s.cups.length).map((s) => {
@@ -237,7 +241,32 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
           index += s.cups.length;
           return <Shelf key={s.name} name={s.name} total={s.total} cups={s.cups as Cup[]} filled={filled} startIndex={start} onPick={setPicked} past={past} />;
         })}
+
+        {/* Goes out before spending: bills and regular investing. */}
+        {([['Fixed', data.fixedCups], ['Investing', data.investCups]] as const).filter(([, cups]) => cups.length).map(([name, cups]) => (
+          <section key={name} style={{ display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingBottom: 4 }}>
+              <span style={{ fontSize: 15, fontWeight: 500 }}>{name}</span>
+              <span style={{ fontSize: 13, color: COLORS.muted }}>{money(cups.reduce((t, c) => t + c.planned, 0))} a month</span>
+            </div>
+            {cups.map((c) => {
+              const done = c.planned > 0 && c.spent >= c.planned - 0.5;
+              return (
+                <button key={c.id} type="button" className="bk-row" onClick={() => setPicked(c as Cup)}
+                  style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: COLORS.ink, padding: 0, minHeight: 48, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, textAlign: 'left', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+                  <span style={{ fontSize: 15 }}>{c.name}</span>
+                  <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 8, color: done ? COLORS.ink : COLORS.muted }}>
+                    {done ? money(c.spent) : `${money(c.spent)} of ${money(c.planned)}`}
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={done ? COLORS.green : 'transparent'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5l2.5 2.5L11 4.5" /></svg>
+                  </span>
+                </button>
+              );
+            })}
+          </section>
+        ))}
       </div>
+
+      {showNetWorth && user && <NetWorthSheet userId={user._id} onClose={() => setShowNetWorth(false)} />}
 
       {picked && (
         <CupSheet

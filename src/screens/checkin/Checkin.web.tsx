@@ -146,7 +146,8 @@ const GROUP_LABEL: Record<string, string> = { now: 'Now', soon: 'Soon', later: '
 const num = (v: string) => Number(v.replace(/[^0-9.]/g, ''));
 const AMOUNT_INPUT: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', width: 96, textAlign: 'right', fontSize: 15, padding: '8px 0', outline: 'none', fontFamily: 'inherit' };
 
-function Balances({ userId, month, accounts, onNext }: { userId: any; month: string; accounts: any[]; onNext: () => void }) {
+/** Also used by the net worth sheet on Home (`inSheet`: no heading, "Done" instead of "Next"). */
+export function Balances({ userId, month, accounts, onNext, inSheet }: { userId: any; month: string; accounts: any[]; onNext: () => void; inSheet?: boolean }) {
   const save = useMutation(api.accounts.saveBalances);
   const close = useMutation(api.accounts.closeAccount);
   // Keys: account id for "now", `${id}:in` for what went in (investments).
@@ -164,6 +165,8 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
   const changed = accounts.filter(isChanged).length;
 
   const submit = async () => {
+    // From Home with nothing changed: just close (don't start a new month).
+    if (inSheet && !changed) return onNext();
     setBusy(true);
     await save({
       userId,
@@ -194,11 +197,13 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
   };
 
   return (
-    <div className="bk-step" style={INNER}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <span style={LABEL}>Balances</span>
-        <h1 style={H1}>Change only what moved.</h1>
-      </div>
+    <div className="bk-step" style={inSheet ? { display: 'flex', flexDirection: 'column', gap: 28 } : INNER}>
+      {!inSheet && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span style={LABEL}>Balances</span>
+          <h1 style={H1}>Change only what moved.</h1>
+        </div>
+      )}
       {(['now', 'soon', 'later'] as const).filter((g) => accounts.some((a) => a.group === g)).map((g) => (
         <div key={g} style={{ display: 'flex', flexDirection: 'column' }}>
           <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 4 }}>{GROUP_LABEL[g]}</span>
@@ -259,7 +264,7 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
       ))}
       <AddAccount userId={userId} />
       <button type="button" className="bk-btn" disabled={busy} onClick={submit}>
-        {changed ? `Save ${changed} ${changed === 1 ? 'change' : 'changes'}` : 'Nothing moved. Next'}
+        {changed ? `Save ${changed} ${changed === 1 ? 'change' : 'changes'}` : inSheet ? 'Done' : 'Nothing moved. Next'}
       </button>
     </div>
   );

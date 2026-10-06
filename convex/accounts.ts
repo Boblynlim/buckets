@@ -43,6 +43,7 @@ export const netWorthHistory = query({
   handler: async (ctx, { userId }) => {
     const accounts = await ctx.db.query("accounts").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
     const groupOf = new Map(accounts.map((a) => [a._id, a.group]));
+    const nameOf = new Map(accounts.map((a) => [a._id, a.name]));
     const snaps = await ctx.db
       .query("balanceSnapshots")
       .withIndex("by_user_month", (q) => q.eq("userId", userId))
@@ -53,7 +54,9 @@ export const netWorthHistory = query({
       for (const s of snaps) if (s.month === month) last.set(s.accountId, s.amount);
       const totals = { now: 0, soon: 0, later: 0 };
       for (const [id, amt] of last) totals[groupOf.get(id) ?? "later"] += amt;
-      return { month, ...totals, total: totals.now + totals.soon + totals.later };
+      // Every account's balance that month, so a change can be explained.
+      const byAccount = [...last].map(([id, amount]) => ({ id, name: nameOf.get(id) ?? "?", amount }));
+      return { month, ...totals, total: totals.now + totals.soon + totals.later, byAccount };
     });
   },
 });

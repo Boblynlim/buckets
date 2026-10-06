@@ -46,6 +46,7 @@ import type * as reportsNew from "../reportsNew.js";
 import type * as reset from "../reset.js";
 import type * as rollover from "../rollover.js";
 import type * as tagging from "../tagging.js";
+import type * as tidyCups from "../tidyCups.js";
 import type * as users from "../users.js";
 
 import type {
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   reset: typeof reset;
   rollover: typeof rollover;
   tagging: typeof tagging;
+  tidyCups: typeof tidyCups;
   users: typeof users;
 }>;
 

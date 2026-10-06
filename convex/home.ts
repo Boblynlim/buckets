@@ -63,11 +63,17 @@ export const summary = query({
       shelves.push({ name, total, cups });
     }
 
-    // Fixed bills (Shared account, Parents, Tax...) aren't on a shelf but can
-    // still be filed to from the review queue.
-    const fixedCups = buckets
-      .filter((b) => b.groupId && groupName.get(b.groupId) === "Fixed")
-      .map((b) => ({ id: b._id, name: b.name }));
+    // Money that goes out before spending: fixed bills (Tax, Parents...) and
+    // regular investing (AIA). Not part of "yours to spend"; shown below it.
+    const cupOf = (b: Doc<"buckets">) => {
+      const funded = b.fundedAmount ?? b.plannedAmount ?? 0;
+      const carry = b.carryoverBalance ?? 0;
+      const spent = spentBy.get(b._id) ?? 0;
+      return { id: b._id, name: b.name, planned: b.plannedAmount ?? 0, funded, carry, spent, left: funded + carry - spent, full: Math.max(0, funded + carry) };
+    };
+    const inGroup = (name: string) => buckets.filter((b) => b.groupId && groupName.get(b.groupId) === name).map(cupOf);
+    const fixedCups = inGroup("Fixed");
+    const investCups = inGroup("Investments");
 
     const goals = buckets
       .filter((b) => b.bucketMode === "save")
@@ -100,6 +106,7 @@ export const summary = query({
       spendable,
       shelves,
       fixedCups,
+      investCups,
       goals,
       earmarks: earmarks.map((e) => ({ name: e.name, amount: e.amount, goalBucketId: e.goalBucketId })),
       netWorth,
