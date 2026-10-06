@@ -3,7 +3,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { addMonths, format, isBefore, isSameMonth, startOfMonth, subMonths } from 'date-fns';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
-import { COLORS, money, useHomeStyles } from './home/homeStyles';
+import { COLORS, SAFE_TOP, money, useHomeStyles } from './home/homeStyles';
 
 // Income for a month: one big number, the entries under it, add / edit /
 // remove. Ticking an entry marks it as arrived.
@@ -205,7 +205,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({ visible = tr
   return (
     <div className="bk-root bk-income" role="dialog" aria-label="Income"
       style={{ position: 'fixed', inset: 0, zIndex: 2500, overflowY: 'auto', background: COLORS.wall }}>
-      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '20px 24px 48px', display: 'flex', flexDirection: 'column', gap: 32 }}>
+      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: `calc(${SAFE_TOP} + 12px) 24px 48px`, display: 'flex', flexDirection: 'column', gap: 32 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 15, color: COLORS.muted }}>Income</span>
           {onClose && (

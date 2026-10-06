@@ -127,12 +127,16 @@ export const cupTransactions = query({
     if (!bucket) return [];
     const exps = (await spendsBetween(ctx, bucketId, start, end))
       .sort((a, b) => b.date - a.date);
-    const confirmed = await ctx.db
-      .query("pendingTransactions")
-      .withIndex("by_user_status", (q) => q.eq("userId", bucket.userId).eq("status", "confirmed"))
-      .collect();
-    const auto = new Set(confirmed.filter((p) => p.autoFiled && p.confirmedExpenseId).map((p) => p.confirmedExpenseId));
-    return exps.map((e) => ({ id: e._id, note: e.note, amount: e.amount, date: e.date, autoFiled: auto.has(e._id) }));
+    // Look up only this cup's spends (reading every imported email was slow).
+    return await Promise.all(
+      exps.map(async (e) => {
+        const source = await ctx.db
+          .query("pendingTransactions")
+          .withIndex("by_confirmed_expense", (q) => q.eq("confirmedExpenseId", e._id))
+          .first();
+        return { id: e._id, note: e.note, amount: e.amount, date: e.date, autoFiled: !!source?.autoFiled };
+      })
+    );
   },
 });
 

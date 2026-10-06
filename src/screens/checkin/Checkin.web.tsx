@@ -5,7 +5,7 @@ import { useAuth } from '../../lib/AuthContext';
 import { isPaymentCompany } from '../../../convex/lib/merchantKey';
 import { CupArt } from '../home/Home.web';
 import { InvestIcon, InvestPicker } from '../ReviewQueue.web';
-import { COLORS, cupSrc, currentMonth, money, moneyExact, monthLabel, useHomeStyles } from '../home/homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, moneyExact, monthLabel, useHomeStyles } from '../home/homeStyles';
 
 // Payday check-in: recap -> balances -> filed for you -> the few it couldn't
 // file -> done (numbers count up, cups fill). Skipping is always fine.
@@ -14,7 +14,7 @@ const STEPS = 6;
 const H1: React.CSSProperties = { fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: 0 };
 const LABEL: React.CSSProperties = { fontSize: 14, color: COLORS.muted };
 const PAGE: React.CSSProperties = { position: 'fixed', inset: 0, zIndex: 3000, overflowY: 'auto' };
-const INNER: React.CSSProperties = { maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 88px) 24px 40px', display: 'flex', flexDirection: 'column', gap: 28 };
+const INNER: React.CSSProperties = { maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: `calc(${SAFE_TOP} + 88px) 24px 40px`, display: 'flex', flexDirection: 'column', gap: 28 };
 
 function useCountUp(target: number, run: boolean, ms = 1800) {
   const [v, setV] = useState(0);
@@ -61,8 +61,8 @@ export function Checkin({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="bk-root" style={PAGE}>
-      {/* Clears the status bar / Dynamic Island (at least 44px even where the inset reads 0), on the wall colour so content scrolls under it. */}
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, paddingTop: 'calc(max(env(safe-area-inset-top, 0px), 44px) + 16px)', paddingBottom: 8, background: COLORS.wall, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
+      {/* Below the Dynamic Island, on the wall colour so content scrolls under it. */}
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, paddingTop: `calc(${SAFE_TOP} + 16px)`, paddingBottom: 8, background: COLORS.wall, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
         <div style={{ width: 'min(392px, calc(100% - 48px))', display: 'flex', gap: 6, alignItems: 'center' }}>
           {Array.from({ length: STEPS }).map((_, i) => (
             <div key={i} style={{ flexGrow: 1, height: 2, borderRadius: 2, background: i <= step ? COLORS.ink : COLORS.hairline, transition: 'background .6s ease' }} />
@@ -152,6 +152,7 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
   // Keys: account id for "now", `${id}:in` for what went in (investments).
   const [vals, setVals] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const valueOf = (a: any, key: 'now' | 'in') => {
     const base = key === 'now' ? a.amount : a.amountIn ?? 0;
     const v = vals[key === 'now' ? a._id : `${a._id}:in`];
@@ -209,13 +210,23 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
               </button>
             );
             const dot = <span style={{ width: 6, height: 6, borderRadius: 999, background: isChanged(a) ? COLORS.green : 'transparent' }} />;
+            // Tap the name to fix the account (name, group, put-in tracking).
+            const nameBtn = (
+              <button type="button" onClick={() => setEditing(a._id)}
+                style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, fontSize: 15, color: COLORS.ink, fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}>
+                {a.name}{dot}
+              </button>
+            );
+            if (editing === a._id) {
+              return <AccountForm key={a._id} userId={userId} account={a} onDone={() => setEditing(null)} />;
+            }
             if (!a.invested) {
               return (
                 <div key={a._id} style={{ display: 'flex', flexDirection: 'column', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
-                  <label style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 48 }}>
-                    <span style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>{a.name}{dot}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, minHeight: 48 }}>
+                    {nameBtn}
                     {field(a, 'now', 'balance')}
-                  </label>
+                  </div>
                   {closer}
                 </div>
               );
@@ -225,7 +236,7 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
             return (
               <div key={a._id} style={{ display: 'flex', flexDirection: 'column', padding: '10px 0 4px', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
                 <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>{a.name}{dot}</span>
+                  {nameBtn}
                   <span style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums', color: Math.abs(gain) < 0.5 ? COLORS.muted : gain > 0 ? COLORS.green : COLORS.rust }}>
                     {Math.abs(gain) < 0.5 ? 'even' : `${gain > 0 ? '+' : '-'}${money(Math.abs(gain)).replace('-', '')}`}
                   </span>
@@ -257,35 +268,38 @@ function Balances({ userId, month, accounts, onNext }: { userId: any; month: str
 const GROUP_HINT: Record<string, string> = { now: 'Can use any time', soon: 'Locked for a while, like an FD', later: 'Long term, like CPF or stocks' };
 
 function AddAccount({ userId }: { userId: any }) {
-  const add = useMutation(api.accounts.addAccount);
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [group, setGroup] = useState<'now' | 'soon' | 'later'>('now');
-  const [invested, setInvested] = useState(false);
+  if (open) return <AccountForm userId={userId} onDone={() => setOpen(false)} />;
+  return (
+    <button type="button" onClick={() => setOpen(true)}
+      style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', minHeight: 44, fontSize: 15, color: COLORS.ink, display: 'flex', alignItems: 'center', gap: 8, marginTop: -12 }}>
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
+      Add an account
+    </button>
+  );
+}
+
+/** Add a new account, or fix one (pass `account`). */
+function AccountForm({ userId, account, onDone }: { userId: any; account?: any; onDone: () => void }) {
+  const add = useMutation(api.accounts.addAccount);
+  const update = useMutation(api.accounts.updateAccount);
+  const [name, setName] = useState<string>(account?.name ?? '');
+  const [group, setGroup] = useState<'now' | 'soon' | 'later'>(account?.group ?? 'now');
+  const [invested, setInvested] = useState<boolean>(account?.invested ?? false);
   const [busy, setBusy] = useState(false);
-  if (!open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)}
-        style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', minHeight: 44, fontSize: 15, color: COLORS.ink, display: 'flex', alignItems: 'center', gap: 8, marginTop: -12 }}>
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
-        Add an account
-      </button>
-    );
-  }
   const submit = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    await add({ userId, name, group, invested: invested || undefined });
+    if (account) await update({ userId, accountId: account._id, name, group, invested });
+    else await add({ userId, name, group, invested: invested || undefined });
     setBusy(false);
-    setName('');
-    setInvested(false);
-    setOpen(false);
+    onDone();
   };
   return (
-    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 18, background: '#FFFFFF', marginTop: -12 }}>
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 18, background: '#FFFFFF', margin: account ? '8px 0' : '-12px 0 0' }}>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 13, color: COLORS.muted }}>Name</span>
-        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Trust Bank"
+        <input autoFocus={!account} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Trust Bank"
           style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
       </label>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -302,8 +316,8 @@ function AddAccount({ userId }: { userId: any }) {
         Track what I put in, too
       </label>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-        <button type="button" className="bk-btn" disabled={busy || !name.trim()} onClick={submit} style={{ flex: 1 }}>Add</button>
-        <button type="button" onClick={() => setOpen(false)}
+        <button type="button" className="bk-btn" disabled={busy || !name.trim()} onClick={submit} style={{ flex: 1 }}>{account ? 'Save' : 'Add'}</button>
+        <button type="button" onClick={onDone}
           style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontSize: 14, color: COLORS.muted, minHeight: 44 }}>Cancel</button>
       </div>
     </div>

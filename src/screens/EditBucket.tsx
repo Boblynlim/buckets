@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import type { Bucket } from '../types';
-import { COLORS, cupSrc, money, useHomeStyles } from './home/homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, money, useHomeStyles } from './home/homeStyles';
 
 // Editing a cup (and, via CupForm, adding one). Calm full-screen page:
 // the cup photo, its name, what goes in each month, which shelf it sits on.
@@ -172,7 +172,7 @@ export function CupForm({
   return (
     <div className="bk-root bk-cupform" role="dialog" aria-label={title}
       style={{ position: 'fixed', inset: 0, zIndex: 2500, overflowY: 'auto', background: COLORS.wall }}>
-      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '20px 24px 48px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div className="bk-step" style={{ maxWidth: 440, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: `calc(${SAFE_TOP} + 12px) 24px 48px`, display: 'flex', flexDirection: 'column', gap: 28 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span style={{ fontSize: 15, color: COLORS.muted }}>{title}</span>
           <button type="button" onClick={onClose} aria-label="Close"

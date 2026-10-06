@@ -188,10 +188,12 @@ export const importSnapshots = internalMutation({
   },
 });
 
-/** One-off: switch "what I put in" tracking on or off for an account. */
-export const setInvested = internalMutation({
-  args: { accountId: v.id("accounts"), invested: v.boolean() },
-  handler: async (ctx, { accountId, invested }) => {
-    await ctx.db.patch(accountId, { invested });
+/** Fix an account after adding it: rename, move group, or switch "what I put in" on or off. */
+export const updateAccount = mutation({
+  args: { userId: v.id("users"), accountId: v.id("accounts"), name: v.string(), group, invested: v.boolean() },
+  handler: async (ctx, { userId, accountId, name, group, invested }) => {
+    const acct = await ctx.db.get(accountId);
+    if (!acct || acct.userId !== userId) throw new Error("Account not found");
+    await ctx.db.patch(accountId, { name: name.trim() || acct.name, group, invested });
   },
 });

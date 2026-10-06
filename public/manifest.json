@@ -1,6 +1,6 @@
 {
-  "name": "Kamidana - Personal Budgeting",
-  "short_name": "Kamidana",
+  "name": "Buckets - Personal Budgeting",
+  "short_name": "Buckets",
   "description": "A personal budgeting app to track expenses and manage your finances",
   "start_url": "/",
   "display": "standalone",

@@ -4,7 +4,7 @@ import { api } from '../../../convex/_generated/api';
 import { useAuth } from '../../lib/AuthContext';
 import { CupSheet } from './CupSheet.web';
 import { NextAdventure } from './Adventures.web';
-import { COLORS, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from './homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from './homeStyles';
 
 type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number; spent: number };
 
@@ -171,7 +171,7 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
   return (
     // The page itself is locked (html/body overflow hidden), so Home scrolls.
     <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
-      <div style={{ maxWidth: 440, margin: '0 auto', padding: '64px 24px 140px', display: 'flex', flexDirection: 'column', gap: 44 }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: `calc(${SAFE_TOP} + 20px) 24px 140px`, display: 'flex', flexDirection: 'column', gap: 44 }}>
         <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <MonthPicker month={month} thisMonth={thisMonth} onChange={setMonth} />
           <span key={month} className="bk-step" style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>

@@ -244,7 +244,8 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_status", ["userId", "status"])
-    .index("by_dedupe", ["dedupeKey"]),
+    .index("by_dedupe", ["dedupeKey"])
+    .index("by_confirmed_expense", ["confirmedExpenseId"]),
 
   // Legacy table — no live query functions (superseded by recurringSync), kept
   // as a schema definition so any residual rows stay valid across deployments.

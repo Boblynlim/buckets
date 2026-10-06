@@ -114,7 +114,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
       </span>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <button type="button" onClick={applyBack} disabled={back <= 0 || deleting}
-          style={{ appearance: 'none', border: 0, cursor: 'pointer', background: COLORS.green, color: '#FFFFFF', fontFamily: 'inherit', fontSize: 15, fontWeight: 500, height: 44, padding: '0 20px', borderRadius: 999, opacity: back <= 0 || deleting ? 0.5 : 1 }}>
+          style={{ appearance: 'none', border: 0, cursor: 'pointer', background: COLORS.ink, color: COLORS.wall, fontFamily: 'inherit', fontSize: 15, fontWeight: 500, height: 44, padding: '0 20px', borderRadius: 999, opacity: back <= 0 || deleting ? 0.5 : 1 }}>
           {deleting ? 'Saving' : full ? 'Paid back in full' : back > 0 ? `Take ${moneyExact(back)} off` : 'Take it off'}
         </button>
         <button type="button" onClick={() => setPayingBack(false)} style={linkStyle}>Cancel</button>
@@ -134,9 +134,13 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
       </div>
     </div>
   ) : (
-    <div style={{ display: 'flex', gap: 24, alignItems: 'center' }}>
-      <button type="button" onClick={() => { setBackAmount(expense.amount.toFixed(2)); setPayingBack(true); }} style={{ ...linkStyle, color: COLORS.ink }}>
-        Got it back?
+    <div style={{ display: 'flex', columnGap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+      {/* One tap: paid back in full, so the spend comes off the cup. */}
+      <button type="button" onClick={remove} disabled={deleting} style={{ ...linkStyle, color: COLORS.ink }}>
+        {deleting ? 'Saving' : 'Got it all back'}
+      </button>
+      <button type="button" onClick={() => { setBackAmount(''); setPayingBack(true); }} style={{ ...linkStyle, color: COLORS.ink }}>
+        Got some back
       </button>
       <button type="button" onClick={() => setConfirming(true)} style={{ ...linkStyle, color: COLORS.rust }}>
         Delete this spend

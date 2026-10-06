@@ -3,7 +3,7 @@ import { useQuery, useMutation } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { isPaymentCompany } from '../../convex/lib/merchantKey';
-import { COLORS, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
 
 // Bank transactions waiting for a cup. Same feel as the check-in's
 // "Which cup?" step: one card open at a time, tap a cup to file it. Filing a
@@ -118,7 +118,7 @@ export function ReviewQueue({ onBack }: Props) {
 
   return (
     <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
-      <div style={{ maxWidth: 440, margin: '0 auto', padding: '20px 24px 140px', display: 'flex', flexDirection: 'column', gap: 28 }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: `calc(${SAFE_TOP} + 12px) 24px 140px`, display: 'flex', flexDirection: 'column', gap: 28 }}>
         {onBack && (
           <button type="button" onClick={onBack}
             style={{ ...PLAIN_BTN, alignSelf: 'flex-start', minHeight: 44, display: 'flex', alignItems: 'center', gap: 6, fontSize: 15, color: COLORS.muted, marginLeft: -2 }}>

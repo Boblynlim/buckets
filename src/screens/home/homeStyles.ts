@@ -30,6 +30,9 @@ export const money = (n: number) =>
 export const moneyExact = (n: number) =>
   (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Clears the status bar / Dynamic Island: at least 44px, even where the inset reads 0. */
+export const SAFE_TOP = 'max(env(safe-area-inset-top, 0px), 44px)';
+
 export const COLORS = {
   wall: '#F3F0EA',
   ink: '#1F1B17',

@@ -18,7 +18,7 @@ import {
   unsubscribeFromPush,
   isSubscribed as checkPushSubscribed,
 } from '../utils/pushNotifications';
-import { COLORS, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, useHomeStyles } from './home/homeStyles';
 import {
   BODY, Check, Field, Group, LABEL, Page, Row, Switch, Toast, useSettingsStyles, type ToastState,
 } from './settings/parts';
@@ -451,7 +451,7 @@ export const Settings: React.FC<SettingsProps> = ({
 
   return (
     <div className="bk-root bk-scroll" style={{ height: '100vh', overflowY: 'auto', scrollbarWidth: 'none' as any }}>
-      <div style={{ maxWidth: 440, margin: '0 auto', padding: '64px 20px 140px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 32 }}>
+      <div style={{ maxWidth: 440, margin: '0 auto', padding: `calc(${SAFE_TOP} + 20px) 20px 140px`, boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 32 }}>
         <h1 style={{ fontSize: 30, fontWeight: 600, letterSpacing: '-0.03em', lineHeight: 1.15, margin: '0 4px' }}>Settings</h1>
 
         <Group label="Money">

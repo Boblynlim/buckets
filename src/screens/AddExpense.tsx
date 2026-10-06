@@ -3,7 +3,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { useAuth } from '../lib/AuthContext';
 import { DatePicker } from '../components/DatePicker';
-import { COLORS, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
+import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, moneyExact, useHomeStyles } from './home/homeStyles';
 
 // Add a spend by hand. Same feel as the check-in's "Which cup?" step:
 // amount, what it was, when, then tap a cup. Only spendable cups are offered
@@ -116,7 +116,7 @@ export function ExpenseSheet({
         role="dialog"
         aria-label={title}
         style={{
-          position: 'fixed', left: 0, right: 0, bottom: 0, top: 12, zIndex: 2001, maxWidth: 480, margin: '0 auto',
+          position: 'fixed', left: 0, right: 0, bottom: 0, top: `calc(${SAFE_TOP} + 8px)`, zIndex: 2001, maxWidth: 480, margin: '0 auto',
           background: COLORS.wall, borderRadius: '24px 24px 0 0', display: 'flex', flexDirection: 'column', overflow: 'hidden',
         }}
       >

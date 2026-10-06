@@ -125,8 +125,7 @@ export const refile = mutation({
     await ctx.db.patch(expenseId, { bucketId, updatedAt: Date.now() });
     const source = await ctx.db
       .query("pendingTransactions")
-      .withIndex("by_user_status", (q) => q.eq("userId", expense.userId).eq("status", "confirmed"))
-      .filter((q) => q.eq(q.field("confirmedExpenseId"), expenseId))
+      .withIndex("by_confirmed_expense", (q) => q.eq("confirmedExpenseId", expenseId))
       .first();
     if (source) {
       await ctx.db.patch(source._id, { suggestedBucketId: bucketId, updatedAt: Date.now() });
