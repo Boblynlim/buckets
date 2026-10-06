@@ -187,3 +187,11 @@ export const importSnapshots = internalMutation({
     return { dryRun, changes: log };
   },
 });
+
+/** One-off: switch "what I put in" tracking on or off for an account. */
+export const setInvested = internalMutation({
+  args: { accountId: v.id("accounts"), invested: v.boolean() },
+  handler: async (ctx, { accountId, invested }) => {
+    await ctx.db.patch(accountId, { invested });
+  },
+});
