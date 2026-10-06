@@ -45,6 +45,7 @@ import type * as reports from "../reports.js";
 import type * as reportsNew from "../reportsNew.js";
 import type * as reset from "../reset.js";
 import type * as rollover from "../rollover.js";
+import type * as statementFix from "../statementFix.js";
 import type * as tagging from "../tagging.js";
 import type * as tidyCups from "../tidyCups.js";
 import type * as users from "../users.js";
@@ -93,6 +94,7 @@ declare const fullApi: ApiFromModules<{
   reportsNew: typeof reportsNew;
   reset: typeof reset;
   rollover: typeof rollover;
+  statementFix: typeof statementFix;
   tagging: typeof tagging;
   tidyCups: typeof tidyCups;
   users: typeof users;
