@@ -107,7 +107,7 @@ export const CSVImportPreview: React.FC<CSVImportPreviewProps> = ({
                       <div className="bk-step" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 14 }}>
                         {availableBuckets.map((b) => (
                           <button key={b._id} type="button" className="bk-chip" onClick={() => setBucket(i, b.name)}
-                            style={b.name === expense.bucket ? { background: COLORS.ink, color: COLORS.wall } : undefined}>
+                            style={b.name === expense.bucket ? { background: COLORS.espresso, color: COLORS.wall } : undefined}>
                             {b.name}
                           </button>
                         ))}

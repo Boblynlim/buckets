@@ -134,7 +134,7 @@ function isStaticAsset(url) {
 self.addEventListener('push', (event) => {
   console.log('[ServiceWorker] Push received');
 
-  let data = { title: 'Buckets', body: 'You have a new notification', url: '/', tag: 'buckets' };
+  let data = { title: 'Moru', body: 'You have a new notification', url: '/', tag: 'buckets' };
 
   if (event.data) {
     try {

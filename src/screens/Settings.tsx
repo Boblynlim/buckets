@@ -5,6 +5,7 @@ import { api } from '../../convex/_generated/api';
 import type { Bucket } from '../types';
 import { getCupForBucketId, registerCupAssignments } from '../constants/bucketIcons';
 import { CSVImportPreview } from '../components/CSVImportPreview';
+import { PotteryLoader } from '../components/PotteryLoader';
 import {
   exportExpensesToCSV,
   generateCSVTemplate,
@@ -76,6 +77,7 @@ export const Settings: React.FC<SettingsProps> = ({
   useSettingsStyles();
 
   const [view, setView] = useState<View>('main');
+  const [wheel, setWheel] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const showToast = (message: string, tone: 'ok' | 'error' | 'busy' = 'ok') => setToast({ message, tone });
 
@@ -498,9 +500,16 @@ export const Settings: React.FC<SettingsProps> = ({
           <Row title="Reset all data" tone="rust" chevron onClick={() => { setResetWord(''); setView('reset'); }} />
         </Group>
 
-        <footer style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 8, fontSize: 13, color: '#A89E92' }}>
-          <span>Buckets 1.0</span>
-          <span>Made with care by Jaz</span>
+        {/* Tap the footer and a cup gets thrown on the wheel. */}
+        <footer onClick={() => setWheel((w) => !w)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, paddingTop: 8, fontSize: 13, color: COLORS.faint, cursor: 'default', userSelect: 'none' }}>
+          {wheel ? (
+            <span className="bk-fade-in"><PotteryLoader message="Every cup starts as a lump of clay." /></span>
+          ) : (
+            <>
+              <span>Moru 1.0</span>
+              <span>Made with care by Jaz</span>
+            </>
+          )}
         </footer>
       </div>
 
@@ -536,7 +545,7 @@ export const Settings: React.FC<SettingsProps> = ({
           })()}
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
             <button type="button" className="st-link" onClick={openNewGroup}>New group</button>
-            <span style={{ ...LABEL, color: '#A89E92' }}>To retire a cup, open it.</span>
+            <span style={{ ...LABEL, color: COLORS.faint }}>To retire a cup, open it.</span>
           </div>
         </Page>
       )}
@@ -576,7 +585,7 @@ export const Settings: React.FC<SettingsProps> = ({
               {pushEnabled && <p style={{ ...BODY, margin: '0 4px' }}>On. We’ll nudge you when a cup runs low and when it’s payday.</p>}
             </>
           ) : (
-            <p style={{ ...BODY, margin: '0 4px' }}>This browser can’t show notifications. Try Chrome or Edge, or add Buckets to your home screen.</p>
+            <p style={{ ...BODY, margin: '0 4px' }}>This browser can’t show notifications. Try Chrome or Edge, or add Moru to your home screen.</p>
           )}
         </Page>
       )}

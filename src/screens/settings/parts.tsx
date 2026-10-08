@@ -58,7 +58,7 @@ export const BODY: React.CSSProperties = { fontSize: 15, color: COLORS.muted, li
 
 export function Chevron() {
   return (
-    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" stroke="#A89E92" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
+    <svg width="8" height="14" viewBox="0 0 8 14" fill="none" stroke={COLORS.faint} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flexShrink: 0 }}>
       <path d="M1.5 1.5L6.5 7l-5 5.5" />
     </svg>
   );
@@ -92,7 +92,7 @@ type RowProps = {
 };
 
 export function Row({ title, sub, value, leading, tone = 'ink', chevron, onClick, disabled, trailing }: RowProps) {
-  const color = tone === 'rust' ? COLORS.rust : tone === 'faint' ? '#A89E92' : COLORS.ink;
+  const color = tone === 'rust' ? COLORS.rust : tone === 'faint' ? COLORS.faint : COLORS.ink;
   const inner = (
     <>
       {leading}
@@ -165,7 +165,7 @@ export function Check({ on, dim }: { on: boolean; dim?: boolean }) {
   return (
     <span aria-hidden style={{
       width: 22, height: 22, borderRadius: 999, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: on ? COLORS.ink : 'transparent', boxShadow: on ? 'none' : `inset 0 0 0 1.5px ${dim ? COLORS.hairline : '#C9C0B4'}`,
+      background: on ? COLORS.espresso : 'transparent', boxShadow: on ? 'none' : `inset 0 0 0 1.5px ${dim ? COLORS.hairline : COLORS.line}`,
       transition: 'background .25s ease',
     }}>
       {on && (
@@ -186,11 +186,11 @@ export function Toast({ toast, onHide }: { toast: ToastState; onHide: () => void
     return () => clearTimeout(t);
   }, [toast]);
   if (!toast) return null;
-  const dot = toast.tone === 'ok' ? COLORS.green : toast.tone === 'error' ? COLORS.rust : '#A89E92';
+  const dot = toast.tone === 'ok' ? COLORS.green : toast.tone === 'error' ? COLORS.rust : COLORS.faint;
   return createPortal(
     <div style={{ position: 'fixed', top: 16, left: 0, right: 0, display: 'flex', justifyContent: 'center', zIndex: 4000, pointerEvents: 'none', padding: '0 16px' }}>
       <div key={toast.message} className="st-toast bk-root" role="status"
-        style={{ background: COLORS.ink, color: '#F3F0EA', borderRadius: 999, padding: '12px 18px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 400 }}>
+        style={{ background: COLORS.espresso, color: '#F3F0EA', borderRadius: 999, padding: '12px 18px', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, maxWidth: 400 }}>
         <span style={{ width: 7, height: 7, borderRadius: 999, background: dot, flexShrink: 0 }} />
         {toast.message}
       </div>

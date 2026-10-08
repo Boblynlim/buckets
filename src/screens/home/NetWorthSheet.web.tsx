@@ -151,13 +151,20 @@ function Curve({ totals, sel, onPick }: { totals: number[]; sel: number; onPick:
   );
 }
 
-export function NetWorthSheet({ userId, onClose }: { userId: any; onClose: () => void }) {
+export function NetWorthSheet({ userId, onClose, startEditing = false }: { userId: any; onClose: () => void; startEditing?: boolean }) {
   const history = useQuery(api.accounts.netWorthHistory, { userId });
   const accounts = useQuery(api.accounts.list, { userId });
   const months = (history ?? []).slice(-12);
   const [sel, setSel] = useState<number | null>(null);
   const [showAll, setShowAll] = useState(false);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
+  const editRef = React.useRef<HTMLDivElement>(null);
+  // Opened from the dock's "Update balances": glide down to the balances once they're there.
+  React.useEffect(() => {
+    if (!startEditing || !accounts) return;
+    const t = window.setTimeout(() => editRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 450);
+    return () => window.clearTimeout(t);
+  }, [startEditing, !!accounts]);
   const i = sel ?? months.length - 1;
   const cur = months[i];
   const prev = i > 0 ? months[i - 1] : undefined;
@@ -200,7 +207,7 @@ export function NetWorthSheet({ userId, onClose }: { userId: any; onClose: () =>
         <div className="bk-scroll" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' as any, padding: '12px 22px calc(env(safe-area-inset-bottom, 0px) + 32px)', display: 'flex', flexDirection: 'column', gap: 22 }}>
           {cur && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <span style={{ display: 'flex', alignItems: 'baseline', fontSize: 52, fontWeight: 600, letterSpacing: '-0.045em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+              <span style={{ display: 'flex', alignItems: 'baseline', fontSize: 52, fontWeight: 500, letterSpacing: '-0.045em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
                 <span style={{ fontSize: '0.62em', fontWeight: 500, color: COLORS.muted, marginRight: 2, transform: 'translateY(-0.32em)' }}>$</span>
                 <Odometer value={cur.total} />
               </span>
@@ -259,7 +266,7 @@ export function NetWorthSheet({ userId, onClose }: { userId: any; onClose: () =>
           )}
 
           {accounts && (editing ? (
-            <div className="nw-rise" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div ref={editRef} className="nw-rise" style={{ display: 'flex', flexDirection: 'column', gap: 4, scrollMarginTop: 12 }}>
               <span style={{ fontSize: 13, color: COLORS.muted }}>Change a balance, or tap a name to edit the account</span>
               <Balances userId={userId} month={currentMonth()} accounts={accounts} onNext={() => setEditing(false)} inSheet />
             </div>

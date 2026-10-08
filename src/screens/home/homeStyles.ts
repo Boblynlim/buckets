@@ -1,3 +1,4 @@
+import React from 'react';
 import { CUP_IMAGES, CupIcon } from '../../constants/bucketIcons';
 
 // Each cup's pottery photo, by cup name (matches the October 2026 prototype).
@@ -35,12 +36,17 @@ export const SAFE_TOP = 'max(env(safe-area-inset-top, 0px), 44px)';
 
 export const COLORS = {
   wall: '#F3F0EA',
-  ink: '#1F1B17',
+  ink: '#2B1D15', // espresso: text, numbers, the logo
+  espresso: '#2B1D15', // the same espresso, for dark fills: buttons, the dock
   muted: '#75695F',
-  hairline: '#E4DFD6',
+  hairline: '#E4DFD6', // dividers between rows
+  line: '#D9D2C6', // outlines: chips, inputs, empty rings
+  faint: '#A89E92', // placeholders, empty values, version text
+  sand: '#EEEAE3', // soft fill: icon buttons, quiet pills
   green: '#4E7D6D',
   rust: '#A0563F',
-  sheet: '#FFFFFF',
+  sheet: '#FFFFFF', // cards, rows and pop-up sheets
+  scrim: 'rgba(31,27,23,0.2)',
 };
 
 // Injected once. Motion follows the bobland rules: deceleration only, no
@@ -49,6 +55,9 @@ export const HOME_CSS = `
 .bk-root { font-family: 'Schibsted Grotesk', system-ui, sans-serif; color: ${COLORS.ink}; background: ${COLORS.wall}; }
 .bk-root button { font: inherit; color: inherit; }
 .bk-scroll::-webkit-scrollbar { display: none; }
+/* Nothing in a scrolling column gets squashed when the content runs long. */
+.bk-scroll > *, .bk-sheet > * { flex-shrink: 0; }
+.bk-row, .bk-chip, .bk-cup, .bk-month-pill { flex-shrink: 0; }
 .bk-plank { height: 9px; margin: 0 -4px; border-radius: 2px;
   background: linear-gradient(#7B4C2D 0 2px, #5C361E 2px 100%);
   box-shadow: 0 12px 16px -10px rgba(45,28,16,.4), 0 1px 2px rgba(45,28,16,.2); }
@@ -62,26 +71,19 @@ export const HOME_CSS = `
 .bk-cup img.ghost { filter: grayscale(1); opacity: .18; }
 .bk-cup img.glaze { transition: clip-path 1.4s cubic-bezier(0.16,0.9,0.4,1); }
 .bk-chip { appearance: none; border: 0; cursor: pointer; background: transparent; font-size: 13px; height: 34px; padding: 0 12px;
-  border-radius: 999px; box-shadow: inset 0 0 0 1px #D9D2C6; transition: background .3s ease, color .3s ease; }
-.bk-chip:hover { background: ${COLORS.ink}; color: ${COLORS.wall}; }
-.bk-root .bk-btn, .bk-btn { appearance: none; border: 0; cursor: pointer; background: ${COLORS.ink}; color: ${COLORS.wall}; font-size: 16px;
-  font-weight: 500; height: 56px; border-radius: 999px; width: 100%; transition: background .3s ease; }
-.bk-root .bk-btn:hover { background: #000; }
+  border-radius: 999px; box-shadow: inset 0 0 0 1px ${COLORS.line}; transition: background .3s ease, color .3s ease; }
+.bk-chip:hover { background: ${COLORS.espresso}; color: ${COLORS.wall}; }
+.bk-root .bk-btn, .bk-btn { appearance: none; border: 0; cursor: pointer; background: ${COLORS.espresso}; color: ${COLORS.wall}; font-size: 16px;
+  font-weight: 500; height: 56px; flex-shrink: 0; border-radius: 999px; width: 100%; transition: background .3s ease; }
+.bk-root .bk-btn:hover { background: #1E140E; }
 .bk-btn:disabled { opacity: .4; cursor: default; }
-.bk-nav { position: fixed; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); z-index: 1000;
-  display: flex; justify-content: space-between; align-items: center; max-width: 440px; margin: 0 auto; padding: 0 20px; box-sizing: border-box; pointer-events: none; }
-.bk-nav > * { pointer-events: auto; }
-.bk-nav-pill { display: flex; gap: 4px; padding: 6px; border-radius: 999px; background: rgba(31,27,23,0.82);
-  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 8px 24px rgba(31,27,23,0.18); }
-.bk-nav button { appearance: none; border: 0; cursor: pointer; display: flex; align-items: center; justify-content: center; color: #F3F0EA; }
-.bk-nav-pill button { width: 44px; height: 44px; border-radius: 999px; background: transparent; opacity: .6; transition: opacity .3s ease, background .3s ease; }
-.bk-nav-pill button.on { opacity: 1; background: rgba(243,240,234,0.14); }
-.bk-nav-add { width: 56px; height: 56px; border-radius: 999px; background: rgba(31,27,23,0.82);
-  backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: 0 8px 24px rgba(31,27,23,0.18); }
+/* The bottom bar lives in src/components/Dock.web.tsx. */
 .bk-month-pill { appearance: none; border: 0; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px;
   margin-left: -2px; border-radius: 999px; background: #FFFFFF; color: ${COLORS.ink}; font: inherit; font-size: 14px;
   box-shadow: inset 0 0 0 1px ${COLORS.hairline}; transition: box-shadow .3s ease; }
-.bk-month-pill:hover { box-shadow: inset 0 0 0 1px #CFC6B8; }
+.bk-month-pill:hover { box-shadow: inset 0 0 0 1px ${COLORS.line}; }
+.bk-root .bk-mark { appearance: none; border: 0; background: transparent; cursor: pointer; align-self: center; margin-top: 12px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px; color: ${COLORS.faint}; font-size: 12px; padding: 12px; letter-spacing: .02em; }
 .bk-month-pill svg { color: ${COLORS.muted}; }
 .bk-month-strip { position: relative; display: flex; gap: 2px; height: 36px; padding: 0; margin: 0 -24px; padding: 0 24px; overflow-x: auto;
   scrollbar-width: none; scroll-snap-type: x proximity; -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
@@ -90,7 +92,7 @@ export const HOME_CSS = `
   transition: color .45s cubic-bezier(0.16,0.9,0.4,1); }
 .bk-month-strip button.on { color: ${COLORS.wall}; }
 .bk-month-strip button .yr { font-size: 10px; margin-left: 3px; opacity: .6; }
-.bk-month-ind { position: absolute; top: 0; height: 36px; border-radius: 999px; background: ${COLORS.ink}; z-index: 0;
+.bk-month-ind { position: absolute; top: 0; height: 36px; border-radius: 999px; background: ${COLORS.espresso}; z-index: 0;
   transition: left .5s cubic-bezier(0.16,0.9,0.4,1), width .5s cubic-bezier(0.16,0.9,0.4,1); }
 @keyframes bkFadeIn { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: none; } }
 .bk-fade-in { animation: bkFadeIn .45s cubic-bezier(0.16,0.9,0.4,1) backwards; }
@@ -119,6 +121,17 @@ export function useHomeStyles() {
   const style = document.createElement('style');
   style.textContent = HOME_CSS;
   document.head.appendChild(style);
+}
+
+/** Closes a sheet on Escape, like tapping the backdrop. */
+export function useEscape(onClose: () => void) {
+  const ref = React.useRef(onClose);
+  ref.current = onClose;
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') ref.current(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 }
 
 export function currentMonth(d = new Date()): string {

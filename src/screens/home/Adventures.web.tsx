@@ -11,7 +11,7 @@ const whenLabel = (when: string | null) =>
 
 const INPUT: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', fontSize: 15, padding: '8px 0', outline: 'none',
-  fontFamily: 'inherit', color: COLORS.ink, boxShadow: 'inset 0 -1px 0 #D9D2C6', width: '100%',
+  fontFamily: 'inherit', color: COLORS.ink, boxShadow: `inset 0 -1px 0 ${COLORS.line}`, width: '100%',
 };
 const LINK: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', padding: 0, minHeight: 36 };
 
@@ -49,7 +49,7 @@ function Editor({ initial, onSave, onCancel, onRemove, onDone }: {
         <input type="month" aria-label="When" value={when} onChange={(e) => setWhen(e.target.value)} style={{ ...INPUT, flex: 1, color: when ? COLORS.ink : COLORS.muted }} />
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 18, paddingTop: 4 }}>
-        <button type="button" className="bk-chip" disabled={!ok} style={{ background: COLORS.ink, color: '#F3F0EA', opacity: ok ? 1 : 0.4 }}
+        <button type="button" className="bk-chip" disabled={!ok} style={{ background: COLORS.espresso, color: '#F3F0EA', opacity: ok ? 1 : 0.4 }}
           onClick={() => ok && onSave({ name: name.trim(), cost: n, when: when || undefined })}>Save</button>
         <button type="button" style={{ ...LINK, fontSize: 14, color: COLORS.muted }} onClick={onCancel}>Cancel</button>
         {onDone && <button type="button" style={{ ...LINK, fontSize: 14, color: COLORS.green, marginLeft: 'auto' }} onClick={onDone}>Went on it</button>}
@@ -73,7 +73,7 @@ export function AdventuresList({ userId }: { userId: any }) {
     <div style={{ display: 'flex', flexDirection: 'column' }}>
       <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 4 }}>Saving for, in order</span>
       {data.items.map((a: any, i: number) => (
-        <div key={a.id} style={{ boxShadow: 'inset 0 -1px 0 #EEEAE3' }}>
+        <div key={a.id} style={{ boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
           {editing === a.id ? (
             <Editor initial={a}
               onSave={async (v) => { await update({ id: a.id, ...v }); setEditing(null); }}

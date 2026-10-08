@@ -1,5 +1,5 @@
 /**
- * Buckets - Web Version
+ * Moru (formerly Buckets) - Web Version
  */
 
 import React, { useState, useEffect, useMemo } from 'react';
@@ -9,15 +9,12 @@ import { PotteryLoader } from './src/components/PotteryLoader';
 import { ConvexProvider, useAction } from 'convex/react';
 import { api } from './convex/_generated/api';
 import {
-  PaintBucket,
-  Settings as SettingsIcon,
-  Plus,
 } from 'lucide-react';
 import { convexClient } from './src/lib/convex';
 import { AuthProvider, useAuth } from './src/lib/AuthContext';
 import { Home } from './src/screens/home/Home.web';
 import { Checkin } from './src/screens/checkin/Checkin.web';
-import { useHomeStyles } from './src/screens/home/homeStyles';
+import { COLORS, SAFE_TOP, useHomeStyles } from './src/screens/home/homeStyles';
 import { playClink, playTap, playUnlock } from './src/utils/cupClink';
 import { AddBucket } from './src/screens/AddBucket';
 import { AddExpense } from './src/screens/AddExpense';
@@ -27,6 +24,9 @@ import { EditBucket } from './src/screens/EditBucket';
 import { EditExpense } from './src/screens/EditExpense';
 import { ReviewQueue } from './src/screens/ReviewQueue.web';
 import { Drawer } from './src/components/Drawer';
+import { IslandNote } from './src/components/IslandNote.web';
+import { MoruLogo, MoruSplash } from './src/components/MoruLogo';
+import { Dock } from './src/components/Dock.web';
 import { theme } from './src/theme';
 import type { Bucket, Expense } from './src/types';
 
@@ -225,17 +225,17 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   };
   const statusText = checkingSetup ? '' :
     isLockScreen ? 'Enter your passcode' :
-    authStep === 'email' ? (isSetup ? 'Create your account' : 'Welcome back') :
-    isSetup && !isConfirming ? 'Set a 6-digit passcode' :
-    isSetup && isConfirming ? 'Once more to confirm' :
+    authStep === 'email' ? (isSetup ? 'Create your account' : 'Look after your money, one cup at a time') :
+    isSetup && !isConfirming ? 'Choose your own 6-digit code' :
+    isSetup && isConfirming ? 'Tap the same code again' :
     'Enter your passcode';
   const linkStyle: React.CSSProperties = {
     appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer',
-    color: '#75695F', fontSize: 14, minHeight: 44, fontFamily: 'inherit',
+    color: COLORS.muted, fontSize: 14, minHeight: 44, fontFamily: 'inherit',
   };
   const inputStyle: React.CSSProperties = {
-    appearance: 'none', border: 0, background: 'transparent', width: '100%', fontSize: 17,
-    padding: '12px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit', color: '#1F1B17',
+    appearance: 'none', border: 0, background: 'transparent', width: '100%', boxSizing: 'border-box', height: 54, fontSize: 16,
+    padding: '0 18px', outline: 'none', fontFamily: 'inherit', color: COLORS.ink, display: 'block',
   };
 
   // One wooden cubby carries through both steps. On the email step it's a
@@ -257,9 +257,9 @@ function AuthGate({ children }: { children: React.ReactNode }) {
               </button>
             ) : <span key={i} />
           ) : (
-            <button key={i} type="button" className="bk-key" aria-label={d} disabled={!keypad} tabIndex={keypad ? 0 : -1}
-              onClick={() => { playClink(d); handleDigit(d); }}
-              style={{ appearance: 'none', border: 0, background: 'transparent', cursor: keypad ? 'pointer' : 'default', padding: '10% 10% 4%', position: 'relative', top: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transition: 'top .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
+            <button key={i} type="button" className="bk-key" aria-label={keypad ? d : undefined} aria-hidden={keypad ? undefined : true} tabIndex={keypad ? 0 : -1}
+              onClick={() => { playClink(d); if (keypad) handleDigit(d); }}
+              style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: '10% 10% 4%', position: 'relative', top: 0, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', transition: 'top .5s cubic-bezier(0.16,0.9,0.4,1)' }}>
               <span style={{ position: 'absolute', top: '8%', left: '10%', fontSize: 12, fontWeight: 500, color: 'rgba(255,255,255,0.8)', opacity: keypad ? 1 : 0, transition: `opacity .6s ease ${keypad ? 0.25 + i * 0.03 : 0}s` }}>{d}</span>
               <img className="bk-set" src={keyCup(d)} alt=""
                 style={{ width: '82%', height: '78%', objectFit: 'contain', objectPosition: 'bottom', filter: 'drop-shadow(0 3px 3px rgba(40,22,10,0.35))', animationDelay: `${0.25 + i * 0.07}s` }} />
@@ -275,8 +275,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
       {Array.from({ length: 6 }, (_, i) => (
         <div key={i} style={{
           width: 10, height: 10, borderRadius: 999,
-          background: i < currentCode.length ? (error ? '#A0563F' : '#1F1B17') : 'transparent',
-          boxShadow: `inset 0 0 0 1.5px ${error ? '#A0563F' : i < currentCode.length ? '#1F1B17' : '#CFC6B8'}`,
+          background: i < currentCode.length ? (error ? '#A0563F' : COLORS.ink) : 'transparent',
+          boxShadow: `inset 0 0 0 1.5px ${error ? '#A0563F' : i < currentCode.length ? COLORS.ink : '#CFC6B8'}`,
           transition: 'background .25s ease, box-shadow .25s ease',
         }} />
       ))}
@@ -284,36 +284,42 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   );
 
   // A little paper card under the cubby, like the label on a shelf.
+  // Name and email: one white card, like the Settings groups. Rows split by a hairline.
   const nameCard = (
-    <div className="bk-card" style={{ alignSelf: 'center', width: '100%', maxWidth: 300, background: '#FBF8F1', borderRadius: 4, padding: '18px 20px 20px', boxShadow: '0 1px 0 #E2DACB, 0 10px 24px rgba(45,28,16,0.10)', transform: 'rotate(-0.6deg)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <span style={{ fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#9A8E82' }}>{isSetup ? 'New shelf for' : 'This shelf belongs to'}</span>
+    <div className="bk-card" style={{ alignSelf: 'center', width: '100%', background: COLORS.sheet, borderRadius: 18, boxShadow: `inset 0 0 0 1px ${COLORS.hairline}`, overflow: 'hidden' }}>
       {isSetup && (
-        <input className="auth-input" type="text" placeholder="Your name" aria-label="Your name" value={name}
-          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
+        <input className="auth-input" type="text" placeholder="Name" aria-label="Your name" value={name} autoComplete="given-name"
+          onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()}
+          style={{ ...inputStyle, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }} />
       )}
-      <input className="auth-input" type="email" placeholder="you@email.com" aria-label="Email" value={email} autoComplete="email"
+      <input className="auth-input" type="email" placeholder="Email" aria-label="Email" value={email} autoComplete="email"
         onChange={(e) => setEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleEmailSubmit()} style={inputStyle} />
     </div>
   );
 
   return (
-    <div className="bk-root" style={{ position: 'fixed', inset: 0, overflowY: 'auto' }}>
+    <div className="bk-root bk-scroll" style={{ position: 'fixed', inset: 0, overflowY: 'auto', scrollbarWidth: 'none' as any }}>
       <style>{`.bk-key:active { top: 3px; transition-duration: .15s; }
-        .auth-input::placeholder { color: #B5ACA0; }
+        .auth-input::placeholder { color: #A89E92; }
         @keyframes bkSet { from { opacity: 0; transform: translateY(-14px); filter: blur(4px); } to { opacity: 1; transform: none; filter: none; } }
         .bk-set { animation: bkSet .9s cubic-bezier(0.16,0.9,0.4,1) backwards; }
-        @keyframes bkCard { from { opacity: 0; transform: translateY(10px) rotate(-0.6deg); filter: blur(6px); } to { opacity: 1; transform: rotate(-0.6deg); filter: none; } }
+        @keyframes bkCard { from { opacity: 0; transform: translateY(8px); filter: blur(6px); } to { opacity: 1; transform: none; filter: none; } }
         .bk-card { animation: bkCard .8s cubic-bezier(0.16,0.9,0.4,1) .9s backwards; }
         .bk-fade { animation: bkFade .6s ease .3s backwards; }
         @media (prefers-reduced-motion: reduce) { .bk-set, .bk-card, .bk-fade { animation: none; } }`}</style>
-      <div style={{ maxWidth: 340, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: '64px 24px 40px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 28 }}>
-        <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={{ fontSize: 40, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>Buckets</span>
-          <span style={{ fontSize: 15, color: '#75695F', minHeight: 20 }}>{statusText}</span>
-          {error !== '' && <span key={error} className="bk-step" style={{ fontSize: 14, color: '#A0563F' }}>{error}</span>}
+      <div style={{ maxWidth: 340, minHeight: '100%', margin: '0 auto', boxSizing: 'border-box', padding: `calc(${SAFE_TOP} + 12px) 24px calc(env(safe-area-inset-bottom, 0px) + 28px)`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 26 }}>
+        <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, textAlign: 'center' }}>
+          <MoruLogo width={124} />
+          <span key={statusText} className="bk-fade-in" style={{ fontSize: 15, color: COLORS.muted, minHeight: 20 }}>{statusText}</span>
+          {error !== '' && <span key={error} className="bk-step" style={{ fontSize: 14, color: COLORS.rust }}>{error}</span>}
         </div>
 
         {keypad && dots}
+        {keypad && isSetup && !isLockScreen && (
+          <span key={isConfirming ? 'c' : 's'} className="bk-fade-in" style={{ fontSize: 13, color: COLORS.faint, textAlign: 'center', marginTop: -14 }}>
+            {isConfirming ? 'Just to be sure you remember it' : 'Make one up. You\u2019ll use it to open Moru'}
+          </span>
+        )}
         {cubby}
 
         {!keypad && (
@@ -415,28 +421,23 @@ function App() {
 
   return (
     <ConvexProvider client={convexClient}>
+    <MoruSplash />
     <AuthProvider>
     <AuthGate>
       <View style={styles.container}>
         <View style={styles.content}>{renderScreen()}</View>
 
+        {/* iPhones with a Dynamic Island: tap the island to note a spend. */}
+        {!showCheckin && !showAddExpense && <IslandNote />}
+
         {/* Bottom bar: Home, Settings, and + to log something by hand. */}
         {!showCheckin && (
-          <nav className="bk-nav" aria-label="Main">
-            <div className="bk-nav-pill">
-              <button type="button" aria-label="Home" aria-current={currentScreen === 'buckets' ? 'page' : undefined}
-                className={currentScreen === 'buckets' ? 'on' : ''} onClick={() => setCurrentScreen('buckets')}>
-                <PaintBucket size={20} strokeWidth={1.6} />
-              </button>
-              <button type="button" aria-label="Settings" aria-current={currentScreen !== 'buckets' ? 'page' : undefined}
-                className={currentScreen !== 'buckets' ? 'on' : ''} onClick={() => setCurrentScreen('settings')}>
-                <SettingsIcon size={20} strokeWidth={1.6} />
-              </button>
-            </div>
-            <button type="button" className="bk-nav-add" aria-label="Add a spend" onClick={() => setShowAddExpense(true)}>
-              <Plus size={22} strokeWidth={1.6} />
-            </button>
-          </nav>
+          <Dock
+            screen={currentScreen === 'buckets' ? 'home' : 'settings'}
+            onScreen={(sc) => setCurrentScreen(sc === 'home' ? 'buckets' : 'settings')}
+            onAdd={() => setShowAddExpense(true)}
+            onCheckin={() => setShowCheckin(true)}
+          />
         )}
 
         {/* Add Bucket Modal */}

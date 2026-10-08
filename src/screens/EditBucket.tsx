@@ -16,7 +16,7 @@ const EASE = 'cubic-bezier(0.16,0.9,0.4,1)';
 const LABEL: React.CSSProperties = { fontSize: 13, color: COLORS.muted };
 const INPUT: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit',
-  color: COLORS.ink, fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', width: '100%', boxSizing: 'border-box',
+  color: COLORS.ink, fontSize: 17, padding: '8px 0', boxShadow: `inset 0 -1px 0 ${COLORS.line}`, width: '100%', boxSizing: 'border-box',
 };
 const LINK: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: COLORS.muted, fontSize: 14,
@@ -24,11 +24,11 @@ const LINK: React.CSSProperties = {
 };
 
 const FORM_CSS = `
-.bk-cupform input::placeholder { color: #C9C0B4; }
+.bk-cupform input::placeholder { color: #A89E92; }
 .bk-cupform input:focus { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
 .bk-cupform .bk-money input:focus { box-shadow: none !important; }
 .bk-cupform .bk-money:focus-within { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
-.bk-chip.on { background: ${COLORS.ink}; color: ${COLORS.wall}; box-shadow: none; }
+.bk-chip.on { background: ${COLORS.espresso}; color: ${COLORS.wall}; box-shadow: none; }
 .bk-more { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .6s ${EASE}, opacity .4s ease; }
 .bk-more.open { grid-template-rows: 1fr; opacity: 1; }
 .bk-more > div { overflow: hidden; }
@@ -82,8 +82,8 @@ export function MoneyInput({ value, onChange, label, suffix, prefix = '$', size 
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <span style={LABEL}>{label}</span>
-      <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
-        {prefix && <span style={{ fontSize: size * 0.6, fontWeight: 500, color: '#A89E92', letterSpacing: '-0.02em' }}>{prefix}</span>}
+      <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: `inset 0 -1px 0 ${COLORS.line}` }}>
+        {prefix && <span style={{ fontSize: size * 0.6, fontWeight: 500, color: COLORS.faint, letterSpacing: '-0.02em' }}>{prefix}</span>}
         <input inputMode="decimal" value={prefix ? withCommas(value) : value} placeholder="0" autoFocus={autoFocus}
           onChange={(e) => onChange(e.target.value.replace(/[^0-9.]/g, ''))}
           style={{ ...INPUT, boxShadow: 'none', fontSize: size, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1.1, padding: '4px 0', flex: 1, minWidth: 0 }} />
@@ -292,7 +292,7 @@ export function CupForm({
               </span>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => setConfirmRetire(false)}
-                  style={{ ...LINK, flex: 1, height: 48, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', color: COLORS.ink, fontSize: 15 }}>
+                  style={{ ...LINK, flex: 1, height: 48, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.line}`, color: COLORS.ink, fontSize: 15 }}>
                   Keep it
                 </button>
                 <button type="button" disabled={busy} onClick={retire}

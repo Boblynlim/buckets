@@ -1,6 +1,6 @@
 {
-  "name": "Buckets - Personal Budgeting",
-  "short_name": "Buckets",
+  "name": "Moru",
+  "short_name": "Moru",
   "description": "A personal budgeting app to track expenses and manage your finances",
   "start_url": "/",
   "display": "standalone",

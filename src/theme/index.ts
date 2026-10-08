@@ -5,7 +5,7 @@ export const theme = {
   colors: {
     // Oct 2026 replan: flat warm wall, ink, one quiet green. See
     // src/screens/home/homeStyles.ts for the design rules.
-    primary: '#1F1B17',
+    primary: '#2B1D15',
     primaryLight: '#3A332C',
     primaryDark: '#000000',
 
@@ -13,7 +13,7 @@ export const theme = {
     backgroundLight: '#F3F0EA',
     cardBackground: '#FFFFFF',
 
-    text: '#1F1B17',
+    text: '#2B1D15',
     textSecondary: '#75695F',
     textTertiary: '#A89E92',
     textOnPrimary: '#F3F0EA',
@@ -39,8 +39,8 @@ export const theme = {
     gray500: '#75695F',
     gray600: '#5E5448',
     gray700: '#4A4038',
-    gray800: '#1F1B17',
-    gray900: '#1F1B17',
+    gray800: '#2B1D15',
+    gray900: '#2B1D15',
 
     purple100: '#F3F0EA',
 

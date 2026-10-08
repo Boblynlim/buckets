@@ -16,7 +16,7 @@ interface IncomeManagementProps {
 const LABEL: React.CSSProperties = { fontSize: 13, color: COLORS.muted };
 const INPUT: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', outline: 'none', fontFamily: 'inherit', color: COLORS.ink,
-  fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', width: '100%', boxSizing: 'border-box',
+  fontSize: 17, padding: '8px 0', boxShadow: `inset 0 -1px 0 ${COLORS.line}`, width: '100%', boxSizing: 'border-box',
 };
 const LINK: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', color: COLORS.muted, fontSize: 14,
@@ -27,7 +27,7 @@ const ICON_BTN: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0,
 };
 const CSS = `
-.bk-income input::placeholder { color: #C9C0B4; }
+.bk-income input::placeholder { color: #A89E92; }
 .bk-income input:focus { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
 .bk-income .bk-money input:focus { box-shadow: none !important; }
 .bk-income .bk-money:focus-within { box-shadow: inset 0 -1.5px 0 ${COLORS.ink} !important; }
@@ -173,8 +173,8 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({ visible = tr
     <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '20px 0 8px' }}>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={LABEL}>Amount</span>
-        <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
-          <span style={{ fontSize: 26, fontWeight: 500, color: '#A89E92' }}>$</span>
+        <span className="bk-money" style={{ display: 'flex', alignItems: 'baseline', gap: 4, boxShadow: `inset 0 -1px 0 ${COLORS.line}` }}>
+          <span style={{ fontSize: 26, fontWeight: 500, color: COLORS.faint }}>$</span>
           <input inputMode="decimal" autoFocus value={amount} placeholder="0" onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
             onKeyDown={(e) => e.key === 'Enter' && submit()}
             style={{ ...INPUT, boxShadow: 'none', fontSize: 44, fontWeight: 600, letterSpacing: '-0.04em', padding: '2px 0' }} />
@@ -249,7 +249,7 @@ export const IncomeManagement: React.FC<IncomeManagementProps> = ({ visible = tr
                   aria-label={`${e.note || 'Income'} arrived`} style={{ ...ICON_BTN, marginLeft: -10 }}>
                   <span className="bk-tick" style={{
                     width: 22, height: 22, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    background: e.isConfirmed ? COLORS.green : 'transparent', boxShadow: e.isConfirmed ? 'none' : 'inset 0 0 0 1.5px #D9D2C6',
+                    background: e.isConfirmed ? COLORS.green : 'transparent', boxShadow: e.isConfirmed ? 'none' : `inset 0 0 0 1.5px ${COLORS.line}`,
                   }}>
                     {e.isConfirmed && (
                       <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="#FFFFFF" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.2l2.4 2.3 4.6-5" /></svg>

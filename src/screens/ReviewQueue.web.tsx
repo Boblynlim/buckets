@@ -17,7 +17,7 @@ const H1: React.CSSProperties = { fontSize: 30, fontWeight: 600, letterSpacing: 
 const PLAIN_BTN: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, textAlign: 'left' };
 const INPUT: React.CSSProperties = {
   appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0',
-  boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit', color: COLORS.ink, width: '100%',
+  boxShadow: `inset 0 -1px 0 ${COLORS.line}`, outline: 'none', fontFamily: 'inherit', color: COLORS.ink, width: '100%',
 };
 
 function whenLabel(row: any): string {
@@ -320,7 +320,7 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <span style={{ fontSize: 13, color: COLORS.muted }}>{whenLabel(row)}</span>
         {row.needsAttention ? (
-          <label style={{ display: 'flex', alignItems: 'baseline', gap: 2, boxShadow: 'inset 0 -1px 0 #D9D2C6' }}>
+          <label style={{ display: 'flex', alignItems: 'baseline', gap: 2, boxShadow: `inset 0 -1px 0 ${COLORS.line}` }}>
             <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>$</span>
             <input value={amountText} onChange={(e) => setAmountText(e.target.value)} inputMode="decimal" aria-label="Amount"
               style={{ ...INPUT, boxShadow: 'none', fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em', padding: '2px 0' }} />
@@ -383,7 +383,7 @@ function QueueCard({ row, cups, open, leaving, onOpen, onFile, onNotSpending, on
               {c.id === 'invest' ? (
                 <InvestIcon />
               ) : c.id === 'none' ? (
-                <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                 </span>
               ) : c.id === 'in' ? (

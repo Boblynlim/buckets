@@ -11,8 +11,8 @@ import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, moneyExact, useHomeStyle
 
 export type SheetCup = { id: string; name: string; left: number; full: number };
 
-const FAINT = '#A89E92';
-const UNDERLINE = 'inset 0 -1px 0 #D9D2C6';
+const FAINT = COLORS.faint;
+const UNDERLINE = `inset 0 -1px 0 ${COLORS.line}`;
 const EASE = 'cubic-bezier(0.16,0.9,0.4,1)';
 
 export function dateLabel(d: Date): string {
@@ -110,7 +110,7 @@ export function ExpenseSheet({
 
   return (
     <>
-      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(31,27,23,0.2)', zIndex: 2000 }} />
+      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: COLORS.scrim, zIndex: 2000 }} />
       <div
         className="bk-sheet bk-root"
         role="dialog"
@@ -131,7 +131,7 @@ export function ExpenseSheet({
         <style>{'.bk-amt::placeholder { color: #A89E92; opacity: 1; }'}</style>
         <div className="bk-scroll" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' as any, padding: '12px 24px 24px', display: 'flex', flexDirection: 'column', gap: 28 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <label style={{ display: 'flex', alignItems: 'baseline', fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1.05 }}>
+            <label style={{ display: 'flex', alignItems: 'baseline', fontSize: 56, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1.05 }}>
               <span style={{ color: amount ? COLORS.ink : FAINT, transition: 'color .3s ease' }}>$</span>
               <input
                 ref={amountRef}
@@ -211,7 +211,7 @@ export function ExpenseSheet({
                       <span style={{ fontSize: 11, color: low ? COLORS.rust : FAINT, opacity: dim ? 0.6 : 1, transition: 'opacity .4s ease' }}>
                         {money(c.left)}
                       </span>
-                      <span aria-hidden style={{ width: 4, height: 4, borderRadius: 999, marginTop: 3, background: on ? COLORS.ink : 'transparent', transition: 'background .3s ease' }} />
+                      <span aria-hidden style={{ width: 4, height: 4, borderRadius: 999, marginTop: 3, background: on ? COLORS.espresso : 'transparent', transition: 'background .3s ease' }} />
                     </button>
                   );
                 })}

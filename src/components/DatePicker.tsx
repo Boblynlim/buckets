@@ -62,7 +62,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ visible, selectedDate, o
 
   return (
     <>
-      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(31,27,23,0.2)', zIndex: 4000 }} />
+      <div className="bk-scrim" onClick={onClose} style={{ position: 'fixed', inset: 0, background: COLORS.scrim, zIndex: 4000 }} />
       <div
         className="bk-sheet bk-root"
         role="dialog"
@@ -87,7 +87,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ visible, selectedDate, o
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', rowGap: 2 }}>
           {WEEKDAYS.map((d, i) => (
-            <span key={i} style={{ fontSize: 12, color: '#A89E92', textAlign: 'center', paddingBottom: 6 }}>{d}</span>
+            <span key={i} style={{ fontSize: 12, color: COLORS.faint, textAlign: 'center', paddingBottom: 6 }}>{d}</span>
           ))}
           {Array.from({ length: lead }).map((_, i) => <span key={`e${i}`} />)}
           {Array.from({ length: days }).map((_, i) => {
@@ -104,7 +104,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({ visible, selectedDate, o
                 style={{
                   appearance: 'none', border: 0, cursor: 'pointer', fontFamily: 'inherit', justifySelf: 'center',
                   width: 44, height: 44, borderRadius: 999, fontSize: 15, fontVariantNumeric: 'tabular-nums',
-                  background: on ? COLORS.ink : 'transparent', color: on ? COLORS.wall : COLORS.ink,
+                  background: on ? COLORS.espresso : 'transparent', color: on ? COLORS.wall : COLORS.ink,
                   fontWeight: isToday || on ? 600 : 400, position: 'relative', transition: 'background .3s ease, color .3s ease',
                 }}
               >

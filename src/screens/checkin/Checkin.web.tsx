@@ -65,7 +65,7 @@ export function Checkin({ onClose }: { onClose: () => void }) {
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, paddingTop: `calc(${SAFE_TOP} + 16px)`, paddingBottom: 8, background: COLORS.wall, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
         <div style={{ width: 'min(392px, calc(100% - 48px))', display: 'flex', gap: 6, alignItems: 'center' }}>
           {Array.from({ length: STEPS }).map((_, i) => (
-            <div key={i} style={{ flexGrow: 1, height: 2, borderRadius: 2, background: i <= step ? COLORS.ink : COLORS.hairline, transition: 'background .6s ease' }} />
+            <div key={i} style={{ flexGrow: 1, height: 2, borderRadius: 2, background: i <= step ? COLORS.espresso : COLORS.hairline, transition: 'background .6s ease' }} />
           ))}
           <button type="button" onClick={onClose} aria-label="Close check-in"
             style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 36, height: 36, marginLeft: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -78,7 +78,7 @@ export function Checkin({ onClose }: { onClose: () => void }) {
         <div className="bk-step" style={{ ...INNER, justifyContent: 'flex-end' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <span style={LABEL}>{monthLabel(month)}</span>
-            <span style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>{money(pay)}</span>
+            <span style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1 }}>{money(pay)}</span>
             <span style={{ fontSize: 22, fontWeight: 500, letterSpacing: '-0.02em' }}>Payday. Five minutes?</span>
             <span style={{ fontSize: 15, color: COLORS.muted, lineHeight: 1.5 }}>
               See how {monthLabel(prev)} went, update a few balances, file what I couldn't. Then your cups fill.
@@ -128,7 +128,7 @@ function Recap({ recap, prevLabel, onNext }: { recap: any[]; prevLabel: string; 
                 {sh.cups.map((c: any) => (
                   <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                     <span style={{ fontSize: 11, color: COLORS.muted, whiteSpace: 'nowrap' }}>{c.name}</span>
-                    <span style={{ fontSize: 13, fontWeight: 500, color: c.spent > 0 ? COLORS.ink : '#B5ACA0' }}>{c.spent > 0 ? money(c.spent) : '–'}</span>
+                    <span style={{ fontSize: 13, fontWeight: 500, color: c.spent > 0 ? COLORS.ink : COLORS.faint }}>{c.spent > 0 ? money(c.spent) : '–'}</span>
                   </div>
                 ))}
               </div>
@@ -301,17 +301,17 @@ function AccountForm({ userId, account, onDone }: { userId: any; account?: any; 
     onDone();
   };
   return (
-    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 18, background: '#FFFFFF', margin: account ? '8px 0' : '-12px 0 0' }}>
+    <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 20, borderRadius: 18, background: COLORS.sheet, margin: account ? '8px 0' : '-12px 0 0' }}>
       <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         <span style={{ fontSize: 13, color: COLORS.muted }}>Name</span>
         <input autoFocus={!account} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Trust Bank"
-          style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
+          style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: `inset 0 -1px 0 ${COLORS.line}`, outline: 'none', fontFamily: 'inherit' }} />
       </label>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         <div style={{ display: 'flex', gap: 6 }}>
           {(['now', 'soon', 'later'] as const).map((g) => (
             <button key={g} type="button" className="bk-chip" onClick={() => setGroup(g)}
-              style={group === g ? { background: COLORS.ink, color: '#FFFFFF' } : undefined}>{GROUP_LABEL[g]}</button>
+              style={group === g ? { background: COLORS.espresso, color: COLORS.wall } : undefined}>{GROUP_LABEL[g]}</button>
           ))}
         </div>
         <span style={{ fontSize: 13, color: COLORS.muted }}>{GROUP_HINT[group]}</span>
@@ -456,17 +456,17 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
       {row && (
         <div key={row._id} className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{
-            display: 'flex', flexDirection: 'column', gap: 6, padding: 20, borderRadius: 18, background: '#FFFFFF',
+            display: 'flex', flexDirection: 'column', gap: 6, padding: 20, borderRadius: 18, background: COLORS.sheet,
             transform: fly ? `translate(${fly.x}px, ${fly.y}px) scale(0.08)` : 'none', opacity: fly ? 0 : 1, filter: fly ? 'blur(4px)' : 'none',
             transition: 'transform .7s cubic-bezier(0.55,0,0.7,0.4), opacity .7s ease, filter .7s ease',
           }}>
             <span style={{ fontSize: 13, color: COLORS.muted }}>{when}</span>
-            <span style={{ fontSize: 32, fontWeight: 600, letterSpacing: '-0.03em' }}>{moneyExact(row.amount)}</span>
+            <span style={{ fontSize: 32, fontWeight: 500, letterSpacing: '-0.03em' }}>{moneyExact(row.amount)}</span>
             <span style={{ fontSize: 13, color: COLORS.muted }}>Bank calls it {row.merchant ?? 'nothing'}</span>
             <label style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingTop: 8 }}>
               <span style={{ fontSize: 13, color: COLORS.muted }}>What was it? Optional</span>
               <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="e.g. lunch at the hawker"
-                style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: 'inset 0 -1px 0 #D9D2C6', outline: 'none', fontFamily: 'inherit' }} />
+                style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0', boxShadow: `inset 0 -1px 0 ${COLORS.line}`, outline: 'none', fontFamily: 'inherit' }} />
             </label>
           </div>
           {investing ? <InvestPicker onPick={invest} onBack={() => setInvesting(false)} /> : (
@@ -482,7 +482,7 @@ function Leftovers({ rows, cups, onDone }: { rows: any[]; cups: any[]; onDone: (
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.green} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"><path d="M7 11V3M3.5 6.5L7 3l3.5 3.5" /></svg>
                     </div>
                   ) : c.id === 'none' ? (
-                    <div style={{ width: 34, height: 34, borderRadius: 999, boxShadow: 'inset 0 0 0 1px #D9D2C6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: 34, height: 34, borderRadius: 999, boxShadow: `inset 0 0 0 1px ${COLORS.line}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={COLORS.muted} strokeWidth="1.4" strokeLinecap="round"><path d="M3 3l8 8M11 3l-8 8" /></svg>
                     </div>
                   ) : (
@@ -520,7 +520,7 @@ function Done({ summary, month, onClose }: { summary: any; month: string; onClos
     <div className="bk-step" style={INNER}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 40 }}>
         <span style={LABEL}>{monthLabel(month)} is set</span>
-        <span style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{money(spend)}</span>
+        <span style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>{money(spend)}</span>
         <span style={{ fontSize: 15, color: COLORS.muted }}>yours to spend in {monthLabel(month)}</span>
       </div>
       {summary.netWorth && (

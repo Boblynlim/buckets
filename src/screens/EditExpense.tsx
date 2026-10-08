@@ -89,7 +89,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
   const footer = isNew ? null : payingBack ? (
     <div className="bk-step" style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '16px 0 0', boxShadow: `inset 0 1px 0 ${COLORS.hairline}` }}>
       <span style={{ fontSize: 15, lineHeight: 1.45 }}>How much came back? A friend paying you back, or a refund.</span>
-      <label style={{ display: 'flex', alignItems: 'baseline', gap: 2, fontSize: 22, fontWeight: 600, boxShadow: `inset 0 -1px 0 #D9D2C6`, padding: '6px 0' }}>
+      <label style={{ display: 'flex', alignItems: 'baseline', gap: 2, fontSize: 22, fontWeight: 600, boxShadow: `inset 0 -1px 0 ${COLORS.line}`, padding: '6px 0' }}>
         <span>$</span>
         <input
           inputMode="decimal"
@@ -114,7 +114,7 @@ export const EditExpense: React.FC<EditExpenseProps> = (props) => {
       </span>
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <button type="button" onClick={applyBack} disabled={back <= 0 || deleting}
-          style={{ appearance: 'none', border: 0, cursor: 'pointer', background: COLORS.ink, color: COLORS.wall, fontFamily: 'inherit', fontSize: 15, fontWeight: 500, height: 44, padding: '0 20px', borderRadius: 999, opacity: back <= 0 || deleting ? 0.5 : 1 }}>
+          style={{ appearance: 'none', border: 0, cursor: 'pointer', background: COLORS.espresso, color: COLORS.wall, fontFamily: 'inherit', fontSize: 15, fontWeight: 500, height: 44, padding: '0 20px', borderRadius: 999, opacity: back <= 0 || deleting ? 0.5 : 1 }}>
           {deleting ? 'Saving' : full ? 'Paid back in full' : back > 0 ? `Take ${moneyExact(back)} off` : 'Take it off'}
         </button>
         <button type="button" onClick={() => setPayingBack(false)} style={linkStyle}>Cancel</button>

@@ -5,9 +5,12 @@ import { useAuth } from '../../lib/AuthContext';
 import { CupSheet } from './CupSheet.web';
 import { NextAdventure } from './Adventures.web';
 import { NetWorthSheet } from './NetWorthSheet.web';
+import { playClink } from '../../utils/cupClink';
+import { MoruLogo } from '../../components/MoruLogo';
+import { NET_WORTH_EVENT, takeNetWorthRequest } from '../../components/Dock.web';
 import { COLORS, SAFE_TOP, cupSrc, currentMonth, money, monthLabel, useHomeStyles } from './homeStyles';
 
-type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number; spent: number };
+type Cup = { id: string; name: string; left: number; full: number; carry: number; funded: number; spent: number; planned?: number; kind?: 'bill' | 'invest' };
 
 // A pottery cup coloured up to what's left; the empty part is a grey ghost.
 export function CupArt({ name, pct, size, delay = 0, filled = true }: { name: string; pct: number; size: number; delay?: number; filled?: boolean }) {
@@ -57,8 +60,8 @@ function Shelf({ name, total, cups, filled, onPick, startIndex, past }: {
         <div style={{ display: 'grid', gridTemplateColumns: cols, paddingTop: 12 }}>
           {cups.map((c) => (
             <div key={c.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-              <span style={{ fontSize: 11.5, color: '#6E6258', whiteSpace: 'nowrap' }}>{c.name}</span>
-              <span style={{ fontSize: 14, fontWeight: 500, color: past ? (c.spent > 0 ? COLORS.ink : '#B5ACA0') : c.full > 0 && pctLeft(c) < 25 ? COLORS.rust : COLORS.ink }}>
+              <span style={{ fontSize: 11.5, color: COLORS.muted, whiteSpace: 'nowrap' }}>{c.name}</span>
+              <span style={{ fontSize: 14, fontWeight: 500, color: past ? (c.spent > 0 ? COLORS.ink : COLORS.faint) : c.full > 0 && pctLeft(c) < 25 ? COLORS.rust : COLORS.ink }}>
                 {past ? (c.spent > 0 ? money(c.spent) : '–') : money(c.left)}
               </span>
             </div>
@@ -66,6 +69,28 @@ function Shelf({ name, total, cups, filled, onPick, startIndex, past }: {
         </div>
       </div>
     </section>
+  );
+}
+
+// An empty ring for a bill not paid yet; a green tick once it is.
+function PaidRing({ done, partial, quiet }: { done: boolean; partial: boolean; quiet?: boolean }) {
+  return (
+    <span aria-hidden style={{ flexShrink: 0, width: 20, height: 20, borderRadius: 999, display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: done ? COLORS.green : 'transparent', boxShadow: done ? 'none' : `inset 0 0 0 1.5px ${partial ? COLORS.green : quiet ? COLORS.hairline : COLORS.line}`, transition: 'background .4s ease' }}>
+      {done && <svg width="12" height="12" viewBox="0 0 14 14" fill="none" stroke={COLORS.wall} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5l2.5 2.5L11 4.5" /></svg>}
+    </span>
+  );
+}
+
+// The potter's signature on the base of a pot: the Moru wordmark, small and
+// faint, at the very bottom of Home. Tap it and it redraws with a soft clink.
+function MakersMark() {
+  const [rung, setRung] = useState(0);
+  return (
+    <button type="button" className="bk-mark" onClick={() => { playClink(String(rung % 10)); setRung((n) => n + 1); }} aria-label="Moru">
+      <MoruLogo key={rung} width={64} color={COLORS.faint} draw={rung > 0} />
+      {rung >= 3 && <span className="bk-fade-in">Made one cup at a time.</span>}
+    </button>
   );
 }
 
@@ -146,7 +171,14 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
   const { user } = useAuth();
   const thisMonth = currentMonth();
   const [month, setMonth] = useState(thisMonth);
-  const [showNetWorth, setShowNetWorth] = useState(false);
+  const [showNetWorth, setShowNetWorth] = useState<false | 'view' | 'edit'>(false);
+  // The dock's "Update balances" opens the net worth sheet straight at the balances.
+  useEffect(() => {
+    const on = () => { if (takeNetWorthRequest()) setShowNetWorth('edit'); };
+    on();
+    window.addEventListener(NET_WORTH_EVENT, on);
+    return () => window.removeEventListener(NET_WORTH_EVENT, on);
+  }, []);
   const past = month !== thisMonth;
 
   const fresh = useQuery(api.home.summary, user ? { userId: user._id, month } : 'skip');
@@ -176,7 +208,7 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
       <div style={{ maxWidth: 440, margin: '0 auto', padding: `calc(${SAFE_TOP} + 20px) 24px 140px`, display: 'flex', flexDirection: 'column', gap: 44 }}>
         <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <MonthPicker month={month} thisMonth={thisMonth} onChange={setMonth} />
-          <span key={month} className="bk-step" style={{ fontSize: 56, fontWeight: 600, letterSpacing: '-0.04em', lineHeight: 1 }}>
+          <span key={month} className="bk-step" style={{ fontSize: 56, fontWeight: 500, letterSpacing: '-0.04em', lineHeight: 1 }}>
             {past ? money(data.shelves.reduce((s, sh) => s + sh.cups.reduce((t, c) => t + c.spent, 0), 0)) : money(data.spendable)}
           </span>
           <span key={month + 'c'} className="bk-step" style={{ fontSize: 15, color: COLORS.muted }}>{past ? `spent from your cups in ${monthLabel(month)}` : 'yours to spend this month'}</span>
@@ -184,14 +216,14 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
 
         {!past && data.pendingCount - (data.moneyInCount ?? 0) > 0 && (
           <button type="button" className="bk-row" onClick={onOpenCheckin}
-            style={{ appearance: 'none', border: 0, background: '#FFFFFF', borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15 }}>
+            style={{ appearance: 'none', border: 0, background: COLORS.sheet, borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15 }}>
             <span>{data.pendingCount - (data.moneyInCount ?? 0)} to file</span>
             <span style={{ color: COLORS.muted, fontSize: 13 }}>Open check-in</span>
           </button>
         )}
         {!past && (data.moneyInCount ?? 0) > 0 && onOpenQueue && (
           <button type="button" className="bk-row" onClick={onOpenQueue}
-            style={{ appearance: 'none', border: 0, background: '#FFFFFF', borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, marginTop: -32 }}>
+            style={{ appearance: 'none', border: 0, background: COLORS.sheet, borderRadius: 14, padding: '14px 16px', textAlign: 'left', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 15, marginTop: -32 }}>
             <span>{data.moneyInCount} money in to sort</span>
             <span style={{ color: COLORS.muted, fontSize: 13 }}>Paid back, refund or income</span>
           </button>
@@ -221,7 +253,7 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
         </section>
 
         {data.netWorth && (
-          <button type="button" className="bk-row" onClick={() => setShowNetWorth(true)}
+          <button type="button" className="bk-row" onClick={() => setShowNetWorth('view')}
             style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: COLORS.ink, textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', padding: '16px 0', boxShadow: `inset 0 1px 0 ${COLORS.hairline}, inset 0 -1px 0 ${COLORS.hairline}` }}>
             <span style={{ fontSize: 15, color: COLORS.muted }}>Net worth</span>
             <span style={{ fontSize: 15 }}>
@@ -242,31 +274,43 @@ export function Home({ onOpenCheckin, onOpenQueue, onEditExpense }: { onOpenChec
           return <Shelf key={s.name} name={s.name} total={s.total} cups={s.cups as Cup[]} filled={filled} startIndex={start} onPick={setPicked} past={past} />;
         })}
 
-        {/* Goes out before spending: bills and regular investing. */}
-        {([['Fixed', data.fixedCups], ['Investing', data.investCups]] as const).filter(([, cups]) => cups.length).map(([name, cups]) => (
-          <section key={name} style={{ display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', paddingBottom: 4 }}>
-              <span style={{ fontSize: 15, fontWeight: 500 }}>{name}</span>
-              <span style={{ fontSize: 13, color: COLORS.muted }}>{money(cups.reduce((t, c) => t + c.planned, 0))} a month</span>
-            </div>
-            {cups.map((c) => {
-              const done = c.planned > 0 && c.spent >= c.planned - 0.5;
-              return (
-                <button key={c.id} type="button" className="bk-row" onClick={() => setPicked(c as Cup)}
-                  style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: COLORS.ink, padding: 0, minHeight: 48, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, textAlign: 'left', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
-                  <span style={{ fontSize: 15 }}>{c.name}</span>
-                  <span style={{ fontSize: 15, fontVariantNumeric: 'tabular-nums', display: 'flex', alignItems: 'center', gap: 8, color: done ? COLORS.ink : COLORS.muted }}>
-                    {done ? money(c.spent) : `${money(c.spent)} of ${money(c.planned)}`}
-                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke={done ? COLORS.green : 'transparent'} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><path d="M3 7.5l2.5 2.5L11 4.5" /></svg>
-                  </span>
-                </button>
-              );
-            })}
-          </section>
-        ))}
+        {/* Goes out before spending: bills and regular investing. A quiet
+            checklist under the cups; each ring fills once that month is paid. */}
+        {([['Fixed', data.fixedCups ?? [], 'paid'], ['Investing', data.investCups ?? [], 'in']] as const).filter(([, cups]) => cups.length).map(([name, cups, verb]) => {
+          const planned = cups.reduce((t, c) => t + c.planned, 0);
+          const paid = cups.reduce((t, c) => t + Math.min(c.spent, c.planned || c.spent), 0);
+          const allDone = cups.every((c) => c.planned <= 0 || c.spent >= c.planned - 0.5);
+          return (
+            <section key={name} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 13, color: COLORS.muted }}>
+                <span>{name}</span>
+                {past ? <span>{money(cups.reduce((t, c) => t + c.spent, 0))} {verb}</span>
+                  : allDone && planned > 0 ? <span style={{ color: COLORS.green }}>All {verb} this month</span>
+                  : <span>{money(paid)} of {money(planned)} {verb}</span>}
+              </div>
+              <div>
+                {cups.map((c) => {
+                  const done = c.planned > 0 && c.spent >= c.planned - 0.5;
+                  return (
+                    <button key={c.id} type="button" className="bk-row" onClick={() => setPicked({ ...c, kind: name === 'Fixed' ? 'bill' : 'invest' } as Cup)}
+                      style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', fontFamily: 'inherit', color: COLORS.ink, padding: 0, width: '100%', minHeight: 52, display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left', boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` }}>
+                      <PaidRing done={done} partial={!done && c.spent > 0} quiet={c.planned <= 0} />
+                      <span style={{ flex: 1, minWidth: 0, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                      <span style={{ flexShrink: 0, fontSize: 15, color: done ? COLORS.ink : COLORS.muted }}>
+                        {done || c.planned <= 0 ? (c.spent > 0 ? money(c.spent) : '–') : c.spent > 0 ? `${money(c.spent)} of ${money(c.planned)}` : money(c.planned)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          );
+        })}
+
+        <MakersMark />
       </div>
 
-      {showNetWorth && user && <NetWorthSheet userId={user._id} onClose={() => setShowNetWorth(false)} />}
+      {showNetWorth && user && <NetWorthSheet userId={user._id} startEditing={showNetWorth === 'edit'} onClose={() => setShowNetWorth(false)} />}
 
       {picked && (
         <CupSheet
