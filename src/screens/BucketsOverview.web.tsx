@@ -559,7 +559,7 @@ export const BucketsOverview: React.FC<BucketsOverviewProps> = ({
     }
   }, [activePage, attentionItems.length]);
 
-  // Loading — pottery wheel animation
+  // Loading
   if (currentUser === undefined || buckets === undefined) {
     return (
       <View style={styles.loadingWrapper}>
