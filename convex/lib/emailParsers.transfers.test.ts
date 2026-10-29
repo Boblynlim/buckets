@@ -144,3 +144,104 @@ describe('DBS / POSB / PayLah', () => {
     expect(r.merchant).toBe('JANE TAN');
   });
 });
+
+// Shapes taken verbatim from real forwarded alerts (names/cards scrubbed).
+// Each of these used to lose the merchant because the old field regexes
+// allow-listed characters and depended on a fixed terminator word.
+describe('real alert shapes', () => {
+  const dbs = (body: string) =>
+    parseBankEmail({ from: 'ibanking.alert@dbs.com', subject: '', body });
+
+  it('keeps a slash in a DBS card payee', () => {
+    const r = dbs(
+      'Card Transaction Alert Transaction Ref: SP1300516540000000053109 Dear Sir / ' +
+        'Madam, We refer to your card transaction request dated 13/10/26. Date & Time: ' +
+        '13 OCT 05:31 (SGT) Amount: SGD3.38 From: DBS/POSB card ending 3284 To: BUS/MRT ' +
+        'If unauthorised, please login to DBS digibank mobile'
+    );
+    expect(r.amount).toBe(3.38);
+    expect(r.merchant).toBe('BUS/MRT');
+    expect(r.last4).toBe('3284');
+    expect(new Date(r.date).toISOString().slice(0, 10)).toBe('2026-10-13');
+  });
+
+  it('ends a PayLah payee at "To view your transactions"', () => {
+    const r = dbs(
+      'Transaction Alerts Transaction Ref: PLPE4628709104998098 Dear Sir / Madam, We ' +
+        'refer to your PayLah! Scan & Pay Transfer dated 14 Oct. Date & Time: 14 Oct ' +
+        '11:42 (SGT) Amount: SGD5.30 From: PayLah! Wallet (Mobile ending 2570) To: ' +
+        'MING FA FISHBALL To view your transactions, login to your PayLah! Wallet'
+    );
+    expect(r.merchant).toBe('MING FA FISHBALL');
+  });
+
+  it('drops the "(Mobile ending ...)" tail from a person-to-person payee', () => {
+    const r = dbs(
+      'Transaction Alerts Dear Sir / Madam, We refer to your PayLah! Transfer dated ' +
+        '27 Sep. Date & Time: 27 Sep 18:50 (SGT) Amount: SGD50.00 From: PayLah! Wallet ' +
+        '(Mobile ending 2570) To: Xing Han (Mobile ending 0427) To view your transactions'
+    );
+    expect(r.merchant).toBe('Xing Han');
+  });
+
+  it('unwraps DBS bold-marker labels on a bill payment', () => {
+    const r = dbs(
+      'digibank alert Transaction Ref: 17819172935812756295 Dear Customer, You’ve ' +
+        'successfully made a bill payment. *Date and Time: *20 Jun 09:01 (SGT) *Amount: ' +
+        '*SGD 137.10 *From: *POSB Passbook Savings Account (A/C ending 0613) *To: *DBS ' +
+        'Altitude Visa Signature Card (Ref ending 3284) If unauthorised, please call'
+    );
+    expect(r.amount).toBe(137.1);
+    expect(r.merchant).toBe('DBS Altitude Visa Signature Card');
+  });
+
+  it('unwraps bold markers around the payer on a received PayNow transfer', () => {
+    const r = dbs(
+      'Dear Customer, You have received SGD 53.00 via PayNow on 25 Oct 2026 01:16 SGT. ' +
+        '* From:* CHUA PEI RONG, VIVIAN *To:* Your DBS/ POSB account ending 0613 Didn’t ' +
+        'expect these funds?'
+    );
+    expect(r.direction).toBe('in');
+    expect(r.merchant).toBe('CHUA PEI RONG, VIVIAN');
+  });
+
+  it('dates a yearless alert from when the mail arrived', () => {
+    const r = parseBankEmail({
+      from: 'ibanking.alert@dbs.com',
+      subject: '',
+      body:
+        'Dear Sir / Madam, We refer to your PayLah! Scan & Pay Transfer dated 31 Dec. ' +
+        'Date & Time: 31 Dec 23:55 (SGT) Amount: SGD4.00 From: PayLah! Wallet To: ' +
+        'LATE NIGHT PRATA To view your transactions',
+      receivedAt: Date.UTC(2027, 0, 1, 2, 0, 0), // read on 1 Jan, spent 31 Dec
+    });
+    expect(new Date(r.date).toISOString().slice(0, 10)).toBe('2026-12-31');
+  });
+
+  it('keeps parentheses and symbols in an HSBC description', () => {
+    const hsbc = (desc: string) =>
+      parseBankEmail({
+        from: 'alerts@notification.hsbc.com.hk',
+        subject: '',
+        body:
+          'Dear Customer Please note there was a transaction made on your HSBC credit ' +
+          'card. Card Number XXXX-XXXX-XXXX-8219 Transaction Date 29/OCT/2026 ' +
+          'Transaction Time 08:00:20 Transaction Amount SGD6.95 Description ' +
+          desc +
+          ' You can also log on to the HSBC Singapore app',
+      }).merchant;
+    expect(hsbc("MCDONALD'S (BWC)")).toBe("MCDONALD'S (BWC)");
+    expect(hsbc('SUSHIRO @ THE LINQ')).toBe('SUSHIRO @ THE LINQ');
+    expect(hsbc('SMP_BIBI1 PTE. LTD.')).toBe('SMP_BIBI1 PTE. LTD');
+    expect(hsbc('Grab* 5-C8ETT76ERJX1UE')).toBe('Grab* 5-C8ETT76ERJX1UE');
+  });
+
+  it('skips DBS notices that move no money', () => {
+    const r = dbs(
+      'Transaction Alerts Problems viewing this email? Select "always display images" ' +
+        'Dear Sir/Madam, For your account security, Express Checkout linkage with GOJEK ' +
+        'automatically expired on Date & Time: 01 Sep 2026 02:01 (SGT).'
+    );
+    expect(r.skip).toBe(true);
+  });
+});

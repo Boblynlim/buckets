@@ -50,6 +50,21 @@ function toPlainText(s: string): string {
     .replace(/&gt;/gi, ">")
     .replace(/[  ]/g, " ") // non-breaking / narrow no-break spaces
     .replace(/\s+/g, " ")
+    // DBS wraps field labels in markdown-ish bold markers when the HTML is
+    // flattened: "*Amount: *SGD 137.10", "* From:* NAME". Unwrap the label so
+    // the field regexes below see a plain "Label: value". HSBC merchant names
+    // genuinely contain "*" ("Grab* 5-C8E...", "SMP**MODU"), so only the
+    // label form is touched, never a bare asterisk.
+    .replace(/\*\s*(Amount|From|To|Date(?: and| &)? Time|Date)\s*:\s*\*/gi, "$1: ")
+    .trim();
+}
+
+// Trailing account qualifiers DBS appends to a counterparty name:
+// "Xing Han (Mobile ending 0427)" -> "Xing Han".
+function stripAccountSuffix(s: string | undefined): string | undefined {
+  if (!s) return s;
+  return s
+    .replace(/\s*\((?:Mobile|A\/C|Ref|Account|Card)\s+ending[^)]*\)\s*$/i, "")
     .trim();
 }
 
@@ -96,6 +111,23 @@ function parseDate(text: string, fallback?: number): number {
     const t = Date.UTC(year, mon, day, 12, 0, 0);
     if (!Number.isNaN(t)) return t;
   }
+  // DBS PayLah! and bill-payment alerts omit the year entirely
+  // ("Date & Time: 14 Oct 11:42 (SGT)"). Borrow the year from when the mail
+  // arrived, stepping back one year if that would date the spend in the
+  // future — a 31 Dec alert read on 1 Jan belongs to the old year.
+  const dayMon = text.match(
+    /(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i
+  );
+  if (dayMon && fallback) {
+    const day = Number(dayMon[1]);
+    const mon = MONTHS[dayMon[2].toLowerCase()];
+    const ref = new Date(fallback);
+    let t = Date.UTC(ref.getUTCFullYear(), mon, day, 12, 0, 0);
+    if (t - fallback > 7 * 24 * 60 * 60 * 1000) {
+      t = Date.UTC(ref.getUTCFullYear() - 1, mon, day, 12, 0, 0);
+    }
+    if (!Number.isNaN(t)) return t;
+  }
   return fallback ?? Date.UTC(1970, 0, 1);
 }
 
@@ -132,42 +164,58 @@ function detectDirection(text: string): "in" | "out" {
 
 // --- DBS / POSB ---------------------------------------------------------------
 // Incoming: "You have received SGD 24.00 via PayNow on 04 Apr 2026 ... From: NAME"
-function parseDbs(text: string): Omit<ParsedTxn, "bank"> | null {
+// Phrases that follow the "To:" / "From:" value in a DBS alert. Matching on
+// these rather than on an allowlist of characters is what lets real payees
+// through: "BUS/MRT", "AMIBA F&B PTE. LTD.", "MCDONALD'S (BWC)", "SMP_BIBI1".
+const DBS_TAIL =
+  "If\\b|To view your transactions|Didn['’]t expect|Please call|Thank you for banking|Yours faithfully|$";
+
+function parseDbs(text: string, at?: number): Omit<ParsedTxn, "bank"> | null {
   const amt = findAmount(text);
   if (!amt) return null;
   const direction = detectDirection(text);
   // For received transfers, the counterparty is the payer ("From: NAME To:").
   const payer = clean(
-    (text.match(/From:\s*([A-Za-z][A-Za-z .'\-]{1,40}?)\s+To:/) || [])[1]
+    stripAccountSuffix(
+      (text.match(/\bFrom:\s*(.{2,60}?)\s*\bTo:/i) || [])[1]
+    )
   );
   const sentTo = clean(
     (text.match(/(?:paid|sent) to ([A-Za-z0-9 &'._\-]{2,40}?)(?: using| on| via|\.)/i) ||
       [])[1]
   );
   const toField = clean(
-    (text.match(/\bTo:\s*([A-Za-z0-9][A-Za-z0-9 &'._\-]{1,40}?)\s+(?:If |Didn|Please|Thank|$)/) ||
-      [])[1]
+    stripAccountSuffix(
+      (text.match(new RegExp(`\\bTo:\\s*(.{2,60}?)\\s+(?:${DBS_TAIL})`, "i")) ||
+        [])[1]
+    )
   );
   return {
     direction,
     amount: amt.amount,
     currency: amt.currency,
     merchant: direction === "in" ? payer : sentTo ?? toField,
-    date: parseDate(text),
+    date: parseDate(text, at),
     last4: last4From(text),
   };
 }
 
 // --- OCBC ---------------------------------------------------------------------
 // Outgoing: "SGD4.20 was sent to Hainanese curry rice using ... Date of transfer: 26-May-2026"
-function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
+function parseOcbc(text: string, at?: number): Omit<ParsedTxn, "bank"> | null {
   const amt = findAmount(text);
   if (!amt) return null;
 
   // "To account : House (-222222) at UNITED OVERSEAS BANK LTD" -> "House"
-  const toAccount = clean(
-    (text.match(/To account\s*:\s*(.+?)\s*\(-?\d+\)/i) || [])[1]
-  );
+  const toAccount =
+    clean((text.match(/To account\s*:\s*(.+?)\s*\(-?\d+\)/i) || [])[1]) ??
+    // PayNow/QR transfers carry no "To account" row, only a free-text
+    // description: "Description : Bkk Reference number : 2607210119298453".
+    clean(
+      (text.match(
+        /Description(?:\/reference no\.)?\s*:\s*(.{1,60}?)\s+(?:Reference number|You can also|If you have|$)/i
+      ) || [])[1]
+    );
 
   // Reminder ahead of a scheduled transfer: not a transaction itself.
   if (/upcoming recurring funds transfer|we will make the following transfer/i.test(text)) {
@@ -176,7 +224,7 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
       amount: amt.amount,
       currency: amt.currency,
       merchant: toAccount,
-      date: parseDate(text),
+      date: parseDate(text, at),
       skip: true,
     };
   }
@@ -189,7 +237,7 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
       amount: amt.amount,
       currency: amt.currency,
       merchant: toAccount,
-      date: parseDate(text),
+      date: parseDate(text, at),
     };
   }
 
@@ -200,7 +248,7 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
       amount: amt.amount,
       currency: amt.currency,
       merchant: clean((text.match(/Reference:\s*(?:from\s+)?([A-Za-z0-9 &'._\-]{2,40}?)(?:\s+For assistance|\s+If |\.|$)/i) || [])[1]),
-      date: parseDate(text),
+      date: parseDate(text, at),
     };
   }
 
@@ -219,7 +267,7 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
     amount: amt.amount,
     currency: amt.currency,
     merchant: direction === "in" ? receivedFrom : sentTo,
-    date: parseDate(text),
+    date: parseDate(text, at),
     last4: last4From(text),
   };
 }
@@ -230,7 +278,7 @@ function parseOcbc(text: string): Omit<ParsedTxn, "bank"> | null {
 //   Description         BUS/MRT
 //   Transaction Date    20/JUN/2026
 //   Card Number         XXXX-XXXX-XXXX-8219
-function parseHsbc(text: string): Omit<ParsedTxn, "bank"> | null {
+function parseHsbc(text: string, at?: number): Omit<ParsedTxn, "bank"> | null {
   // Prefer the labelled "Transaction Amount" cell; fall back to first amount.
   const labelled = text.match(
     /Transaction Amount\s+(SGD|USD|HKD|S\$|US\$)\s?([\d,]+\.\d{2})/i
@@ -239,9 +287,12 @@ function parseHsbc(text: string): Omit<ParsedTxn, "bank"> | null {
     ? { amount: parseAmount(labelled[2]), currency: normCurrency(labelled[1]) }
     : findAmount(text);
   if (!amt) return null;
+  // Capture up to the boilerplate rather than by allowed characters — real
+  // descriptors carry parens, "@", "_" and stars: "MCDONALD'S (BWC)",
+  // "SUSHIRO @ THE LINQ", "SMP_BIBI1 PTE. LTD.", "Grab* 5-C8ETT76ERJX1UE".
   const description = clean(
     (text.match(
-      /Description\s+([A-Za-z0-9 ,&'._\/\-*#+]+?)\s+(?:You can also|Yours|$)/i
+      /Description\s+(.{1,60}?)\s+(?:You can also|Yours|Thank you|$)/i
     ) || [])[1]
   );
   return {
@@ -249,13 +300,13 @@ function parseHsbc(text: string): Omit<ParsedTxn, "bank"> | null {
     amount: amt.amount,
     currency: amt.currency,
     merchant: description,
-    date: parseDate(text),
+    date: parseDate(text, at),
     last4: last4From(text),
   };
 }
 
 // --- American Express ---------------------------------------------------------
-function parseAmex(text: string): Omit<ParsedTxn, "bank"> | null {
+function parseAmex(text: string, at?: number): Omit<ParsedTxn, "bank"> | null {
   const amt = findAmount(text);
   if (!amt) return null;
   const merchant = clean(
@@ -268,7 +319,7 @@ function parseAmex(text: string): Omit<ParsedTxn, "bank"> | null {
     amount: amt.amount,
     currency: amt.currency,
     merchant,
-    date: parseDate(text),
+    date: parseDate(text, at),
     last4: last4From(text),
   };
 }
@@ -295,7 +346,7 @@ function detectBank(
 
 const PARSERS: Record<
   Exclude<ParsedTxn["bank"], "unknown">,
-  (text: string) => Omit<ParsedTxn, "bank"> | null
+  (text: string, at?: number) => Omit<ParsedTxn, "bank"> | null
 > = {
   dbs: parseDbs,
   ocbc: parseOcbc,
@@ -303,20 +354,37 @@ const PARSERS: Record<
   amex: parseAmex,
 };
 
+// Alerts that arrive on the same channel but describe no money movement:
+// linkage/security notices, statement-ready mails, seasonal promos. Without
+// this they land in the queue as amount-0 rows with nothing to review.
+const NOT_A_TRANSACTION =
+  /automatically expired|eDocument|e-?Packets? are now available|Problems viewing this email\?\s*Select "always display images"\s*(?:\[image[^\]]*\]\s*)?Dear Sir\/Madam, For your account security/i;
+
 export function parseBankEmail(email: RawEmail): ParsedTxn {
   const text = toPlainText(email.body);
   const bank = detectBank(email.from, text);
+
+  if (!findAmount(text) && NOT_A_TRANSACTION.test(text)) {
+    return {
+      bank: bank ?? "unknown",
+      direction: "out",
+      amount: 0,
+      currency: "SGD",
+      date: email.receivedAt ?? Date.UTC(1970, 0, 1),
+      skip: true,
+    };
+  }
 
   let parsed: Omit<ParsedTxn, "bank"> | null = null;
   let resolvedBank: ParsedTxn["bank"] = bank ?? "unknown";
 
   if (bank) {
-    parsed = PARSERS[bank](text);
+    parsed = PARSERS[bank](text, email.receivedAt);
   }
   // If detection failed or its parser bailed, cross-try everything.
   if (!parsed) {
     for (const key of Object.keys(PARSERS) as Array<keyof typeof PARSERS>) {
-      const p = PARSERS[key](text);
+      const p = PARSERS[key](text, email.receivedAt);
       if (p) {
         parsed = p;
         resolvedBank = bank ?? "unknown";

@@ -90,3 +90,72 @@ export const run = internalMutation({
     return { dryRun, count: log.length, changes: log };
   },
 });
+
+/**
+ * One-off: fill in payee names the old field regexes dropped.
+ *
+ * The parser used to allow-list characters in a DBS "To:" value and require a
+ * fixed terminator word, so every payee with a slash, bracket, comma or an
+ * unexpected sentence after it came back empty — and DBS's bold-marker labels
+ * ("*To: *NAME") never matched at all. Re-reads each stored alert with the
+ * fixed parser and backfills:
+ *   - the payee on any row that has none (whatever its status);
+ *   - the note on a confirmed expense ONLY while it is still the generic
+ *     "<BANK> transaction" placeholder, so hand-written notes are safe;
+ *   - dismisses alerts that move no money (linkage notices, statements, promos).
+ * Amounts and dates are reported, never rewritten. dryRun first.
+ */
+export const backfillMerchants = internalMutation({
+  args: { userId: v.id("users"), dryRun: v.boolean() },
+  handler: async (ctx, { userId, dryRun }) => {
+    const log: string[] = [];
+    const rows = await ctx.db
+      .query("pendingTransactions")
+      .filter((q) => q.eq(q.field("userId"), userId))
+      .collect();
+
+    for (const r of rows) {
+      if (!r.rawSource) continue;
+      const p = parseBankEmail({
+        from: FROM[r.bank] ?? "",
+        subject: "",
+        body: r.rawSource,
+        receivedAt: r.date,
+      });
+      const label = `${new Date(r.date).toISOString().slice(0, 10)} $${r.amount}`;
+
+      if (p.skip && !p.amount) {
+        if (r.status !== "dismissed") {
+          log.push(`${label}: dismiss — not a transaction`);
+          if (!dryRun) {
+            await ctx.db.patch(r._id, { status: "dismissed", updatedAt: Date.now() });
+          }
+        }
+        continue;
+      }
+
+      if (!r.merchant && p.merchant) {
+        log.push(`${label} [${r.status}]: payee -> "${p.merchant}"`);
+        if (!dryRun) {
+          await ctx.db.patch(r._id, { merchant: p.merchant, updatedAt: Date.now() });
+        }
+
+        const placeholder = `${r.bank.toUpperCase()} transaction`;
+        if (r.confirmedExpenseId) {
+          const e = await ctx.db.get(r.confirmedExpenseId);
+          if (e && e.note === placeholder) {
+            log.push(`${label}: expense note "${placeholder}" -> "${p.merchant}"`);
+            if (!dryRun) await ctx.db.patch(e._id, { note: p.merchant });
+          } else if (e) {
+            log.push(`${label}: expense note kept as "${e.note}" (edited by hand)`);
+          }
+        }
+      }
+
+      if (Math.abs(p.amount - r.amount) > 0.005) {
+        log.push(`${label}: AMOUNT MISMATCH, email says ${p.amount} (left alone)`);
+      }
+    }
+    return { dryRun, count: log.length, changes: log };
+  },
+});
