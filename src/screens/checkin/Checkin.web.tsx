@@ -223,7 +223,7 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
               </button>
             );
             if (editing === a._id) {
-              return <AccountForm key={a._id} userId={userId} account={a} onDone={() => setEditing(null)} />;
+              return <AccountForm key={a._id} userId={userId} account={a} month={month} onDone={() => setEditing(null)} />;
             }
             if (!a.invested) {
               return (
@@ -262,7 +262,7 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
           })}
         </div>
       ))}
-      <AddAccount userId={userId} />
+      <AddAccount userId={userId} month={month} />
       <button type="button" className="bk-btn" disabled={busy} onClick={submit}>
         {changed ? `Save ${changed} ${changed === 1 ? 'change' : 'changes'}` : inSheet ? 'Done' : 'Nothing moved. Next'}
       </button>
@@ -272,9 +272,9 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
 
 const GROUP_HINT: Record<string, string> = { now: 'Can use any time', soon: 'Locked for a while, like an FD', later: 'Long term, like CPF or stocks' };
 
-function AddAccount({ userId }: { userId: any }) {
+function AddAccount({ userId, month }: { userId: any; month: string }) {
   const [open, setOpen] = useState(false);
-  if (open) return <AccountForm userId={userId} onDone={() => setOpen(false)} />;
+  if (open) return <AccountForm userId={userId} month={month} onDone={() => setOpen(false)} />;
   return (
     <button type="button" onClick={() => setOpen(true)}
       style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', padding: 0, alignSelf: 'flex-start', minHeight: 44, fontSize: 15, color: COLORS.ink, display: 'flex', alignItems: 'center', gap: 8, marginTop: -12 }}>
@@ -285,18 +285,37 @@ function AddAccount({ userId }: { userId: any }) {
 }
 
 /** Add a new account, or fix one (pass `account`). */
-function AccountForm({ userId, account, onDone }: { userId: any; account?: any; onDone: () => void }) {
+function AccountForm({ userId, account, month, onDone }: { userId: any; account?: any; month: string; onDone: () => void }) {
   const add = useMutation(api.accounts.addAccount);
   const update = useMutation(api.accounts.updateAccount);
+  const save = useMutation(api.accounts.saveBalances);
   const [name, setName] = useState<string>(account?.name ?? '');
   const [group, setGroup] = useState<'now' | 'soon' | 'later'>(account?.group ?? 'now');
   const [invested, setInvested] = useState<boolean>(account?.invested ?? false);
+  // Opening the form hides the row's balance field, so carry it in here —
+  // otherwise the one number you came to fix is the one that disappears.
+  const [amount, setAmount] = useState<string>(
+    account ? String(Math.round(account.amount ?? 0)) : ''
+  );
+  const [amountIn, setAmountIn] = useState<string>(
+    account ? String(Math.round(account.amountIn ?? 0)) : ''
+  );
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     if (!name.trim()) return;
     setBusy(true);
-    if (account) await update({ userId, accountId: account._id, name, group, invested });
-    else await add({ userId, name, group, invested: invested || undefined });
+    const accountId = account
+      ? (await update({ userId, accountId: account._id, name, group, invested }), account._id)
+      : await add({ userId, name, group, invested: invested || undefined });
+    const now = num(amount);
+    const put = num(amountIn);
+    if (amount.trim() !== '' && !Number.isNaN(now)) {
+      await save({
+        userId,
+        month,
+        entries: [{ accountId, amount: now, ...(invested && !Number.isNaN(put) ? { amountIn: put } : {}) }],
+      });
+    }
     setBusy(false);
     onDone();
   };
@@ -320,6 +339,28 @@ function AccountForm({ userId, account, onDone }: { userId: any; account?: any; 
         <input type="checkbox" checked={invested} onChange={(e) => setInvested(e.target.checked)} style={{ width: 18, height: 18, accentColor: COLORS.ink }} />
         Track what I put in, too
       </label>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 13, color: COLORS.muted }}>
+          {invested ? "What it's worth now" : 'Balance'}
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', fontSize: 17, boxShadow: `inset 0 -1px 0 ${COLORS.line}` }}>
+          <span style={{ color: COLORS.muted }}>$</span>
+          <input inputMode="decimal" aria-label={`${name || 'Account'} balance`} value={amount}
+            onChange={(e) => setAmount(e.target.value)} placeholder="0"
+            style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0 8px 2px', outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+        </span>
+      </label>
+      {invested && (
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 13, color: COLORS.muted }}>What I put in</span>
+          <span style={{ display: 'flex', alignItems: 'center', fontSize: 17, boxShadow: `inset 0 -1px 0 ${COLORS.line}` }}>
+            <span style={{ color: COLORS.muted }}>$</span>
+            <input inputMode="decimal" aria-label={`${name || 'Account'} put in`} value={amountIn}
+              onChange={(e) => setAmountIn(e.target.value)} placeholder="0"
+              style={{ appearance: 'none', border: 0, background: 'transparent', fontSize: 17, padding: '8px 0 8px 2px', outline: 'none', fontFamily: 'inherit', width: '100%' }} />
+          </span>
+        </label>
+      )}
       <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
         <button type="button" className="bk-btn" disabled={busy || !name.trim()} onClick={submit} style={{ flex: 1 }}>{account ? 'Save' : 'Add'}</button>
         <button type="button" onClick={onDone}

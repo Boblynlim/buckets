@@ -177,6 +177,16 @@ export function NetWorthSheet({ userId, onClose, startEditing = false }: { userI
         .sort((x, y) => Math.abs(y.change) - Math.abs(x.change))
     : [];
   const biggest = Math.max(1, ...moves.map((m) => Math.abs(m.change)));
+  // Edit whichever month the curve is scrubbed to, not only the current one:
+  // a balance typed wrong in an earlier month had no way back otherwise.
+  // netWorthHistory carries a balance forward, so byAccount holds what each
+  // account was worth that month even when it has no snapshot of its own.
+  const editMonth = cur?.month ?? currentMonth();
+  const editAccounts = React.useMemo(() => {
+    if (!accounts || !cur) return accounts;
+    const at = new Map(cur.byAccount.map((a) => [a.id, a.amount]));
+    return accounts.map((a) => ({ ...a, amount: at.get(a._id) ?? a.amount }));
+  }, [accounts, cur]);
   const [grow, setGrow] = useState(false);
   useEffect(() => {
     setGrow(false);
@@ -267,8 +277,12 @@ export function NetWorthSheet({ userId, onClose, startEditing = false }: { userI
 
           {accounts && (editing ? (
             <div ref={editRef} className="nw-rise" style={{ display: 'flex', flexDirection: 'column', gap: 4, scrollMarginTop: 12 }}>
-              <span style={{ fontSize: 13, color: COLORS.muted }}>Change a balance, or tap a name to edit the account</span>
-              <Balances userId={userId} month={currentMonth()} accounts={accounts} onNext={() => setEditing(false)} inSheet />
+              <span style={{ fontSize: 13, color: COLORS.muted }}>
+                {editMonth === currentMonth()
+                  ? 'Change a balance, or tap a name to edit the account'
+                  : `Fixing ${monthLong(editMonth)} — scrub the curve to pick another month`}
+              </span>
+              <Balances userId={userId} month={editMonth} accounts={editAccounts ?? accounts} onNext={() => setEditing(false)} inSheet />
             </div>
           ) : (
             <button type="button" className="bk-btn" onClick={() => setEditing(true)}>Update balances</button>
