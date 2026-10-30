@@ -13,6 +13,7 @@ import type * as adventures from "../adventures.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as authHelpers from "../authHelpers.js";
+import type * as autoLog from "../autoLog.js";
 import type * as backfillCarryover from "../backfillCarryover.js";
 import type * as buckets from "../buckets.js";
 import type * as chat from "../chat.js";
@@ -62,6 +63,7 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   auth: typeof auth;
   authHelpers: typeof authHelpers;
+  autoLog: typeof autoLog;
   backfillCarryover: typeof backfillCarryover;
   buckets: typeof buckets;
   chat: typeof chat;

@@ -17,4 +17,12 @@ crons.daily(
   internal.dailyPrompts.generateDailyPromptsForAllUsers
 );
 
+// Bills the bank sends no alert for (IRAS GIRO): log them on their due day.
+// 2 AM UTC = 10 AM Singapore, after the day has turned there.
+crons.daily(
+  "log bank-silent bills",
+  { hourUTC: 2, minuteUTC: 0 },
+  internal.autoLog.runDaily
+);
+
 export default crons;

@@ -57,6 +57,13 @@ export default defineSchema({
     createdAt: v.number(),
     isActive: v.boolean(),
 
+    // A bill the bank never emails about (an IRAS GIRO debit, say). Set to a
+    // day of the month and it is logged for you on that day, at
+    // plannedAmount, once per month. Leave unset for bills that arrive as an
+    // alert — those are imported, and generating them too would double up.
+    autoLogDay: v.optional(v.number()),
+    autoLogNote: v.optional(v.string()), // what to call it; defaults to the bucket name
+
     // Legacy field still read as a fallback for older buckets
     allocationValue: v.optional(v.number()), // DEPRECATED: use plannedAmount/plannedPercent
   }).index("by_user", ["userId"]),
