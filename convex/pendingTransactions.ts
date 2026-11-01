@@ -440,23 +440,45 @@ export const paybackCandidates = query({
 });
 
 /**
- * "Paid back": money in that repays (part of) a spend. Takes it off that
- * spend; a full payback removes the spend. The money in is not income.
+ * "Paid back": money in that repays one or more spends. Takes it off them in
+ * the order given; a spend covered in full is removed. The money in is never
+ * income.
+ *
+ * Several spends, because one transfer often settles a whole evening — you
+ * paid for the porridge and PayNowed someone else, and the friend sends back
+ * one round number for the lot. Anything left over after the spends picked
+ * are covered is reported back, not quietly swallowed.
  */
 export const applyPayback = mutation({
-  args: { pendingId: v.id("pendingTransactions"), expenseId: v.id("expenses") },
-  handler: async (ctx, { pendingId, expenseId }) => {
+  args: { pendingId: v.id("pendingTransactions"), expenseIds: v.array(v.id("expenses")) },
+  handler: async (ctx, { pendingId, expenseIds }) => {
     const row = await ctx.db.get(pendingId);
-    const exp = await ctx.db.get(expenseId);
-    if (!row || !exp) throw new Error("Not found");
+    if (!row) throw new Error("Not found");
     if (row.status !== "pending") throw new Error(`Transaction already ${row.status}`);
-    const left = Math.round((exp.amount - row.amount) * 100) / 100;
-    if (left <= 0.004) {
-      await ctx.db.delete(expenseId);
-    } else {
-      await ctx.db.patch(expenseId, { amount: left, note: `${exp.note} (${row.merchant ?? "someone"} paid back $${row.amount.toFixed(2)})`, updatedAt: Date.now() });
+    if (expenseIds.length === 0) throw new Error("Pick at least one spend");
+    const who = row.merchant ?? "someone";
+    const cents = (n: number) => Math.round(n * 100) / 100;
+    let left = row.amount;
+    const applied: Array<{ note: string; took: number; removed: boolean }> = [];
+    for (const expenseId of expenseIds) {
+      if (left <= 0.004) break;
+      const exp = await ctx.db.get(expenseId);
+      if (!exp || exp.userId !== row.userId) continue;
+      const took = Math.min(exp.amount, left);
+      const rest = cents(exp.amount - took);
+      left = cents(left - took);
+      if (rest <= 0.004) {
+        await ctx.db.delete(expenseId);
+      } else {
+        await ctx.db.patch(expenseId, {
+          amount: rest,
+          note: `${exp.note} (${who} paid back $${took.toFixed(2)})`,
+          updatedAt: Date.now(),
+        });
+      }
+      applied.push({ note: exp.note, took, removed: rest <= 0.004 });
     }
     await ctx.db.patch(pendingId, { status: "dismissed", direction: "in", updatedAt: Date.now() });
-    return { removed: left <= 0.004, left: Math.max(0, left) };
+    return { applied, left: Math.max(0, left) };
   },
 });

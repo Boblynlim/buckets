@@ -194,13 +194,24 @@ function SameDay({ pendingId }: { pendingId: any }) {
 function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncome: () => void; onNotSpending: () => void; onDone: (msg: string) => void }) {
   const [picking, setPicking] = useState(false);
   const [q, setQ] = useState('');
+  // One transfer often settles several spends, so this picks as many as it
+  // takes. The whole spend is kept, not just its id: searching again for the
+  // second one filters the first out of the list, and a running total can't be
+  // built from something that's no longer on screen.
+  const [chosen, setChosen] = useState<any[]>([]);
   const candidates = useQuery(api.pendingTransactions.paybackCandidates, picking ? { pendingId: row._id, q } : 'skip');
   const applyPayback = useMutation(api.pendingTransactions.applyPayback);
   const opt: React.CSSProperties = { ...PLAIN_BTN, display: 'flex', flexDirection: 'column', gap: 2, padding: '12px 0', minHeight: 56, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` };
   if (picking) {
+    const picked = chosen;
+    const total = picked.reduce((s: number, c: any) => s + c.amount, 0);
+    const left = Math.round((row.amount - Math.min(total, row.amount)) * 100) / 100;
+    const over = Math.round((total - row.amount) * 100) / 100;
     return (
       <div className="bk-fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
-        <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 6 }}>Which spend was this paying back?</span>
+        <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 6 }}>
+          Which spends was this paying back? Pick as many as it covers.
+        </span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search any spend, however long ago"
           aria-label="Search spends" style={{ ...INPUT, fontSize: 15, marginBottom: 4 }} />
         {candidates === undefined && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>Looking…</span>}
@@ -209,20 +220,57 @@ function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncom
             {q.trim() ? `Nothing logged matches “${q.trim()}”.` : 'No spends in the year before this. Search to go further back.'}
           </span>
         )}
-        {candidates?.map((c: any) => (
-          <button key={c.id} type="button" style={{ ...opt, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
-            onClick={async () => {
-              const r = await applyPayback({ pendingId: row._id, expenseId: c.id });
-              onDone(r.removed ? `${c.note} is paid back in full, so it's off ${c.cup}.` : `${moneyExact(row.amount)} taken off ${c.note}. ${moneyExact(r.left)} stays in ${c.cup}.`);
-            }}>
-            <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-              <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.note}</span>
-              <span style={{ fontSize: 13, color: COLORS.muted }}>{spendDate(c.date)} · {c.cup}</span>
+        {candidates?.map((c: any) => {
+          const on = chosen.some((x: any) => x.id === c.id);
+          return (
+            <button key={c.id} type="button" aria-pressed={on}
+              style={{ ...opt, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
+              onClick={() => setChosen((p) => (on ? p.filter((x: any) => x.id !== c.id) : [...p, c]))}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                <span style={{
+                  width: 18, height: 18, borderRadius: 999, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  boxShadow: `inset 0 0 0 1px ${on ? COLORS.green : COLORS.line}`, background: on ? COLORS.green : 'transparent',
+                }}>
+                  {on && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke={COLORS.sheet} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1.5 5.2L3.8 7.5 8.5 2.5" /></svg>}
+                </span>
+                <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                  <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.note}</span>
+                  <span style={{ fontSize: 13, color: COLORS.muted }}>{spendDate(c.date)} · {c.cup}</span>
+                </span>
+              </span>
+              <span style={{ fontSize: 15, flexShrink: 0 }}>{moneyExact(c.amount)}</span>
+            </button>
+          );
+        })}
+        {picked.length > 0 && (
+          <div className="bk-fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 14 }}>
+            <span style={{ fontSize: 13, color: COLORS.muted }}>
+              Picked: {picked.map((c: any) => `${c.note} ${moneyExact(c.amount)}`).join(' · ')}
             </span>
-            <span style={{ fontSize: 15, flexShrink: 0 }}>{moneyExact(c.amount)}</span>
-          </button>
-        ))}
-        <button type="button" onClick={() => setPicking(false)} style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44, alignSelf: 'flex-start' }}>Back</button>
+            <span style={{ fontSize: 13, color: COLORS.muted }}>
+              {left > 0.004
+                ? `${moneyExact(left)} of this payback still unaccounted for.`
+                : over > 0.004
+                  ? `Covers all ${picked.length === 1 ? 'of it' : `${picked.length} spends`}. ${moneyExact(over)} of the last one stays yours.`
+                  : `Covers all ${picked.length === 1 ? 'of it' : `${picked.length} spends`}, to the cent.`}
+            </span>
+            <button type="button"
+              style={{ ...PLAIN_BTN, alignSelf: 'flex-start', fontSize: 15, minHeight: 44, color: COLORS.ink, textDecoration: 'underline', textUnderlineOffset: 3 }}
+              onClick={async () => {
+                const r = await applyPayback({ pendingId: row._id, expenseIds: chosen.map((c: any) => c.id) });
+                const gone = r.applied.filter((a: any) => a.removed).length;
+                const parts = [
+                  `${moneyExact(row.amount - r.left)} taken off ${r.applied.length === 1 ? r.applied[0].note : `${r.applied.length} spends`}`,
+                  gone === r.applied.length ? `${gone === 1 ? "It's" : "They're"} off the shelf.` : '',
+                  r.left > 0.004 ? `${moneyExact(r.left)} of it wasn't for anything logged.` : '',
+                ].filter(Boolean);
+                onDone(parts.join('. ').replace('. .', '.'));
+              }}>
+              Take it off {picked.length === 1 ? 'this spend' : `these ${picked.length}`}
+            </button>
+          </div>
+        )}
+        <button type="button" onClick={() => { setPicking(false); setChosen([]); }} style={{ ...PLAIN_BTN, fontSize: 14, color: COLORS.muted, minHeight: 44, alignSelf: 'flex-start' }}>Back</button>
       </div>
     );
   }
