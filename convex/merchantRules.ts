@@ -87,6 +87,53 @@ export async function autoFile(
   return "filed";
 }
 
+/**
+ * Re-offer the waiting queue to the learned rules.
+ *
+ * A row is matched against the rules once, at import. An alert whose payee the
+ * parser couldn't read arrived with no name at all, so there was nothing to
+ * match on — and when the parse repair filled the name in afterwards, nothing
+ * looked again. The row kept sitting in the queue wearing a name the app
+ * already had a rule for, which is the one thing it promises never to ask
+ * about twice.
+ *
+ * `keys` limits it to those merchant keys, for when only some of the waiting
+ * rows should be trusted to a rule.
+ */
+export const recheckRules = internalMutation({
+  args: { dryRun: v.boolean(), keys: v.optional(v.array(v.string())) },
+  handler: async (ctx, { dryRun, keys }) => {
+    const rows = await ctx.db.query("pendingTransactions").collect();
+    const buckets = await ctx.db.query("buckets").collect();
+    const nameOf = (id?: Id<"buckets">) => buckets.find((b) => b._id === id)?.name ?? "?";
+    const only = keys ? new Set(keys) : null;
+    const log: string[] = [];
+    const counts = { filed: 0, ignored: 0, asked: 0 };
+    for (const row of rows) {
+      if (row.status !== "pending") continue;
+      if (only && !only.has(merchantKey(row.merchant))) continue;
+      const rule = await ruleFor(ctx, row.userId, row.merchant);
+      const day = new Date(row.date + 8 * 3600 * 1000).toISOString().slice(0, 10);
+      const what = `${day} ${row.merchant ?? "(no name)"} $${row.amount}`;
+      if (!rule || ((row.direction ?? "out") === "in" && !rule.ignore)) {
+        counts.asked++;
+        continue;
+      }
+      log.push(`${what} -> ${rule.ignore ? "not spending" : rule.accountId ? "invested" : nameOf(rule.bucketId)}`);
+      if (dryRun) {
+        if (rule.bucketId) counts.filed++;
+        else counts.ignored++;
+        continue;
+      }
+      const res = await autoFile(ctx, row);
+      if (res === "filed") counts.filed++;
+      else if (res === "ignored") counts.ignored++;
+      else counts.asked++;
+    }
+    return { dryRun, counts, changes: log };
+  },
+});
+
 /** Not spending (card bill, transfer between my own accounts): dismiss and remember. */
 export const markNotSpending = mutation({
   args: { pendingId: v.id("pendingTransactions") },

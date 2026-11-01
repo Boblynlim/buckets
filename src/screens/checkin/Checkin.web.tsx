@@ -43,6 +43,12 @@ export function Checkin({ onClose }: { onClose: () => void }) {
     const now = new Date();
     return now.getDate() >= 24 ? currentMonth(new Date(now.getFullYear(), now.getMonth() + 1, 1)) : currentMonth(now);
   })();
+  // A balance is a fact about today, not about the month the pay funds. The
+  // two came apart in the last week of a month: a check-in on 28 Oct sets up
+  // November's money but reads October's closing balances, and filing both
+  // under November meant the next check-in silently overwrote them while
+  // October kept whatever mid-month figure was typed last.
+  const balanceMonth = currentMonth(new Date());
   const [step, setStep] = useState(0);
 
   const summary = useQuery(api.home.summary, userId ? { userId, month } : 'skip');
@@ -89,7 +95,7 @@ export function Checkin({ onClose }: { onClose: () => void }) {
       )}
 
       {step === 1 && recap && <Recap recap={recap} prevLabel={monthLabel(prev)} onNext={next} />}
-      {step === 2 && accounts && userId && <Balances userId={userId} month={month} accounts={accounts} onNext={next} />}
+      {step === 2 && accounts && userId && <Balances userId={userId} month={balanceMonth} accounts={accounts} onNext={next} />}
       {step === 3 && filed && <FiledForYou groups={filed} cups={cups} onNext={next} />}
       {step === 4 && pending && <Leftovers rows={pending.filter((p: any) => (p.direction ?? 'out') === 'out')} cups={cups} onDone={next} />}
       {step === 5 && summary && <Done summary={summary} month={month} onClose={onClose} />}
@@ -144,6 +150,10 @@ function Recap({ recap, prevLabel, onNext }: { recap: any[]; prevLabel: string; 
 const GROUP_LABEL: Record<string, string> = { now: 'Now', soon: 'Soon', later: 'Later' };
 
 const num = (v: string) => Number(v.replace(/[^0-9.]/g, ''));
+// Prefill a balance field the way it was saved. Rounding it to whole dollars
+// made retyping a figure quietly drop the cents.
+const prefill = (n: number) =>
+  n.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(n) ? 0 : 2, maximumFractionDigits: 2 });
 const AMOUNT_INPUT: React.CSSProperties = { appearance: 'none', border: 0, background: 'transparent', width: 96, textAlign: 'right', fontSize: 15, padding: '8px 0', outline: 'none', fontFamily: 'inherit' };
 
 /** Also used by the net worth sheet on Home (`inSheet`: no heading, "Done" instead of "Next"). */
@@ -189,7 +199,7 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
       <span style={{ display: 'flex', alignItems: 'center', fontSize: 15 }}>
         <span style={{ color: COLORS.muted }}>$</span>
         <input inputMode="decimal" aria-label={`${a.name} ${label}`}
-          value={vals[k] ?? Math.round(base).toLocaleString('en-US')}
+          value={vals[k] ?? prefill(base)}
           onChange={(e) => setVals((v) => ({ ...v, [k]: e.target.value }))}
           style={AMOUNT_INPUT} />
       </span>
@@ -200,7 +210,7 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
     <div className="bk-step" style={inSheet ? { display: 'flex', flexDirection: 'column', gap: 28 } : INNER}>
       {!inSheet && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span style={LABEL}>Balances</span>
+          <span style={LABEL}>Balances · {monthLabel(month)}</span>
           <h1 style={H1}>Change only what moved.</h1>
         </div>
       )}
