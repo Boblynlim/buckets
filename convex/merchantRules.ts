@@ -134,6 +134,27 @@ export const recheckRules = internalMutation({
   },
 });
 
+/**
+ * Forget a learned rule, so that payee asks again.
+ *
+ * Learning from one filing is right for a shop and wrong for a person: a
+ * PayNow to a friend is lunch one week and a loan the next, but the rule files
+ * it silently either way.
+ */
+export const forget = internalMutation({
+  args: { keys: v.array(v.string()) },
+  handler: async (ctx, { keys }) => {
+    const gone: string[] = [];
+    for (const rule of await ctx.db.query("merchantRules").collect()) {
+      if (!keys.includes(rule.key)) continue;
+      gone.push(rule.key);
+      await ctx.db.delete(rule._id);
+    }
+    const missing = keys.filter((k) => !gone.includes(k));
+    return { forgotten: gone, notFound: missing };
+  },
+});
+
 /** Not spending (card bill, transfer between my own accounts): dismiss and remember. */
 export const markNotSpending = mutation({
   args: { pendingId: v.id("pendingTransactions") },
