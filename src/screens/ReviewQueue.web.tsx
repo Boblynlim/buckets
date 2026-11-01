@@ -20,6 +20,13 @@ const INPUT: React.CSSProperties = {
   boxShadow: `inset 0 -1px 0 ${COLORS.line}`, outline: 'none', fontFamily: 'inherit', color: COLORS.ink, width: '100%',
 };
 
+// A spend's date, with the year only when it isn't this one.
+function spendDate(ts: number): string {
+  const d = new Date(ts);
+  const year = d.getFullYear() === new Date().getFullYear() ? undefined : ('numeric' as const);
+  return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year });
+}
+
 function whenLabel(row: any): string {
   const d = new Date(row.date);
   const day = d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -186,15 +193,22 @@ function SameDay({ pendingId }: { pendingId: any }) {
 // Money in: what was it? Pay, a refund, or someone paying me back.
 function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncome: () => void; onNotSpending: () => void; onDone: (msg: string) => void }) {
   const [picking, setPicking] = useState(false);
-  const candidates = useQuery(api.pendingTransactions.paybackCandidates, picking ? { pendingId: row._id } : 'skip');
+  const [q, setQ] = useState('');
+  const candidates = useQuery(api.pendingTransactions.paybackCandidates, picking ? { pendingId: row._id, q } : 'skip');
   const applyPayback = useMutation(api.pendingTransactions.applyPayback);
   const opt: React.CSSProperties = { ...PLAIN_BTN, display: 'flex', flexDirection: 'column', gap: 2, padding: '12px 0', minHeight: 56, boxShadow: `inset 0 -1px 0 ${COLORS.hairline}` };
   if (picking) {
     return (
       <div className="bk-fade-in" style={{ display: 'flex', flexDirection: 'column' }}>
         <span style={{ fontSize: 13, color: COLORS.muted, paddingBottom: 6 }}>Which spend was this paying back?</span>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search any spend, however long ago"
+          aria-label="Search spends" style={{ ...INPUT, fontSize: 15, marginBottom: 4 }} />
         {candidates === undefined && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>Looking…</span>}
-        {candidates?.length === 0 && <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>No spends in the 60 days before this.</span>}
+        {candidates?.length === 0 && (
+          <span style={{ fontSize: 14, color: COLORS.muted, padding: '12px 0' }}>
+            {q.trim() ? `Nothing logged matches “${q.trim()}”.` : 'No spends in the year before this. Search to go further back.'}
+          </span>
+        )}
         {candidates?.map((c: any) => (
           <button key={c.id} type="button" style={{ ...opt, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}
             onClick={async () => {
@@ -203,7 +217,7 @@ function InChoices({ row, onIncome, onNotSpending, onDone }: { row: any; onIncom
             }}>
             <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
               <span style={{ fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.note}</span>
-              <span style={{ fontSize: 13, color: COLORS.muted }}>{new Date(c.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} · {c.cup}</span>
+              <span style={{ fontSize: 13, color: COLORS.muted }}>{spendDate(c.date)} · {c.cup}</span>
             </span>
             <span style={{ fontSize: 15, flexShrink: 0 }}>{moneyExact(c.amount)}</span>
           </button>
