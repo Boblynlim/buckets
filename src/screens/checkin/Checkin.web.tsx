@@ -62,6 +62,9 @@ export function Checkin({ onClose }: { onClose: () => void }) {
   const pending = useQuery(api.pendingTransactions.listPending, userId ? { userId } : 'skip');
 
   const next = () => setStep((s) => Math.min(STEPS - 1, s + 1));
+  // Going back has to be possible: without it, a figure typed into the wrong
+  // row can only be fixed by abandoning the check-in and starting over.
+  const back = () => setStep((s) => Math.max(0, s - 1));
   const cups = [...(summary?.shelves.flatMap((s) => s.cups) ?? []), ...(summary?.fixedCups ?? [])];
   const pay = (income ?? []).reduce((s, r) => s + r.amount, 0);
 
@@ -70,8 +73,23 @@ export function Checkin({ onClose }: { onClose: () => void }) {
       {/* Below the Dynamic Island, on the wall colour so content scrolls under it. */}
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, paddingTop: `calc(${SAFE_TOP} + 16px)`, paddingBottom: 8, background: COLORS.wall, display: 'flex', justifyContent: 'center', zIndex: 1 }}>
         <div style={{ width: 'min(392px, calc(100% - 48px))', display: 'flex', gap: 6, alignItems: 'center' }}>
+          <button type="button" onClick={back} aria-label="Back a step" disabled={step === 0}
+            style={{
+              appearance: 'none', border: 0, background: 'transparent', cursor: step === 0 ? 'default' : 'pointer',
+              width: 28, height: 36, marginRight: 2, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              opacity: step === 0 ? 0 : 1, transition: 'opacity .3s ease', pointerEvents: step === 0 ? 'none' : undefined,
+            }}>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke={COLORS.ink} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10 3L5 8l5 5" /></svg>
+          </button>
+          {/* A finished step is tappable, so you can jump straight back to it. */}
           {Array.from({ length: STEPS }).map((_, i) => (
-            <div key={i} style={{ flexGrow: 1, height: 2, borderRadius: 2, background: i <= step ? COLORS.espresso : COLORS.hairline, transition: 'background .6s ease' }} />
+            <button key={i} type="button" aria-label={`Step ${i + 1}`} disabled={i >= step} onClick={() => setStep(i)}
+              style={{
+                appearance: 'none', border: 0, padding: '10px 0', flexGrow: 1, background: 'transparent',
+                cursor: i < step ? 'pointer' : 'default',
+              }}>
+              <span style={{ display: 'block', height: 2, borderRadius: 2, background: i <= step ? COLORS.espresso : COLORS.hairline, transition: 'background .6s ease' }} />
+            </button>
           ))}
           <button type="button" onClick={onClose} aria-label="Close check-in"
             style={{ appearance: 'none', border: 0, background: 'transparent', cursor: 'pointer', width: 36, height: 36, marginLeft: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -174,6 +192,19 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
     Math.abs(valueOf(a, 'now') - a.amount) > 0.004 || (a.invested && Math.abs(valueOf(a, 'in') - (a.amountIn ?? 0)) > 0.004);
   const changed = accounts.filter(isChanged).length;
 
+  // What the figures being typed add up to, against the last month on record.
+  // Typing balances one by one says nothing about whether the month was good.
+  const history = useQuery(api.accounts.netWorthHistory, userId ? { userId } : 'skip') as any[] | undefined;
+  const shown = new Set(accounts.map((a) => a._id));
+  const earlier = (history ?? []).filter((h: any) => h.month < month);
+  const prevMonth = earlier[earlier.length - 1] ?? null;
+  // Compared over the same accounts, so a closed one can't look like a loss.
+  const prevTotal = prevMonth
+    ? prevMonth.byAccount.filter((x: any) => shown.has(x.id)).reduce((s: number, x: any) => s + x.amount, 0)
+    : null;
+  const total = accounts.reduce((s, a) => s + valueOf(a, 'now'), 0);
+  const shift = prevTotal === null ? null : Math.round((total - prevTotal) * 100) / 100;
+
   const submit = async () => {
     // From Home with nothing changed: just close (don't start a new month).
     if (inSheet && !changed) return onNext();
@@ -212,6 +243,14 @@ export function Balances({ userId, month, accounts, onNext, inSheet }: { userId:
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span style={LABEL}>Balances · {monthLabel(month)}</span>
           <h1 style={H1}>Change only what moved.</h1>
+          <span style={{ fontSize: 15, color: COLORS.muted, fontVariantNumeric: 'tabular-nums' }}>
+            {money(total)} in all
+            {shift === null
+              ? ''
+              : Math.abs(shift) < 0.5
+                ? ` · same as ${monthLabel(prevMonth.month)}`
+                : ` · ${shift > 0 ? 'up' : 'down'} ${money(Math.abs(shift))} on ${monthLabel(prevMonth.month)}`}
+          </span>
         </div>
       )}
       {(['now', 'soon', 'later'] as const).filter((g) => accounts.some((a) => a.group === g)).map((g) => (
@@ -587,9 +626,17 @@ function Done({ summary, month, onClose }: { summary: any; month: string; onClos
         <span style={{ fontSize: 15, color: COLORS.muted }}>yours to spend in {monthLabel(month)}</span>
       </div>
       {summary.netWorth && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 15, fontVariantNumeric: 'tabular-nums' }}>
           <span style={{ color: COLORS.muted }}>Net worth</span>
-          <span style={{ fontWeight: 500 }}>{money(nw)}</span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+            <span style={{ fontWeight: 500 }}>{money(nw)}</span>
+            {/* The total alone doesn't say whether the month went well. */}
+            {Math.abs(summary.netWorth.change) >= 0.5 && (
+              <span style={{ fontSize: 13, color: summary.netWorth.change > 0 ? COLORS.green : COLORS.rust }}>
+                {summary.netWorth.change > 0 ? '+' : '−'}{money(Math.abs(summary.netWorth.change)).replace('-', '')}
+              </span>
+            )}
+          </span>
         </div>
       )}
       <div>
