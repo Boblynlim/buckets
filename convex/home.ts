@@ -91,9 +91,53 @@ export const summary = query({
       for (const [, amt] of last) t += amt;
       return t;
     };
+    // What a month's change was made of. One number can't answer "am I doing
+    // ok": a month where the market fell 8k reads the same as one where 8k was
+    // overspent, and only one of those is anything to do with you.
+    const invested = new Set(
+      accounts
+        .filter((a) => {
+          const mine = snaps.filter((s) => s.accountId === a._id).sort((x, y) => y.month.localeCompare(x.month));
+          const withIn = mine.find((s) => s.amountIn !== undefined);
+          return a.invested ?? (withIn !== undefined && Math.abs(withIn.amountIn! - withIn.amount) > 0.5);
+        })
+        .map((a) => a._id as Id<"accounts">)
+    );
+    const stateAt = (upTo: string) => {
+      const amount = new Map<Id<"accounts">, number>();
+      const paidIn = new Map<Id<"accounts">, number>();
+      for (const s of snaps.filter((x) => x.month <= upTo).sort((a, b) => a.month.localeCompare(b.month))) {
+        amount.set(s.accountId, s.amount);
+        if (s.amountIn !== undefined) paidIn.set(s.accountId, s.amountIn);
+      }
+      return { amount, paidIn };
+    };
+    const splitBetween = (from: string, to: string) => {
+      const a = stateAt(from), b = stateAt(to);
+      let put = 0, market = 0, cash = 0;
+      for (const id of new Set([...b.amount.keys(), ...a.amount.keys()])) {
+        const was = a.amount.get(id) ?? 0, now = b.amount.get(id) ?? 0;
+        if (!invested.has(id)) {
+          cash += now - was;
+          continue;
+        }
+        const inWas = a.paidIn.get(id) ?? 0, inNow = b.paidIn.get(id) ?? 0;
+        put += inNow - inWas;
+        market += now - inNow - (was - inWas);
+      }
+      const r = (n: number) => Math.round(n * 100) / 100;
+      return { put: r(put), market: r(market), cash: r(cash) };
+    };
     const latest = months[months.length - 1] ?? null;
+    const before = months.length > 1 ? months[months.length - 2] : null;
     const netWorth = latest
-      ? { month: latest, total: totalAt(latest), change: months.length > 1 ? totalAt(latest) - totalAt(months[months.length - 2]) : 0 }
+      ? {
+          month: latest,
+          total: totalAt(latest),
+          change: before ? totalAt(latest) - totalAt(before) : 0,
+          since: before,
+          ...(before ? splitBetween(before, latest) : { put: 0, market: 0, cash: 0 }),
+        }
       : null;
 
     const pending = await ctx.db

@@ -217,3 +217,25 @@ export const reopenAccount = internalMutation({
     else await ctx.db.insert("balanceSnapshots", { userId: acct.userId, accountId, month, ...fields });
   },
 });
+
+/**
+ * Say outright whether an account is an investment.
+ *
+ * Otherwise it's inferred from "amount in" differing from the balance, and the
+ * sheet import gave every account an amount in — so a bank account reads as an
+ * investment sitting on a huge gain. Set it once and the guess stops.
+ */
+export const setInvested = internalMutation({
+  args: { userId: v.id("users"), names: v.array(v.string()), invested: v.boolean() },
+  handler: async (ctx, { userId, names, invested }) => {
+    const all = await ctx.db.query("accounts").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
+    const done: string[] = [];
+    for (const name of names) {
+      for (const a of all.filter((x) => x.name === name)) {
+        await ctx.db.patch(a._id, { invested });
+        done.push(`${a.name} -> ${invested ? "investment" : "cash"}`);
+      }
+    }
+    return { changed: done, notFound: names.filter((n) => !all.some((a) => a.name === n)) };
+  },
+});

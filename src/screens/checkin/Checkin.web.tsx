@@ -639,6 +639,18 @@ function Done({ summary, month, onClose }: { summary: any; month: string; onClos
           </span>
         </div>
       )}
+      {/* A market drop isn't overspending. Say which part was you. */}
+      {summary.netWorth && Math.abs(summary.netWorth.market) >= 0.5 && (
+        <span style={{ fontSize: 13, color: COLORS.muted, lineHeight: 1.5, marginTop: -16 }}>
+          {[
+            `${money(Math.abs(summary.netWorth.market))} of that was the market ${summary.netWorth.market > 0 ? 'rising' : 'falling'}`,
+            Math.abs(summary.netWorth.cash) >= 0.5
+              ? `cash ${summary.netWorth.cash > 0 ? 'up' : 'down'} ${money(Math.abs(summary.netWorth.cash))}`
+              : '',
+            summary.netWorth.put >= 0.5 ? `${money(summary.netWorth.put)} put in` : '',
+          ].filter(Boolean).join(' · ')}
+        </span>
+      )}
       <div>
         <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cups.length}, minmax(0, 1fr))`, alignItems: 'end' }}>
           {cups.map((c: any, i: number) => (
