@@ -96,7 +96,7 @@ export function Checkin({ onClose }: { onClose: () => void }) {
 
       {step === 1 && recap && <Recap recap={recap} prevLabel={monthLabel(prev)} onNext={next} />}
       {step === 2 && accounts && userId && <Balances userId={userId} month={balanceMonth} accounts={accounts} onNext={next} />}
-      {step === 3 && filed && <FiledForYou groups={filed} cups={cups} onNext={next} />}
+      {step === 3 && filed && <FiledForYou groups={filed} cups={cups} userId={userId} onNext={next} />}
       {step === 4 && pending && <Leftovers rows={pending.filter((p: any) => (p.direction ?? 'out') === 'out')} cups={cups} onDone={next} />}
       {step === 5 && summary && <Done summary={summary} month={month} onClose={onClose} />}
     </div>
@@ -380,10 +380,12 @@ function AccountForm({ userId, account, month, onDone }: { userId: any; account?
   );
 }
 
-function FiledForYou({ groups, cups, onNext }: { groups: any[]; cups: any[]; onNext: () => void }) {
+function FiledForYou({ groups, cups, userId, onNext }: { groups: any[]; cups: any[]; userId: any; onNext: () => void }) {
   const refile = useMutation(api.merchantRules.refile);
+  const askNextTime = useMutation(api.merchantRules.askNextTime);
   const [open, setOpen] = useState<string | null>(null);
   const [moved, setMoved] = useState<Record<string, string>>({});
+  const [asking, setAsking] = useState<string[]>([]);
   const [toast, setToast] = useState('');
   const nameOf = (id?: string) => cups.find((c) => c.id === id)?.name ?? '?';
   const count = groups.reduce((s, g) => s + g.count, 0);
@@ -412,13 +414,23 @@ function FiledForYou({ groups, cups, onNext }: { groups: any[]; cups: any[]; onN
                   <span style={{ fontSize: 15 }}>{g.merchant}</span>
                   <span style={{ fontSize: 13, color: COLORS.muted }}>{g.count > 1 ? `${g.count} times · ` : ''}{moneyExact(g.total)}</span>
                 </span>
-                <span style={{ fontSize: 15, color: moved[g.merchant] ? COLORS.green : COLORS.muted, whiteSpace: 'nowrap' }}>{cupName}</span>
+                <span style={{ fontSize: 15, color: moved[g.merchant] ? COLORS.green : COLORS.muted, whiteSpace: 'nowrap' }}>
+                  {asking.includes(g.merchant) ? 'will ask' : cupName}
+                </span>
               </button>
               {open === g.merchant && (
                 <div className="bk-step" style={{ display: 'flex', flexWrap: 'wrap', gap: 6, paddingBottom: 14 }}>
                   {cups.filter((c) => c.name !== cupName).map((c) => (
                     <button key={c.id} type="button" className="bk-chip" onClick={() => move(g, c)}>{c.name}</button>
                   ))}
+                  {/* A payee whose answer changes every time — usually a person. */}
+                  <button type="button" className="bk-chip"
+                    onClick={async () => {
+                      await askNextTime({ userId, merchant: g.merchant });
+                      setAsking((a) => [...a, g.merchant]);
+                      setOpen(null);
+                      setToast(`${g.merchant} won't file itself again — it'll ask each time.`);
+                    }}>Always ask me</button>
                 </div>
               )}
             </div>

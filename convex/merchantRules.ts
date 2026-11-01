@@ -20,6 +20,9 @@ export async function learn(
     .query("merchantRules")
     .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
     .first();
+  // "Always ask" is a standing instruction, not a stale guess: filing this
+  // payee once more must not turn it back into a rule.
+  if (existing?.alwaysAsk) return;
   const fields = {
     bucketId: "bucketId" in target ? target.bucketId : undefined,
     ignore: "ignore" in target ? true : undefined,
@@ -38,6 +41,7 @@ async function ruleFor(ctx: MutationCtx, userId: Id<"users">, merchant: string |
     .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", merchantKey(merchant)))
     .first();
   if (!rule) return null;
+  if (rule.alwaysAsk) return null;
   if (rule.bucketId) {
     const bucket = await ctx.db.get(rule.bucketId);
     if (!bucket || !bucket.isActive) return null; // cup gone: ask again
@@ -139,7 +143,8 @@ export const recheckRules = internalMutation({
  *
  * Learning from one filing is right for a shop and wrong for a person: a
  * PayNow to a friend is lunch one week and a loan the next, but the rule files
- * it silently either way.
+ * it silently either way. Forgetting only lasts until the next filing teaches
+ * it again — for a payee that is different every time, use `setAlwaysAsk`.
  */
 export const forget = internalMutation({
   args: { keys: v.array(v.string()) },
@@ -152,6 +157,86 @@ export const forget = internalMutation({
     }
     const missing = keys.filter((k) => !gone.includes(k));
     return { forgotten: gone, notFound: missing };
+  },
+});
+
+/**
+ * Mark payees that must always be asked about, whatever they were last time.
+ *
+ * Whether a bank name is a person or a shop isn't something the alert says:
+ * OCBC masks individuals (`ZHAXX ZHEXXX`) but DBS sends their real name, and
+ * plenty of real shops are two plain words. So this is told, not guessed.
+ * `on: false` lifts it and lets the payee learn again.
+ */
+export const setAlwaysAsk = internalMutation({
+  // userId is required, not inferred: rules are per person, and this app has
+  // more than one account in it.
+  args: { userId: v.id("users"), keys: v.array(v.string()), on: v.optional(v.boolean()) },
+  handler: async (ctx, { userId, keys, on }) => {
+    const alwaysAsk = on ?? true;
+    const touched: string[] = [];
+    for (const key of keys) {
+      const existing = await ctx.db
+        .query("merchantRules")
+        .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
+        .first();
+      if (existing) {
+        // Drop the guess as well, so nothing files on it in the meantime.
+        await ctx.db.patch(existing._id, {
+          alwaysAsk: alwaysAsk || undefined,
+          bucketId: alwaysAsk ? undefined : existing.bucketId,
+          accountId: alwaysAsk ? undefined : existing.accountId,
+          ignore: alwaysAsk ? undefined : existing.ignore,
+          updatedAt: Date.now(),
+        });
+        touched.push(key);
+      } else if (alwaysAsk) {
+        await ctx.db.insert("merchantRules", { userId, key, alwaysAsk: true, updatedAt: Date.now() });
+        touched.push(`${key} (new)`);
+      }
+    }
+    return { alwaysAsk, touched };
+  },
+});
+
+/** Remove every rule belonging to one user. For undoing a bad bulk write. */
+export const dropRulesFor = internalMutation({
+  args: { userId: v.id("users"), dryRun: v.boolean() },
+  handler: async (ctx, { userId, dryRun }) => {
+    const rules = await ctx.db
+      .query("merchantRules")
+      .withIndex("by_user_key", (q) => q.eq("userId", userId))
+      .collect();
+    if (!dryRun) for (const r of rules) await ctx.db.delete(r._id);
+    return { dryRun, removed: rules.length, keys: rules.map((r) => r.key) };
+  },
+});
+
+/**
+ * "Don't file this one for me again" — from the check-in, for a payee whose
+ * answer is different every time. What was already filed stays put; only the
+ * next one asks.
+ */
+export const askNextTime = mutation({
+  args: { userId: v.id("users"), merchant: v.string() },
+  handler: async (ctx, { userId, merchant }) => {
+    const key = merchantKey(merchant);
+    const existing = await ctx.db
+      .query("merchantRules")
+      .withIndex("by_user_key", (q) => q.eq("userId", userId).eq("key", key))
+      .first();
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        alwaysAsk: true,
+        bucketId: undefined,
+        accountId: undefined,
+        ignore: undefined,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("merchantRules", { userId, key, alwaysAsk: true, example: merchant, updatedAt: Date.now() });
+    }
+    return { key };
   },
 });
 

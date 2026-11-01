@@ -217,6 +217,10 @@ export default defineSchema({
     ignore: v.optional(v.boolean()),
     accountId: v.optional(v.id("accounts")), // money moved into an investment
     example: v.optional(v.string()), // a raw bank name, for display
+    // Never file this payee automatically, and never learn one filing as the
+    // answer for the next. Set for people: a PayNow to a friend is lunch one
+    // week, a loan the next, and their share of a bill the week after.
+    alwaysAsk: v.optional(v.boolean()),
     updatedAt: v.number(),
   }).index("by_user_key", ["userId", "key"]),
 
